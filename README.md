@@ -7,7 +7,7 @@ Hello 👋 - if you've landed at this repo it's probably because you are one of 
 ## What is it?
 The GitHub Universe Badger is a hackable conference badge running Micropython on a RP2040 microprocessor and comes with a built in e-Ink display along with a battery connector, several configurable buttons and a QT/Stemma expansion port for connecting additional sensors and accesories.  The GitHub Universe Badger is a custom version of the [Badger2040](https://learn.pimoroni.com/article/getting-started-with-badger-2040) made by our wonderful friends at [Pimoroni](https://pimoroni.com/). Electronically we kept it identical so that all the open source examples that you can find of cool things you can do with your Badger2040 you can do with your brand new GitHub Badger.  We just blinged up the PCB a bit and installed some little easier eggs into the [BadgerOS](https://github.com/pimoroni/badger2040) image hung around your neck.
 
-## How do I Get started
+## How do I get started
 If you want to just play with the badge you have, you can plug it into power via the USB-C connection.  However you can also power the device with a battery pack as it is extreamly low power.  If you are currently at GitHub Universe 2023 you can head to the on-site store, show them your all-access hackable badge and pick up a battery pack and high quality USB A-C lead. Every holder of a hackable GitHub Universe badge can grab one free accessory pack in the store.
 
 Once you have power, if you press and hold the A & C buttons simultaneously, you get into the secret menu of the badger operating system.  From there you can explore the installed applications including an eBook reader, ToDo list and image viewer.
