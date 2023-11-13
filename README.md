@@ -10,7 +10,7 @@ The GitHub Universe Badger is a hackable conference badge running Micropython on
 ## How do I get started
 If you want to just play with the badge you have, you can plug it into power via the USB-C connection.  However you can also power the device with a battery pack as it is extremely low power.
 
-If you are currently at GitHub Universe 2023 you can head to the on-site store, show them your all-access hackable badge and pick up a battery pack and high quality USB A-C lead. **Every holder of a hackable GitHub Universe badge can grab one free accessory pack in the store**.
+You can power over USB or via the JST power connector that can accept a 2xAAA battery pack ot standard 3.7v LiPo cell.
 
 Once you have power, if you press and hold the A & C buttons simultaneously, you get into the secret menu of the badger operating system.  From there you can explore the installed applications including an eBook reader, ToDo list and image viewer.
 
