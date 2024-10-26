@@ -1,0 +1,53 @@
+GITHUB COPILOT CHEAT SHEET
+
+Features: gh.io/copilot,
+Docs: gh.io/copilot/docs,
+Course: gh.io/copilot/mslearn,
+Tips: gh.io/copilot-blog
+
+GET STARTED:
+To use GitHub Copilot, you or your company must select a plan at gh.io/copilot (individuals can take advantage of a one-month free trial). Then, install GitHub Copilot in your development environment (see gh.io/copilot-quickstart for IDE-specific instructions). You can also head right to GitHub and look for a Copilot icon in the upper-right corner.
+Note that features vary between IDEs. In the suggestions below, we are using Visual Studio Code, but the functionality is broadly applicable across JetBrains, Visual Studio, and NeoVIM.
+
+CODE COMPLETION:
+As you type, Copilot will provide suggestions to complete your comments, functions, and code blocks. Press tab to accept, or hover over the suggestion to view alternatives. To get started, try creating a comment that describes the code you want, then hit enter to receive a suggestion.
+
+COPILOT CHAT IN THE DEVELOPMENT ENVIRONMENT:
+Copilot Chat is an interactive chat interface right inside your IDE, provided as a separate panel and/or inline (right-click your code and pick “Copilot”). By default, Copilot Chat focuses on your selected code and other open files, but this context can be expanded via chat participants and chat variables. As with any new tool, there are new skills you’ll need to adopt. Take a look at gh.io/copilot/prompt-engineering and gh.io/copilot/prompt-tips for strategies and tips.
+
+COPILOT CHAT ON GITHUB.COM:
+When logged in at GitHub.com, click the Copilot icon in the upper-right corner to start chatting with Copilot. If you are in a repository, Copilot Chat will be aware of the current context. For example, you can ask “what is the structure of this repository?”, or click into a Pull Request and ask Copilot to explain the PR. Type “/clear” at any time to reset the chat and refresh the context. See gh.io/copilot/dotcom-chat to learn more.
+
+SLASH COMMANDS:
+Slash Commands are predefined actions within GitHub Copilot that are accessible through the prompt interface. These allow you to quickly access specific actions through Copilot.
+
+/help (quick reference and basics of GitHub Copilot)
+/explain (explain how the code in your active editor works)
+/tests (generate unit tests for the selected code)
+/fixTestFailure (find and fix failing tests)
+/fix (find and fix general problems in the selected code)
+/new (set up a new project)
+/clear (start a new chat session)
+
+CHAT PARTICIPANTS:
+To help Copilot Chat give you more relevant answers, you can indicate the scope and intent of your question through chat participants. Chat participants are like experts who have an area of expertise, and you can talk to them in the chat by mentioning them with the @ symbol.
+
+@workspace (ask about, or work with, the entire workspace)
+@vscode (ask questions about VS Code)
+@terminal (ask how to do something in the terminal)
+@github (search the web, your repositories, and enterprise knowledge bases [if enabled])
+
+CHAT VARIABLES:
+Use a chat variable in your chat prompt to be more specific about the context you’re providing to Copilot. For example, the prompt "which sorting algo is used #selection" focuses the chat request on the selected code snippet.
+
+#selection (The current selection in the active editor)
+#codebase (Search codebase and extract relevant content [e.g. #codebase html])
+#editor (The visible source code, showing on the screen, in the active editor)
+#terminalSelection (The active terminal's selected content)
+#file (choose a file in the workspace [tab for picklist, or type :filename])
+
+EXTENSIONS:
+Copilot Extensions allow Chat to interface with community-developed and third-party information and experiences. For example, the “@azure” extension allows developers to connect to their Azure account, list their subscriptions and resources, learn about the Azure CLI, and more. Each extension is unique, and must be individually installed: visit github.com/marketplace and select “Copilot” to see all available extensions.
+
+KNOWLEDGE BASES:
+Enterprises using GitHub Copilot Enterprise can create “knowledge bases” which group together topical information from multiple repositories (gh.io/copilot/knowledge-bases). In an IDE, you can bring a knowledge base into Copilot Chat by typing “@github” followed by the #id of the knowledge base (e.g. “@github #design what CSS framework do we use?”). In Copilot Chat on GitHub.com, click the book icon at the bottom of the chat window to show which knowledge bases you can access, then select one to bring it into the chat context.
