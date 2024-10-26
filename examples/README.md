@@ -36,6 +36,6 @@ How to play:
 3. Press the *A* button to submit a word.
 
 # Other Credits
-@martinwoodward & @ashleymcnamara- inception, hardware, inspiration
-@peckjon & @tbries - tutorials, integration
-@alliekpeck - testing
+- @martinwoodward & @ashleymcnamara - inception, hardware, inspiration
+- @peckjon & @tbries - tutorials, integration
+- @alliekpeck - testing
