@@ -58,6 +58,8 @@ Now that the files are on your badge, you can use your new app, even if you disc
 3. When you see your app (in this example, a globe icon with "hello" beneath it), press the corresponding column button (A, B, or C) to run it.
 4. When you are done, click "A" and "C" simultaneously to return to the list of all apps.
 
+See [examples/README.md](examples/README.md) to learn how to use each app, and find out who made them!
+
 > [!NOTE]
 > It's safe to disconnect the badge from power anytime it isn't actively being programmed or transferring files; the e-paper screen will simply freeze in place. For some apps, like ones that simply display static text or a still image, that makes sense. But for interactive apps, it needs power.
 > 

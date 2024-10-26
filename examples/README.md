@@ -19,13 +19,13 @@ Forked from [niutech/dino-badger2040](https://github.com/niutech/dino-badger2040
 There's nothing like a classic. This app will display "Hello Universe!" on the screen.
 
 ## Life
-The Game of Life, forked from [glich-stream/gol-badger-2350](https://github.com/glich-stream/gol-badger-2350)
+The Game of Life by @link- forked from [glich-stream/gol-badger-2350](https://github.com/glich-stream/gol-badger-2350)
 
 How to play:
-- A: Reset the grid
-- B: Pause/Resume the simulation
-- UP: Increase the refresh rate
-- DOWN: Decrease the refresh rate
+- A: Reset the grid (press and HOLD for 2s)
+- B: Pause/Resume the simulation (press and HOLD for 2s)
+- UP: Increase the refresh rate (press and HOLD for 2s)
+- DOWN: Decrease the refresh rate (press and HOLD for 2s)
 
 ## Wordle
 Forked from [makew0rld/wordle-badger2040](https://github.com/makew0rld/wordle-badger2040) and lightly updated to run on the latest version of the picographics library.
@@ -34,3 +34,8 @@ How to play:
 1. Use the *B* and *C* buttons to cycle through the alphabet.
 2. Use the arrow buttons to move between squares.
 3. Press the *A* button to submit a word.
+
+# Other Credits
+@martinwoodward & @ashleymcnamara- inception, hardware, inspiration
+@peckjon & @tbries - tutorials, integration
+@alliekpeck - testing
