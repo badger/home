@@ -18,6 +18,8 @@ How to customize your badge:
 
 Find the combination that looks best to you!
 
+_Note:_ To run this app on the Universe 2023 badge, the `BACK_COMPAT_MODE` constant must be set to `True`. Any PNG images in the `/badges/` directory will be ignored.
+
 ## Copilot
 Have some time before your next session? Read this guide to help you get the most out of GitHub Copilot.
 

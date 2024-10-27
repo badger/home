@@ -1,13 +1,16 @@
 import badger2040
 import badger_os
 import jpegdec
-import pngdec
 import os
 import re
 
 # Global Constants
 WIDTH = badger2040.WIDTH
 HEIGHT = badger2040.HEIGHT
+
+# PNG images are not supported on the Universe 2023 badge.
+# Enable this flag to allow this app to run on those badges.
+BACK_COMPAT_MODE = False
 
 LEFT_PADDING = 7
 NAME_HEIGHT = 45
@@ -152,7 +155,13 @@ display.led(128)
 display.set_update_speed(badger2040.UPDATE_NORMAL)
 
 jpeg = jpegdec.JPEG(display.display)
-png = pngdec.PNG(display.display)
+
+# Only load the PNG library if we're not in compatibility mode.
+if(not(BACK_COMPAT_MODE)):
+    import pngdec
+    png = pngdec.PNG(display.display)
+else:
+    print("PNG library is not available on the Universe 2023 badge.")
 
 # Open the badge file
 try:
@@ -186,9 +195,12 @@ try:
 finally:
     badge.close()
     
-# Inventory profile images
+# Inventory profile images. Ignore PNGs if compatibility mode is enabled.
 try:
-    BADGE_IMAGES = [f for f in os.listdir("/badges") if f.endswith(".jpg") or f.endswith(".png")]
+    BADGE_IMAGES = [
+        f for f in os.listdir("/badges")
+        if f.endswith(".jpg") or (not(BACK_COMPAT_MODE) and f.endswith(".png"))
+    ]
     TOTAL_IMAGES = len(BADGE_IMAGES)
 except OSError:
     pass

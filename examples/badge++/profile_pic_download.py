@@ -23,7 +23,7 @@ def main():
         image_url = response.json().get('avatar_url')
 
         # Download images in different sizes
-        sizes = ['86', '100', '114', '128']
+        sizes = ['086', '100', '114', '128']
         for size in sizes:
             request_url = f'{image_url}&size={size}'
             response = requests.get(request_url, stream=True)
