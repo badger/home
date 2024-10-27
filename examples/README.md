@@ -4,6 +4,20 @@ This directory contains example apps that demonstrate how to interact with the `
 
 Note that while each example app is in its own directory, all of the files for each app will need to be copied directly into the `/examples/` directory to correctly show up as an app in the launcher menu.
 
+## Badge++
+Just like the badge app that came with your Badger 2350, but with a few extra features to make sure your badge is truly one of a kind.
+
+Installation instructions:
+1. Run the accompanying `profile_pic_download.py` script to generate a few images to try out on your badge.
+2. Copy the resulting images to the `/badges/` directory on your badge.
+3. Copy the `badge++.py` and `icon-badge++.jpg` files to the `/example/` directory on your badge just like any other app.
+
+How to customize your badge:
+- A/B: Cycle back and forth through the font options.
+- UP/DOWN: Cycle back and forth through the images in the `/badges/` directory.
+
+Find the combination that looks best to you!
+
 ## Copilot
 Have some time before your next session? Read this guide to help you get the most out of GitHub Copilot.
 
