@@ -70,7 +70,7 @@ def draw_badge():
     # Draw the background
     try:
         target_image = BADGE_IMAGES[state["picture_idx"]]
-        image_size = extract_number_from_filename(target_image)
+        image_size = extract_image_width_from_filename(target_image)
         TEXT_WIDTH = WIDTH - LEFT_PADDING - image_size
 
         # If no image was pulled from the name, it must be the background.
