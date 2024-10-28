@@ -69,6 +69,8 @@ See [examples/README.md](examples/README.md) to learn how to use each app, and f
 
 ### App icons don't appear correctly
 
+If you cannot scroll to the row which contains your app, there may be a problem with your app icon.
+
 - Ensure that it is exactly 52x52 pixels and is black-and-white.
 - Check that the filename ends in ".jpg" (not ".jpeg"), or ".png" if you have a Universe 2024 badge.
 - Check that the filename starts with "icon-" followed by the exact (case-sensitive) name of your Python file before the dot.
