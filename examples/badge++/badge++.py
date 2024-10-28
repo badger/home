@@ -5,6 +5,7 @@ import os
 import re
 
 # Global Constants
+# Measurements are in pixels
 WIDTH = badger2040.WIDTH
 HEIGHT = badger2040.HEIGHT
 
@@ -42,7 +43,7 @@ she/her
 
 
 # Reduce the size of a string until it fits within a given width
-def truncatestring(text, text_size, width):
+def truncate_string(text, text_size, width):
     while True:
         length = display.measure_text(text, text_size)
         if length > 0 and length > width:
@@ -172,7 +173,7 @@ except OSError:
         f.flush()
     badge = open(BADGE_PATH, "r")
 
-# Read in the next 6 lines
+# Read in the next 6 lines           # Default values
 try:
     event = badge.readline()         # "Universe 2024"
     first_name = badge.readline()    # "Mona Lisa"
@@ -188,9 +189,9 @@ try:
         last_name = ""
     
     # Truncate Title and pronouns to fit
-    title = truncatestring(title, DETAILS_TEXT_SIZE, 310)
-    pronouns = truncatestring(pronouns, DETAILS_TEXT_SIZE, 110)
-    handle = truncatestring(handle, DETAILS_TEXT_SIZE, 220)
+    title = truncate_string(title, DETAILS_TEXT_SIZE, 310)
+    pronouns = truncate_string(pronouns, DETAILS_TEXT_SIZE, 110)
+    handle = truncate_string(handle, DETAILS_TEXT_SIZE, 220)
     
 finally:
     badge.close()
