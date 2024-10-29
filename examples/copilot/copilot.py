@@ -19,7 +19,7 @@ ARROW_PADDING = 2
 TEXT_PADDING = 4
 TEXT_WIDTH = WIDTH - TEXT_PADDING - TEXT_PADDING - ARROW_WIDTH
 
-FONTS = ["bitmap8", "serif", "sans", "cursive"]
+FONTS = ["sans", "serif", "bitmap8", "cursive"]
 THICKNESSES = [1, 2, 2, 1]
 # ------------------------------
 #      Drawing functions
