@@ -12,7 +12,7 @@ P.S. if you happen to have an electronic badge from Universe 2023 as well, most 
 
 ## How do I get started
 
-If you want to just play with the badge you have, you can plug it into power via the USB-C connection. You can also power via the JST power connector that can accept a 2xAAA battery pack ot standard 3.7v LiPo cell.
+If you want to just play with the badge you have, you can plug it into power via the USB-C connection. You can also power via the JST power connector that can accept a 2xAAA battery pack ot standard 3.7v LiPo cell. If you wish, you may also print a back for the badge to house the LiPo battery using [the STL file](badger-back.stl) in this repo. The back will need (2) M2x8 screws to secure the badger to the 3D printed back.
 
 Once you have power, if you press and hold the A & C buttons simultaneously, you get into the secret menu of the badger operating system.  From there you can explore the installed applications including an eBook reader, ToDo list and image viewer.
 
