@@ -13,7 +13,7 @@ Thonny is a Integrated Development Environment (IDE), a tool that helps you writ
 
 ## Connecting to your Badge
 
-1. Find the USB cable that came with your Badger 2040, and use it to connect the badge to your computer
+1. Connect your Badger 2040 badge to your computer via a USB cable.
 2. Your computer might make a sound or show a message when it recognizes the Badger 2040. If prompted with a dialog, allow the device to be used with your computer.
 3. Open Thonny by double-clicking its icon on your desktop or finding it in your computer's program list.
 4. At the bottom of the Thonny window, you'll see a bar that probably says "Local Python 3" with a version number.
