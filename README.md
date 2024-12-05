@@ -12,9 +12,15 @@ P.S. if you happen to have an electronic badge from Universe 2023 as well, most 
 
 ## How do I get started
 
-If you want to just play with the badge you have, you can plug it into power via the USB-C connection. You can also power via the JST power connector that can accept a 2xAAA battery pack ot standard 3.7v LiPo cell.
+If you badge is currently blank, you first need to add your details to it.
 
-Once you have power, if you press and hold the A & C buttons simultaneously, you get into the secret menu of the badger operating system.  From there you can explore the installed applications including an eBook reader, ToDo list and image viewer.
+1. Visit the [Badge Press](https://badger.github.io/) in Google Chrome or Microsoft Edge
+2. Enter your GitHub Handle and the adjust the name and job title that you would like to be displayed
+3. Plug the badger into your computer with a USB C cable.
+4. Press the "Copy to badge" button.  You will then be prompted to select the badger to communicate with via the serial port.
+5. Your badge should reboot with your badge details on it.
+
+If you want to just play with the badge you have, you can plug it into power via the USB-C connection. You can also power via the JST power connector that can accept a 2xAAA battery pack ot standard 3.7v LiPo cell. If you wish, you may also print a back for the badge to house the LiPo battery using [the STL file](badger-back.stl) in this repo. The back will need (2) M2x8 screws to secure the badger to the 3D printed back.
 
 ## Yeah, yeah cool - how do I hack this thing?
 
