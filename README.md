@@ -12,7 +12,7 @@ P.S. if you happen to have an electronic badge from Universe 2023 as well, most 
 
 ## How do I get started
 
-If you badge is currently blank, you first need to add your details to it.
+If your badge is currently blank, you first need to add your details to it.
 
 1. Visit the [Badge Press](https://badger.github.io/) in Google Chrome or Microsoft Edge
 2. Enter your GitHub Handle and the adjust the name and job title that you would like to be displayed
