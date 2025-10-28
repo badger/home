@@ -38,9 +38,9 @@ When your badge arrives, it will be pre-loaded with a factory default Micropytho
 
 To get started building apps for the badge, you will need to flash the latest Micropython
 firmware that we have. You can find the latest firmware image in the
-[Releases](https://github.com/badger/tufty/releases)
+[Releases](https://github.com/badger/home/releases)
 
-1. Download the latest `.uf2` firmware file from the [releases page](https://github.com/badger/tufty/releases).
+1. Download the latest `.uf2` firmware file from the [releases page](https://github.com/badger/home/releases).
 2. Connect your badge to your computer via USB.
 3. On the back of the badge, press and hold the `Home` button. While holding down `Home`, press and release the `Reset` button. Then release the `Home` button.
 4. Your badge should then appear as a USB drive named `RP2350`.
