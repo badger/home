@@ -80,7 +80,7 @@ def wlan_start():
         if wlan.isconnected():
             return True
 
-        # attempt to find the SSID by scanning; some APs may be hidden intermittently
+    # attempt to find the SSID by scanning; some APs may be hidden intermittently
     try:
         ssid_found = False
         try:
@@ -291,6 +291,9 @@ class User:
                 next(self._task)
             except StopIteration:
                 self._task = None
+            except:
+                self._task = None
+                handle = "fetch error"
 
         if not connected:
             handle = "connecting..."
@@ -394,17 +397,11 @@ def update():
         user.update(True)
 
     if get_connection_details(user):
-        # Check if we have local files and can skip WiFi connection
-        has_local_data = file_exists("/contrib_data.json") and file_exists("/user_data.json") and file_exists("/avatar.png")
-
-        if has_local_data or wlan_start():
-            # Set connected to True if we have local data, even without WiFi
-            if has_local_data:
-                connected = True
+        if wlan_start():
             user.draw(connected)
         else:  # Connection Failed
             connection_error()
-    else:  # Get Details Failed
+    else:      # Get Details Failed
         no_secrets_error()
 
 
