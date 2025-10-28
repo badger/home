@@ -1,47 +1,154 @@
-# Let's get Hacking!
+# Tufty Badge
 
-Hello 👋 - if you've landed at this repo it's probably because you are one of the lucky people at GitHub Universe 2024 who has been handed a hackable conference badge and you are now wondering what the heck this thing is and how you can get started.
+For GitHub Universe 2025 we have partnered with our friends at Pimoroni to create the 
+Tufty Edition of our hackable conference badge.  This is a custom version of the 
+[Pimoroni Tufty 2350](https://shop.pimoroni.com/) badge, with a custom PCB, added IR
+sensors and pre-loaded with some fun apps.  The source code for the custom apps is 
+available here.
 
-![The GitHub Universe Badger](readme_badgephoto.jpg)
+These apps are designed to be run on the base MonaOS MicroPython firmware pre-installed on your badge with our custom badgeware library.
 
-## What is it?
+## Repository Structure
 
-The GitHub Universe Badger is a hackable conference badge running MicroPython on a RP2350a microprocessor and comes with a built in 2.9" E Ink® display (296 x 128 pixels) along with a battery connector, 5 user configurable buttons and a QT/Stemma expansion port for connecting additional sensors and accessories.  The GitHub Universe Badger is a custom version of the [Badger2040](https://learn.pimoroni.com/article/getting-started-with-badger-2040) made by our wonderful friends at [Pimoroni](https://pimoroni.com/). Electronically we kept it pretty similar so that all the open source examples that you can find of cool things you can do with your Badger2040 you can do with your brand new GitHub Badger.  We just blinged up the PCB a bit, added the latest RP2350a microprocessor and installed some little easter eggs into the [BadgerOS](https://github.com/pimoroni/badger2040) image hung around your neck.
+```
+/badge/                 # Badge firmware and applications
+  ├── main.py           # Boot loader and app launcher entry point
+  ├── secrets.py        # WiFi configuration (SSID, password, GitHub username)
+  ├── apps/             # Application directory
+  │   ├── badge/        # GitHub profile stats viewer
+  │   ├── flappy/       # Flappy Bird style game
+  │   ├── gallery/      # Image gallery viewer
+  │   ├── menu/         # App launcher/menu system
+  │   ├── monapet/      # Virtual pet simulator
+  │   ├── quest/        # IR beacon scavenger hunt
+  │   ├── sketch/       # Drawing application
+  │   └── startup/      # Boot animation
+  └── assets/           # Shared resources
+      ├── fonts/        # Pixel Perfect Fonts (.ppf) and bitmap fonts (.af)
+      └── mona-sprites/ # Mona character sprite sheets
+```
 
-P.S. if you happen to have an electronic badge from Universe 2023 as well, most of the code provided in this repo will work on that older version too! Just one small note: the launcher on the 2023 model can only use JPEG files for app icons, while the 2024 also supports PNGs.
+The `badge/` folder contents are pre-loaded in a hidden `/system/` partition on the device.
 
-## How do I get started
+> [!NOTE]
+> Looking for the e-ink badge firmware and setup guides? Head over to the `eink/` directory for the dedicated code and documentation.
 
-If you badge is currently blank, you first need to add your details to it.
+## Flashing your Badge
+When your badge arrives, it will be pre-loaded with a factory default Micropython image that will have a custom image of Micropython with our apps pre-installed and a 'MonaOS' app launcher.
 
-1. Visit the [Badge Press](https://badger.github.io/) in Google Chrome or Microsoft Edge
-2. Enter your GitHub Handle and the adjust the name and job title that you would like to be displayed
-3. Plug the badger into your computer with a USB C cable.
-4. Press the "Copy to badge" button.  You will then be prompted to select the badger to communicate with via the serial port.
-5. Your badge should reboot with your badge details on it.
+To get started building apps for the badge, you will need to flash the latest Micropython
+firmware that we have. You can find the latest firmware image in the
+[Releases](https://github.com/badger/tufty/releases)
 
-If you want to just play with the badge you have, you can plug it into power via the USB-C connection. You can also power via the JST power connector that can accept a 2xAAA battery pack ot standard 3.7v LiPo cell. If you wish, you may also print a back for the badge to house the LiPo battery using [the STL file](badger-back.stl) in this repo. The back will need (2) M2x8 screws to secure the badger to the 3D printed back.
+1. Download the latest `.uf2` firmware file from the [releases page](https://github.com/badger/tufty/releases).
+2. Connect your badge to your computer via USB.
+3. On the back of the badge, press and hold the `Home` button. While holding down `Home`, press and release the `Reset` button. Then release the `Home` button.
+4. Your badge should then appear as a USB drive named `RP2350`.
+5. Drag and drop the `.uf2` file onto the `RP2350` drive.
+6. The badge will automatically reboot and run the new firmware.
 
-## Yeah, yeah cool - how do I hack this thing?
+## Copying Files to the Badge
 
-To get started, read through [the tutorial](tutorial.md), which will guide you through the process of setting up your development environment and loading MicroPython scripts onto your badge. If you've never used a Pimoroni badge before, start here!
+### Understanding the File System
 
-Once you've learned the basics, explore the [examples](./examples) folder, which contains fun and engaging apps that you can load directly onto your badge, or use as inspiration to create your own.
+The badge has two partitions:
+- **Hidden `/system/` partition** - Contains pre-loaded apps, assets, and default files (only visible via serial connection)
+- **Visible user partition** - Accessible when in USB Mass Storage mode (the `BADGER` drive)
 
-Also take note of the [icons](./icons) folder. Each app you load onto your badge needs an icon, and these need to be in a very specific format (as explained in the [tutorial](tutorial.md)). While you can always choose to make your own icons, it may be easier/faster to just copy and rename one from this folder.
+When the badge runs, it looks for files in the visible partition first. If a file exists there, it uses that version instead of the one in `/system/`. This allows you to override or customize any pre-installed app without modifying the hidden partition.
 
-Lastly, the feature and function reference [2040reference.md](2040reference.md) contains detailed information about Badger programming. You don't need read it before trying out the tutorial -- but we wanted to make sure you had a copy in case you later decide to get deep into the world of Badger programming!
+### Entering USB Mass Storage Mode
 
-## I'm still not satisfied. What else can I do?
+To copy files to the badge, double-press the Reset button on the back. The badge will appear as a USB drive named `BADGER`.
 
-This is a full Raspberry Pi Pico device, so you aren't limited to MicroPython. If you want to entirely flash your firmware and turn your badger into a USB Macro Keyboard, or make it play Doom, then all that and more is possible!  We've deliberately left solderable expansion pins available on your badge, as well as a serial QT/Stemma port, so you can connect your badge to a whole ecosystem of sensors from the likes of [Adafruit](https://www.adafruit.com/) and [Pimoroni](https://pimoroni.com/).  To learn more about Stemma see this [excellent tutorial from Adafruit](https://learn.adafruit.com/introducing-adafruit-stemma-qt/what-is-stemma).
+### Customizing or Replacing Apps
 
-## Show it off!
+To override a pre-installed app or add a new one:
 
-After you've loaded a few examples onto your badge, have fun showing it off to others, and encourage them to come by the _Hack Your Badge_ station on the second floor of the Gateway Pavilion, or return to this repository at any time to explore further.
+1. Enter USB Mass Storage mode (double-press Reset)
+2. Copy your modified/new app folder to `/apps/<app_name>/` on the BADGER drive
+3. The badge will use your version instead of the `/system/apps/<app_name>/` version
+4. To modify the menu, copy and edit `/apps/menu/__init__.py`
 
-Happy hacking, and once again, thank you for being part of GitHub Universe 2024!
+**Example**: To customize the gallery app, copy the entire `/apps/gallery/` folder structure to `/apps/gallery/` on the BADGER drive, then modify it.
 
-## How can I create my own custom event badge?
+### Adding Gallery Images
 
-As well as the [Badger2040](https://learn.pimoroni.com/article/getting-started-with-badger-2040), there is a thriving community of badge hackers at open source and security events.  Be sure to check out [Badge.team](https://badge.team/) if you are thinking about creating your own.
+For the gallery app, create the folder structure and add images:
+- Full-size PNG images: `/apps/gallery/images/`
+- Thumbnail images: `/apps/gallery/thumbnails/`
+
+Ensure the thumbnail images correspond to the full-size images for proper display.
+
+### WiFi Configuration
+
+Create or edit `/secrets.py` on the BADGER drive:
+```python
+WIFI_SSID = "your_wifi_network"
+WIFI_PASSWORD = "your_password"
+GITHUB_USERNAME = "your_github_username"
+```
+
+This file contains default WiFi details for a WiFi access point available in the 'Hack the Badge' space at GitHub Universe. But you need to edit this file to add your own WiFi credentials and GitHub username.
+
+### Finishing Up
+
+When done copying files, safely eject the `BADGER` drive before unplugging or pressing Reset to return to normal mode.
+
+## Running the Apps
+
+To run the apps on the badge, press the `Reset` button once to enter normal mode. The badge will boot and look for `/main.py` on the visible partition. If it doesn't exist, it will use `/system/main.py` which runs the startup animation followed by the menu app launcher.
+
+You can press the `Home` button on the back of the badge to return to the menu app launcher at any time.
+
+In the menu, navigate the apps from the launcher by using `UP`, `DOWN`, `A` and `C` to move around the menu grid. Select the app you want to run and press the `B` button to launch it.
+
+## Pre-installed Apps
+
+### Badge
+GitHub profile statistics viewer that displays:
+- Your contribution graph
+- Follower count
+- Repository count
+- Total contributions
+- Profile avatar
+
+Requires WiFi configuration and GitHub Username configuration in `/secrets.py`. Press A+C together to force refresh data.
+
+### Flappy Mona
+A Flappy Bird style game featuring Mona. Press A to jump and avoid obstacles. Try to beat your high score!
+
+### Gallery
+Browse through images with smooth thumbnail navigation. Press A/C to navigate, B to toggle UI visibility.
+
+### Mona Pet
+A virtual pet simulator. Take care of Mona by:
+- Pressing A to play (increase happiness)
+- Pressing B to feed (decrease hunger)
+- Pressing C to clean (increase cleanliness)
+
+Keep all stats above 30% or Mona will get sad! Stats are automatically saved.
+
+### Quest
+An IR beacon scavenger hunt for exploring the conference. Walk around and look for "Mona's Quest" signs to find IR beacons at different locations to unlock quest achievements. Progress is saved automatically.
+
+### Sketch
+A drawing application where you can create pixel art. Use arrow keys and A/C to move the cursor and draw. Watch Mona run away from your cursor!
+
+## Development
+
+For developing your own apps, see the [Copilot Instructions](.github/copilot-intructions.md) which provide comprehensive guidance on:
+- Badge hardware specifications
+- App structure and requirements
+- The badgeware library API
+- Example code patterns
+- Best practices
+
+### App Icon Requirements
+
+Each app must include an `icon.png` file in its root directory:
+- **Size**: 24x24 pixels
+- **Format**: Color PNG with optional transparency
+- **Purpose**: Used by the menu launcher to display your app
+
+All apps in `badge/apps/` serve as working examples of different features and techniques.
