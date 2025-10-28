@@ -30,6 +30,9 @@ These apps are designed to be run on the base MonaOS MicroPython firmware pre-in
 
 The `badge/` folder contents are pre-loaded in a hidden `/system/` partition on the device.
 
+> [!NOTE]
+> Looking for the e-ink badge firmware and setup guides? Head over to the `eink/` directory for the dedicated code and documentation.
+
 ## Flashing your Badge
 When your badge arrives, it will be pre-loaded with a factory default Micropython image that will have a custom image of Micropython with our apps pre-installed and a 'MonaOS' app launcher.
 
