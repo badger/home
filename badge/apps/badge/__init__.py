@@ -394,11 +394,17 @@ def update():
         user.update(True)
 
     if get_connection_details(user):
-        if wlan_start():
+        # Check if we have local files and can skip WiFi connection
+        has_local_data = file_exists("/contrib_data.json") and file_exists("/user_data.json") and file_exists("/avatar.png")
+
+        if has_local_data or wlan_start():
+            # Set connected to True if we have local data, even without WiFi
+            if has_local_data:
+                connected = True
             user.draw(connected)
         else:  # Connection Failed
             connection_error()
-    else:      # Get Details Failed
+    else:  # Get Details Failed
         no_secrets_error()
 
 
