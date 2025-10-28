@@ -38,6 +38,34 @@ small_font = PixelFont.load("/system/assets/fonts/nope.ppf")
 # Pre-create shape for cells (reused for all cells)
 cell_rect = shapes.rectangle(0, 0, SQUARE_SIZE, SQUARE_SIZE)
 
+# Interesting Life patterns (name, pattern as list of (x, y) offsets)
+PATTERNS = {
+    # Spaceships (moving patterns)
+    'glider': [(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
+    'lwss': [(1, 0), (4, 0), (0, 1), (0, 2), (4, 2), (0, 3), (1, 3), (2, 3), (3, 3)],  # Lightweight spaceship
+    
+    # Oscillators
+    'blinker': [(0, 1), (1, 1), (2, 1)],
+    'toad': [(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)],
+    'beacon': [(0, 0), (1, 0), (0, 1), (3, 2), (2, 3), (3, 3)],
+    'pulsar': [  # Period-3 oscillator
+        (2, 0), (3, 0), (4, 0), (8, 0), (9, 0), (10, 0),
+        (0, 2), (5, 2), (7, 2), (12, 2),
+        (0, 3), (5, 3), (7, 3), (12, 3),
+        (0, 4), (5, 4), (7, 4), (12, 4),
+        (2, 5), (3, 5), (4, 5), (8, 5), (9, 5), (10, 5),
+        (2, 7), (3, 7), (4, 7), (8, 7), (9, 7), (10, 7),
+        (0, 8), (5, 8), (7, 8), (12, 8),
+        (0, 9), (5, 9), (7, 9), (12, 9),
+        (0, 10), (5, 10), (7, 10), (12, 10),
+        (2, 12), (3, 12), (4, 12), (8, 12), (9, 12), (10, 12),
+    ],
+    
+    # Small interesting patterns
+    'r_pentomino': [(1, 0), (2, 0), (0, 1), (1, 1), (1, 2)],  # Creates chaos for ~1000 gens
+    'acorn': [(1, 0), (3, 1), (0, 2), (1, 2), (4, 2), (5, 2), (6, 2)],  # Takes 5206 generations to stabilize
+}
+
 class GameOfLife:
     def __init__(self):
         self.grid = [[False for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
@@ -46,6 +74,9 @@ class GameOfLife:
         self.generation = 0
         self.last_update = 0
         self.update_interval = 200  # milliseconds
+        self.history = []  # Store recent grid states for pattern detection
+        self.history_size = 10  # Check last 10 states
+        self.stagnant_count = 0  # How many generations have been static/oscillating
         self.randomize()
     
     def randomize(self):
@@ -54,6 +85,45 @@ class GameOfLife:
             for x in range(GRID_WIDTH):
                 self.grid[y][x] = random.random() < 0.35  # 35% chance of being alive
         self.generation = 0
+        self.history = []
+        self.stagnant_count = 0
+        self.calculate_neighbors()
+    
+    def get_grid_hash(self):
+        """Create a hashable representation of current grid state"""
+        return tuple(tuple(row) for row in self.grid)
+    
+    def is_stagnant(self):
+        """Check if grid is static or oscillating"""
+        current = self.get_grid_hash()
+        
+        # Check if current state matches any recent state
+        for old_state in self.history:
+            if current == old_state:
+                return True
+        return False
+    
+    def inject_pattern(self, pattern_name):
+        """Inject an interesting pattern at a random location"""
+        pattern = PATTERNS[pattern_name]
+        
+        # Find pattern bounds
+        max_x = max(p[0] for p in pattern)
+        max_y = max(p[1] for p in pattern)
+        
+        # Choose random position with padding
+        start_x = random.randint(2, GRID_WIDTH - max_x - 3)
+        start_y = random.randint(2, GRID_HEIGHT - max_y - 3)
+        
+        # Place pattern
+        for dx, dy in pattern:
+            x = (start_x + dx) % GRID_WIDTH
+            y = (start_y + dy) % GRID_HEIGHT
+            self.grid[y][x] = True
+        
+        # Reset stagnancy tracking
+        self.history = []
+        self.stagnant_count = 0
         self.calculate_neighbors()
     
     def update(self):
@@ -90,6 +160,32 @@ class GameOfLife:
         # Swap grids (avoid allocation)
         self.grid, self.next_grid = self.next_grid, self.grid
         self.generation += 1
+        
+        # Check for stagnation and inject patterns if needed
+        if self.is_stagnant():
+            self.stagnant_count += 1
+            if self.stagnant_count >= 5:  # If stagnant for 5+ generations
+                # Choose a random interesting pattern with weights
+                # More likely to pick gliders, spaceships, and interesting patterns
+                pattern_pool = [
+                    'glider', 'glider', 'glider',  # 3x weight
+                    'lwss', 'lwss', 'lwss',  # 3x weight
+                    'blinker',
+                    'toad',
+                    'beacon',
+                    'pulsar', 'pulsar',  # 2x weight
+                    'r_pentomino', 'r_pentomino',  # 2x weight
+                    'acorn'
+                ]
+                pattern = random.choice(pattern_pool)
+                self.inject_pattern(pattern)
+        else:
+            self.stagnant_count = 0
+        
+        # Update history for pattern detection
+        self.history.append(self.get_grid_hash())
+        if len(self.history) > self.history_size:
+            self.history.pop(0)
         
         # Second pass: calculate neighbor counts for the NEW grid state (for coloring)
         for y in range(GRID_HEIGHT):
