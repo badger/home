@@ -272,7 +272,7 @@ class User:
             try:
                 screen.blit(self.avatar, 5, 37)
             except Exception as e:
-                drawDefaultAvatar
+                drawDefaultAvatar()
 
 def drawDefaultAvatar():
     # create a spinning loading animation while we wait for the avatar to load
