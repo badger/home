@@ -1,4 +1,4 @@
-# Copilot Instructions for Tufty 2040 Development
+# Copilot Instructions for Tufty 2360 Development
 
 This project is for developing applications on a U25 Edition GitHub hackable conference badge - an RP2350-based microprocessor running MicroPython with a 320x240 TFT color display.  The board is a custom version of the Pimoroni Tufty 2350 with added IR sensors.
 
@@ -56,15 +56,6 @@ Every app must be in `/system/apps/<app_name>/` (or `badge/apps/<app_name>/` in 
    - **Format**: 24x24 pixel color PNG file
    - **Color space**: RGB with optional transparency
    - **Location**: Must be in the app's root directory
-
-Apps should use path manipulation to ensure correct working directory:
-```python
-import sys
-import os
-
-sys.path.insert(0, "/system/apps/<app_name>")
-os.chdir("/system/apps/<app_name>")
-```
 
 ### Core Imports and Setup
 
