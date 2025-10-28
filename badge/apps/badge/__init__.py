@@ -28,7 +28,6 @@ DETAILS_URL = "https://api.github.com/users/{user}"
 
 WIFI_PASSWORD = None
 WIFI_SSID = None
-CLOUDINARY_CLOUD_NAME = "demo"
 
 wlan = None
 connected = False
@@ -40,7 +39,7 @@ def message(text):
 
 
 def get_connection_details(user):
-    global WIFI_PASSWORD, WIFI_SSID, CLOUDINARY_CLOUD_NAME
+    global WIFI_PASSWORD, WIFI_SSID
 
     if WIFI_SSID is not None and user.handle is not None:
         return True
@@ -48,11 +47,6 @@ def get_connection_details(user):
     try:
         sys.path.insert(0, "/")
         from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
-        try:
-            from secrets import CLOUDINARY_CLOUD_NAME as cloud_name
-            CLOUDINARY_CLOUD_NAME = cloud_name
-        except ImportError:
-            pass  # Use default "demo"
         sys.path.pop(0)
     except ImportError:
         WIFI_PASSWORD = None
@@ -180,7 +174,7 @@ def get_user_data(user, force_update=False):
     
     # Check if name contains Chinese characters and fetch rendered image
     if user.name and has_chinese_characters(user.name):
-        message(f"Rendering Chinese name: {user.name}")
+        message(f"Fetching Chinese name via shields.io: {user.name}")
         chinese_url = generate_chinese_text_url(user.name)
         if chinese_url:
             try:
@@ -229,23 +223,22 @@ def has_chinese_characters(text):
 
 
 def generate_chinese_text_url(text, width=150, height=20, font_size=14):
-    """Generate Cloudinary URL for rendering Chinese text as image"""
+    """Generate shields.io URL for rendering Chinese text as image"""
     try:
         from urllib.parse import quote
         text_encoded = quote(text)
         
-        # Using Cloudinary's text overlay feature with a CJK-compatible font
-        # Note: This uses Arial Unicode MS which supports Chinese
-        # Cloud name is loaded from secrets.py (defaults to "demo")
+        # Using shields.io static badge API
+        # Automatically uses white text on black background for good contrast
+        # No account or API key needed - completely free
         
-        url = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/"
-        url += f"w_{width},h_{height},c_fit,b_rgb:000000/"
-        url += f"l_text:Arial%20Unicode%20MS_{font_size}:{text_encoded},co_rgb:ebf5ff/"
-        url += "blank.png"
+        url = f"https://img.shields.io/static/v1?"
+        url += f"label=&message={text_encoded}"
+        url += f"&color=000000&labelColor=000000&style=flat-square"
         
         return url
     except Exception as e:
-        print(f"Error generating Cloudinary URL: {e}")
+        print(f"Error generating shields.io URL: {e}")
         return None
 
 
@@ -328,7 +321,7 @@ class User:
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
             elif self.name and has_chinese_characters(self.name) and not self.chinese_name_img:
-                handle = "rendering chinese..."
+                handle = "fetching chinese..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
             elif not self.contribs:
