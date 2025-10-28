@@ -207,7 +207,8 @@ def has_unsupported_chars(text):
         return False
     try:
         return any(ord(char) > 255 for char in text)
-    except Exception:
+    except (TypeError, AttributeError):
+        # Handle cases where text is not iterable or contains invalid characters
         return True
 
 
