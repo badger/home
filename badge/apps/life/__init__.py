@@ -29,6 +29,9 @@ SQUARE_SIZE = 3  # Actual drawn size (GRID_SIZE - 1 for gap)
 GRID_WIDTH = 40  # 160 / 4
 GRID_HEIGHT = 30  # 120 / 4
 
+# Probability of injecting static life patterns when stagnant
+STATIC_LIFE_PROBABILITY = 0.4
+
 # Load font
 small_font = PixelFont.load("/system/assets/fonts/nope.ppf")
 
@@ -63,14 +66,13 @@ PATTERNS = {
     'acorn': [(1, 0), (3, 1), (0, 2), (1, 2), (4, 2), (5, 2), (6, 2)],  # Takes 5206 generations to stabilize
 }
 
-# Still life patterns (static, don't change)
-STILL_LIFES = {
+# Static life patterns (static, don't change)
+STATIC_LIFE = {
     'block': [(0, 0), (1, 0), (0, 1), (1, 1)],
     'beehive': [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
     'loaf': [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
     'boat': [(0, 0), (1, 0), (0, 1), (2, 1), (1, 2)],
     'tub': [(1, 0), (0, 1), (2, 1), (1, 2)],
-    'pond': [(1, 0), (2, 0), (0, 1), (3, 1), (0, 2), (3, 2), (1, 3), (2, 3)],
     'ship': [(0, 0), (1, 0), (0, 1), (2, 1), (1, 2), (2, 2)],
     'barge': [(1, 0), (2, 0), (0, 1), (3, 1), (0, 2), (3, 2), (1, 3), (2, 3)],
 }
@@ -136,9 +138,9 @@ class GameOfLife:
     
     def inject_pattern(self, pattern_name):
         """Inject an interesting pattern at a random location"""
-        # Check if it's a still life or regular pattern
-        if pattern_name in STILL_LIFES:
-            pattern = STILL_LIFES[pattern_name]
+        # Check if it's a static life or regular pattern
+        if pattern_name in STATIC_LIFE:
+            pattern = STATIC_LIFE[pattern_name]
         else:
             pattern = PATTERNS[pattern_name]
         
@@ -186,13 +188,13 @@ class GameOfLife:
         if self.is_stagnant():
             self.stagnant_count += 1
             if self.stagnant_count >= 5:  # If stagnant for 5+ generations
-                # 40% chance to add still lifes, 60% chance for moving patterns
-                if random.random() < 0.4:
-                    # Add 1-3 still life patterns to create obstacles/targets
-                    num_still_lifes = random.randint(1, 3)
-                    still_life_names = list(STILL_LIFES.keys())
-                    for _ in range(num_still_lifes):
-                        pattern = random.choice(still_life_names)
+                # 40% chance to add static life patterns, 60% chance for moving patterns
+                if random.random() < STATIC_LIFE_PROBABILITY:
+                    # Add 1-3 static life patterns to create obstacles/targets
+                    num_static_lifes = random.randint(1, 3)
+                    static_life_names = list(STATIC_LIFE.keys())
+                    for _ in range(num_static_lifes):
+                        pattern = random.choice(static_life_names)
                         self.inject_pattern(pattern)
                 
                 # Add a moving or oscillating pattern
