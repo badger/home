@@ -45,10 +45,21 @@ def get_connection_details(user):
         return True
 
     try:
+        # Prefer a local 'secrets.py' placed at the badge repository root ("/badge/secrets.py")
+        # Insert '/' (root of the badge filesystem) at the front of sys.path so a local
+        # `secrets.py` can be imported on the device. Clean up sys.path afterwards.
         sys.path.insert(0, "/")
-        from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
-        sys.path.pop(0)
+        try:
+            from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
+        finally:
+            # ensure we remove the path we inserted even if import fails
+            try:
+                sys.path.pop(0)
+            except Exception:
+                pass
     except ImportError:
+        # If the user hasn't created a secrets.py file, fall back to None so
+        # the rest of the app can detect missing credentials and show helpful UI.
         WIFI_PASSWORD = None
         WIFI_SSID = None
         GITHUB_USERNAME = None
@@ -94,10 +105,16 @@ def wlan_start():
 
     return True
 
-
-def async_fetch_to_disk(url, file, force_update=False):
+def async_fetch_to_disk(url, file, force_update=False, timeout_ms=25000):
+    """
+    Fetch a URL to disk as a generator, yielding between chunks so callers
+    can interleave UI updates. If timeout_ms is provided, abort the fetch
+    after that many milliseconds have elapsed (based on io.ticks).
+    """
     if not force_update and file_exists(file):
         return
+
+    start_ticks = io.ticks
     try:
         # Grab the data
         response = urlopen(url, headers={"User-Agent": "GitHub Universe Badge 2025"})
@@ -105,6 +122,10 @@ def async_fetch_to_disk(url, file, force_update=False):
         total = 0
         with open(file, "wb") as f:
             while True:
+                # enforce timeout if requested
+                if timeout_ms is not None and (io.ticks - start_ticks) > timeout_ms:
+                    raise TimeoutError(f"Fetch timed out after {timeout_ms} ms")
+
                 if (length := response.readinto(data)) == 0:
                     break
                 total += length
@@ -114,6 +135,15 @@ def async_fetch_to_disk(url, file, force_update=False):
         del data
         del response
     except Exception as e:
+        # Clean up a partial file if present
+        try:
+            if file_exists(file):
+                os.remove(file)
+        except Exception:
+            pass
+        # Wrap timeout specifically so callers can react differently if needed
+        if isinstance(e, TimeoutError):
+            raise
         raise RuntimeError(f"Fetch from {url} to {file} failed. {e}") from e
 
 
@@ -131,16 +161,63 @@ def get_user_data(user, force_update=False):
 
 def get_contrib_data(user, force_update=False):
     message(f"Getting contribution data for {user.handle}...")
-    yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update)
-    r = json.loads(open("/contrib_data.json", "r").read())
-    user.contribs = r["total_contributions"]
+    # Attempt the network fetch, but handle any network errors so the UI
+    # doesn't get stuck if the endpoint is unreachable or returns invalid data.
+    try:
+        # 15 second timeout for contribution fetch to avoid blocking forever
+        yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update, timeout_ms=15000)
+    except TimeoutError as e:
+        message(f"Contrib fetch timed out: {e}")
+        user.contribs = 0
+        user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
+        return
+    except Exception as e:
+        message(f"Failed to fetch contrib data: {e}")
+        # Provide safe defaults so the rest of the UI can continue.
+        user.contribs = 0
+        user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
+        return
+
+    try:
+        r = json.loads(open("/contrib_data.json", "r").read())
+    except Exception as e:
+        message(f"Failed to parse contrib JSON: {e}")
+        user.contribs = 0
+        user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
+        return
+
+    # Safely extract expected fields from the JSON, using defaults if missing.
+    total = r.get("total_contributions")
+    weeks = r.get("weeks") or []
+
+    # Build an empty 7x53 grid and only populate up to available weeks
+    max_weeks = min(len(weeks), 53)
     user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
-    for w, week in enumerate(r["weeks"]):
-        for day in range(7):
+
+    # Populate grid and compute total if missing or zero
+    computed_total = 0
+    for w in range(max_weeks):
+        week = weeks[w] or {}
+        days = week.get("contribution_days") or []
+        for d in range(min(len(days), 7)):
+            day = days[d] or {}
+            # contribution level (for color) and count (for totals)
+            level = day.get("level", 0)
+            count = day.get("count", 0)
+            # ensure level is a valid index into User.levels
             try:
-                user.contribution_data[day][w] = week["contribution_days"][day]["level"]
-            except IndexError:
-                pass
+                lvl_index = int(level)
+                if lvl_index < 0 or lvl_index >= len(User.levels):
+                    lvl_index = 0
+            except Exception:
+                lvl_index = 0
+            user.contribution_data[d][w] = lvl_index
+            computed_total += int(count)
+
+    if total is None or total == 0:
+        user.contribs = computed_total
+    else:
+        user.contribs = int(total)
     del r
     gc.collect()
 
@@ -192,7 +269,8 @@ class User:
         self._force_update = force_update
 
     def draw_stat(self, title, value, x, y):
-        screen.brush = white if value else faded
+        # value may be 0; treat None as missing
+        screen.brush = white if value is not None else faded
         screen.font = large_font
         screen.text(str(value) if value is not None else str(fake_number()), x, y)
         screen.font = small_font
@@ -227,12 +305,14 @@ class User:
         handle = self.handle
 
         # use the handle area to show loading progress if not everything is ready
-        if (not self.handle or not self.avatar or not self.contribs) and connected:
+        # Use explicit None checks so legitimate zero values (e.g. 0 contribs)
+        # don't prevent later tasks (like fetching an avatar) from running.
+        if ((self.handle is None) or (self.avatar is None) or (self.contribs is None)) and connected:
             if not self.name:
                 handle = "fetching user data..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
-            elif not self.contribs:
+            elif self.contribs is None:
                 handle = "fetching contribs..."
                 if not self._task:
                     self._task = get_contrib_data(self, self._force_update)
