@@ -231,8 +231,9 @@ def generate_chinese_text_url(text, width=150, height=20, font_size=14):
         # Using shields.io static badge API
         # Automatically uses white text on black background for good contrast
         # No account or API key needed - completely free
+        # Add .png extension to force PNG format instead of SVG
         
-        url = f"https://img.shields.io/static/v1?"
+        url = f"https://img.shields.io/static/v1.png?"
         url += f"label=&message={text_encoded}"
         url += f"&color=000000&labelColor=000000&style=flat-square"
         
