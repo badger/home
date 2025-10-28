@@ -1,21 +1,81 @@
 from badgeware import screen, PixelFont, shapes, brushes, io, run, Matrix
 import random
 
-# GitHub contribution graph colors (dark mode) - based on neighbor count
-NEIGHBOR_COLORS = [
-    (13, 17, 23),      # 0 neighbors - background (dead cell)
-    (14, 68, 41),      # 1 neighbor - very dark green
-    (0, 109, 50),      # 2 neighbors - dark green
-    (25, 108, 46),     # 3 neighbors - #196c2e
-    (38, 166, 65),     # 4 neighbors - medium green
-    (46, 160, 67),     # 5 neighbors - #2ea043
-    (57, 211, 83),     # 6 neighbors - bright green
-    (86, 211, 100),    # 7 neighbors - #56d364
-    (120, 255, 140),   # 8 neighbors - brightest green
-]
+
+# Multiple color palettes for neighbor count
+NEIGHBOR_PALETTES = {
+    "github_blue": [
+        (13, 17, 23),      # 0 neighbors - background (dead cell)
+        (20, 30, 60),      # 1 neighbor - very dark blue
+        (30, 50, 100),     # 2 neighbors - dark blue
+        (40, 70, 140),     # 3 neighbors - medium dark blue
+        (60, 100, 180),    # 4 neighbors - medium blue
+        (80, 130, 220),    # 5 neighbors - lighter blue
+        (110, 160, 255),   # 6 neighbors - bright blue
+        (150, 190, 255),   # 7 neighbors - lighter bright blue
+        (200, 220, 255),   # 8 neighbors - lightest blue
+    ],
+    "github_light": [
+        (255, 255, 255),   # 0 neighbors - background (dead cell)
+        (198, 228, 139),   # 1 neighbor - very light green
+        (123, 201, 111),   # 2 neighbors - light green
+        (35, 154, 59),     # 3 neighbors - medium green
+        (25, 97, 39),      # 4 neighbors - dark green
+        (15, 70, 30),      # 5 neighbors - darker green
+        (0, 109, 50),      # 6 neighbors - even darker
+        (14, 68, 41),      # 7 neighbors - very dark
+        (13, 17, 23),      # 8 neighbors - darkest
+    ],
+    "classic": [
+        (0, 0, 0),         # 0 neighbors - black
+        (50, 50, 200),     # 1 neighbor - blue
+        (50, 200, 50),     # 2 neighbors - green
+        (200, 200, 50),    # 3 neighbors - yellow
+        (200, 50, 50),     # 4 neighbors - red
+        (200, 50, 200),    # 5 neighbors - magenta
+        (50, 200, 200),    # 6 neighbors - cyan
+        (150, 150, 150),   # 7 neighbors - gray
+        (255, 255, 255),   # 8 neighbors - white
+    ],
+    "pastel": [
+        (245, 245, 245),   # 0 neighbors - pastel gray
+        (255, 179, 186),   # 1 neighbor - pastel pink
+        (255, 223, 186),   # 2 neighbors - pastel orange
+        (255, 255, 186),   # 3 neighbors - pastel yellow
+        (186, 255, 201),   # 4 neighbors - pastel green
+        (186, 225, 255),   # 5 neighbors - pastel blue
+        (201, 186, 255),   # 6 neighbors - pastel purple
+        (255, 186, 255),   # 7 neighbors - pastel magenta
+        (220, 220, 220),   # 8 neighbors - pastel light gray
+    ],
+    "black_white": [
+        (0, 0, 0),         # 0 neighbors - black
+        (32, 32, 32),      # 1 neighbor - very dark gray
+        (64, 64, 64),      # 2 neighbors - dark gray
+        (96, 96, 96),      # 3 neighbors - gray
+        (128, 128, 128),   # 4 neighbors - medium gray
+        (160, 160, 160),   # 5 neighbors - light gray
+        (192, 192, 192),   # 6 neighbors - lighter gray
+        (224, 224, 224),   # 7 neighbors - very light gray
+        (255, 255, 255),   # 8 neighbors - white
+    ],
+}
+
+# Select active palette
+ACTIVE_PALETTE = "github_blue"
+def set_palette(name):
+    global ACTIVE_PALETTE, NEIGHBOR_BRUSHES
+    if name in NEIGHBOR_PALETTES:
+        ACTIVE_PALETTE = name
+        NEIGHBOR_BRUSHES = [brushes.color(*color) for color in NEIGHBOR_PALETTES[ACTIVE_PALETTE]]
+    else:
+        raise ValueError(f"Palette '{name}' not found.")
+
+NEIGHBOR_COLORS = NEIGHBOR_PALETTES[ACTIVE_PALETTE]
 
 BACKGROUND_COLOR = (13, 17, 23)  # Dark GitHub background
 TEXT_COLOR = (255, 255, 255)
+
 
 # Pre-create brushes for performance
 NEIGHBOR_BRUSHES = [brushes.color(*color) for color in NEIGHBOR_COLORS]
@@ -225,11 +285,19 @@ def update():
     screen.brush = BACKGROUND_BRUSH
     screen.clear()
     
+
     # Handle input
     if io.BUTTON_B in io.pressed:
-        game.randomize()
-        show_info = True
-        info_timer = io.ticks + 1000  # Show "Regenerated" for 1 second
+        if show_info and io.ticks < info_timer:
+            # Cycle palette
+            palette_names = list(NEIGHBOR_PALETTES.keys())
+            current_index = palette_names.index(ACTIVE_PALETTE)
+            next_index = (current_index + 1) % len(palette_names)
+            set_palette(palette_names[next_index])
+        else:
+            game.randomize()
+            show_info = True
+            info_timer = io.ticks + 1000  # Show "Regenerated" for 1 second
     
     # Update game logic
     if io.ticks - game.last_update > game.update_interval:
