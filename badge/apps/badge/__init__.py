@@ -167,10 +167,10 @@ def get_user_data(user, force_update=False):
     message(f"Getting user data for {user.handle}...")
     yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), "/user_data.json", force_update)
     r = json.loads(open("/user_data.json", "r").read())
-    user.name = r["name"]
-    user.handle = r["login"]
-    user.followers = r["followers"]
-    user.repos = r["public_repos"]
+    user.name = r.get("name", "Unknown User")
+    user.handle = r.get("login", "Unknown Handle")
+    user.followers = r.get("followers", 0)
+    user.repos = r.get("public_repos", 0)
     del r
     gc.collect()
 
@@ -179,12 +179,12 @@ def get_contrib_data(user, force_update=False):
     message(f"Getting contribution data for {user.handle}...")
     yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update)
     r = json.loads(open("/contrib_data.json", "r").read())
-    user.contribs = r["total_contributions"]
+    user.contribs = r.get("total_contributions", 0)
     user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
-    for w, week in enumerate(r["weeks"]):
+    for w, week in enumerate(r.get("weeks", [])):
         for day in range(7):
             try:
-                user.contribution_data[day][w] = week["contribution_days"][day]["level"]
+                user.contribution_data[day][w] = week.get("contribution_days", [])[day].get("level", 0)
             except IndexError:
                 pass
     del r
