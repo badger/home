@@ -294,10 +294,9 @@ def update():
             current_index = palette_names.index(ACTIVE_PALETTE)
             next_index = (current_index + 1) % len(palette_names)
             set_palette(palette_names[next_index])
-        else:
-            game.randomize()
-            show_info = True
-            info_timer = io.ticks + 1000  # Show "Regenerated" for 1 second
+        game.randomize()
+        show_info = True
+        info_timer = io.ticks + 1000  # Show "Regenerated" for 1 second
     
     # Update game logic
     if io.ticks - game.last_update > game.update_interval:
