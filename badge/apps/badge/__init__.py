@@ -178,12 +178,15 @@ def get_user_data(user, force_update=False):
         chinese_url = generate_chinese_text_url(user.name)
         if chinese_url:
             try:
+                message(f"URL: {chinese_url}")
                 yield from async_fetch_to_disk(chinese_url, "/chinese_name.png", force_update)
                 user.chinese_name_img = Image.load("/chinese_name.png")
-                message("Chinese name image loaded")
+                message("Chinese name image loaded successfully")
             except Exception as e:
                 message(f"Failed to load Chinese name: {e}")
-                user.chinese_name_img = None
+                # Set to False (not None) to indicate we tried and failed
+                # This prevents infinite retry loop
+                user.chinese_name_img = False
     
     del r
     gc.collect()
@@ -228,12 +231,12 @@ def generate_chinese_text_url(text, width=150, height=20, font_size=14):
         from urllib.parse import quote
         text_encoded = quote(text)
         
-        # Using shields.io static badge API
+        # Using shields.io raster service for PNG format
+        # Direct URL to avoid redirect issues with MicroPython's urlopen
         # Automatically uses white text on black background for good contrast
         # No account or API key needed - completely free
-        # Add .png extension to force PNG format instead of SVG
         
-        url = f"https://img.shields.io/static/v1.png?"
+        url = f"https://raster.shields.io/static/v1.png?"
         url += f"label=&message={text_encoded}"
         url += f"&color=000000&labelColor=000000&style=flat-square"
         
@@ -321,7 +324,9 @@ class User:
                 handle = "fetching user data..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
-            elif self.name and has_chinese_characters(self.name) and not self.chinese_name_img:
+            elif self.name and has_chinese_characters(self.name) and self.chinese_name_img is None:
+                # Only show "fetching chinese..." if we haven't tried yet (None)
+                # If it's False, we already tried and failed, so skip
                 handle = "fetching chinese..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
@@ -350,12 +355,12 @@ class User:
         screen.text(handle, 80 - (w / 2), 2)
 
         # draw name (use image if Chinese characters, otherwise use text)
-        if self.chinese_name_img:
+        if self.chinese_name_img and self.chinese_name_img is not False:
             # Display Chinese name as image, centered
             img_w = self.chinese_name_img.width
             screen.blit(self.chinese_name_img, 80 - (img_w / 2), 16)
         else:
-            # Display name as text for non-Chinese names
+            # Display name as text for non-Chinese names or if image fetch failed
             screen.font = small_font
             screen.brush = phosphor
             name = placeholder_if_none(self.name)
