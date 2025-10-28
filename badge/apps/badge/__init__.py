@@ -206,11 +206,8 @@ def has_unsupported_chars(text):
     if not text:
         return False
     try:
-        for char in text:
-            if ord(char) > 255:
-                return True
-        return False
-    except:
+        return any(ord(char) > 255 for char in text)
+    except Exception:
         return True
 
 
