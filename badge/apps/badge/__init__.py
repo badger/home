@@ -28,6 +28,7 @@ DETAILS_URL = "https://api.github.com/users/{user}"
 
 WIFI_PASSWORD = None
 WIFI_SSID = None
+CLOUDINARY_CLOUD_NAME = "demo"
 
 wlan = None
 connected = False
@@ -39,7 +40,7 @@ def message(text):
 
 
 def get_connection_details(user):
-    global WIFI_PASSWORD, WIFI_SSID
+    global WIFI_PASSWORD, WIFI_SSID, CLOUDINARY_CLOUD_NAME
 
     if WIFI_SSID is not None and user.handle is not None:
         return True
@@ -47,6 +48,11 @@ def get_connection_details(user):
     try:
         sys.path.insert(0, "/")
         from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
+        try:
+            from secrets import CLOUDINARY_CLOUD_NAME as cloud_name
+            CLOUDINARY_CLOUD_NAME = cloud_name
+        except ImportError:
+            pass  # Use default "demo"
         sys.path.pop(0)
     except ImportError:
         WIFI_PASSWORD = None
@@ -171,6 +177,20 @@ def get_user_data(user, force_update=False):
     user.handle = r["login"]
     user.followers = r["followers"]
     user.repos = r["public_repos"]
+    
+    # Check if name contains Chinese characters and fetch rendered image
+    if user.name and has_chinese_characters(user.name):
+        message(f"Rendering Chinese name: {user.name}")
+        chinese_url = generate_chinese_text_url(user.name)
+        if chinese_url:
+            try:
+                yield from async_fetch_to_disk(chinese_url, "/chinese_name.png", force_update)
+                user.chinese_name_img = Image.load("/chinese_name.png")
+                message("Chinese name image loaded")
+            except Exception as e:
+                message(f"Failed to load Chinese name: {e}")
+                user.chinese_name_img = None
+    
     del r
     gc.collect()
 
@@ -199,6 +219,34 @@ def get_avatar(user, force_update=False):
 
 def fake_number():
     return random.randint(10000, 99999)
+
+
+def has_chinese_characters(text):
+    """Check if text contains Chinese characters"""
+    if not text:
+        return False
+    return any('\u4e00' <= char <= '\u9fff' for char in text)
+
+
+def generate_chinese_text_url(text, width=150, height=20, font_size=14):
+    """Generate Cloudinary URL for rendering Chinese text as image"""
+    try:
+        from urllib.parse import quote
+        text_encoded = quote(text)
+        
+        # Using Cloudinary's text overlay feature with a CJK-compatible font
+        # Note: This uses Arial Unicode MS which supports Chinese
+        # Cloud name is loaded from secrets.py (defaults to "demo")
+        
+        url = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/"
+        url += f"w_{width},h_{height},c_fit,b_rgb:000000/"
+        url += f"l_text:Arial%20Unicode%20MS_{font_size}:{text_encoded},co_rgb:ebf5ff/"
+        url += "blank.png"
+        
+        return url
+    except Exception as e:
+        print(f"Error generating Cloudinary URL: {e}")
+        return None
 
 
 def placeholder_if_none(text):
@@ -234,6 +282,7 @@ class User:
         self.contribution_data = None
         self.repos = None
         self.avatar = None
+        self.chinese_name_img = None
         self._task = None
         self._force_update = force_update
 
@@ -278,6 +327,10 @@ class User:
                 handle = "fetching user data..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
+            elif self.name and has_chinese_characters(self.name) and not self.chinese_name_img:
+                handle = "rendering chinese..."
+                if not self._task:
+                    self._task = get_user_data(self, self._force_update)
             elif not self.contribs:
                 handle = "fetching contribs..."
                 if not self._task:
@@ -302,12 +355,18 @@ class User:
         screen.brush = white
         screen.text(handle, 80 - (w / 2), 2)
 
-        # draw name
-        screen.font = small_font
-        screen.brush = phosphor
-        name = placeholder_if_none(self.name)
-        w, _ = screen.measure_text(name)
-        screen.text(name, 80 - (w / 2), 16)
+        # draw name (use image if Chinese characters, otherwise use text)
+        if self.chinese_name_img:
+            # Display Chinese name as image, centered
+            img_w = self.chinese_name_img.width
+            screen.blit(self.chinese_name_img, 80 - (img_w / 2), 16)
+        else:
+            # Display name as text for non-Chinese names
+            screen.font = small_font
+            screen.brush = phosphor
+            name = placeholder_if_none(self.name)
+            w, _ = screen.measure_text(name)
+            screen.text(name, 80 - (w / 2), 16)
 
         # draw statistics
         self.draw_stat("followers", self.followers, 88, 33)
