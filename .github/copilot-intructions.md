@@ -1,4 +1,4 @@
-# Copilot Instructions for Tufty 2360 Development
+# Copilot Instructions for Tufty 2350 Development
 
 This project is for developing applications on a U25 Edition GitHub hackable conference badge - an RP2350-based microprocessor running MicroPython with a 320x240 TFT color display.  The board is a custom version of the Pimoroni Tufty 2350 with added IR sensors.
 
