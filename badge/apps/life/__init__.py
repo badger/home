@@ -63,6 +63,18 @@ PATTERNS = {
     'acorn': [(1, 0), (3, 1), (0, 2), (1, 2), (4, 2), (5, 2), (6, 2)],  # Takes 5206 generations to stabilize
 }
 
+# Still life patterns (static, don't change)
+STILL_LIFES = {
+    'block': [(0, 0), (1, 0), (0, 1), (1, 1)],
+    'beehive': [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
+    'loaf': [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
+    'boat': [(0, 0), (1, 0), (0, 1), (2, 1), (1, 2)],
+    'tub': [(1, 0), (0, 1), (2, 1), (1, 2)],
+    'pond': [(1, 0), (2, 0), (0, 1), (3, 1), (0, 2), (3, 2), (1, 3), (2, 3)],
+    'ship': [(0, 0), (1, 0), (0, 1), (2, 1), (1, 2), (2, 2)],
+    'barge': [(1, 0), (2, 0), (0, 1), (3, 1), (0, 2), (3, 2), (1, 3), (2, 3)],
+}
+
 class GameOfLife:
     def __init__(self):
         self.grid = [[False for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
@@ -70,10 +82,12 @@ class GameOfLife:
         self.neighbor_counts = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.generation = 0
         self.last_update = 0
-        self.update_interval = 200  # milliseconds
+        self.update_interval = 100  # milliseconds
         self.history = []  # Store recent grid states for pattern detection
         self.history_size = 10  # Check last 10 states
         self.stagnant_count = 0  # How many generations have been static/oscillating
+        self.last_regen = 0  # Track time of last full regeneration
+        self.regen_interval = 600000  # 10 minutes in milliseconds
         self.randomize()
     
     def randomize(self):
@@ -84,6 +98,7 @@ class GameOfLife:
         self.generation = 0
         self.history = []
         self.stagnant_count = 0
+        self.last_regen = io.ticks
         self.calculate_neighbors()
     
     def count_neighbors(self, x, y):
@@ -121,7 +136,11 @@ class GameOfLife:
     
     def inject_pattern(self, pattern_name):
         """Inject an interesting pattern at a random location"""
-        pattern = PATTERNS[pattern_name]
+        # Check if it's a still life or regular pattern
+        if pattern_name in STILL_LIFES:
+            pattern = STILL_LIFES[pattern_name]
+        else:
+            pattern = PATTERNS[pattern_name]
         
         # Find pattern bounds
         max_x = max(p[0] for p in pattern)
@@ -167,8 +186,16 @@ class GameOfLife:
         if self.is_stagnant():
             self.stagnant_count += 1
             if self.stagnant_count >= 5:  # If stagnant for 5+ generations
-                # Choose a random interesting pattern with weights
-                # More likely to pick gliders, spaceships, and interesting patterns
+                # 40% chance to add still lifes, 60% chance for moving patterns
+                if random.random() < 0.4:
+                    # Add 1-3 still life patterns to create obstacles/targets
+                    num_still_lifes = random.randint(1, 3)
+                    still_life_names = list(STILL_LIFES.keys())
+                    for _ in range(num_still_lifes):
+                        pattern = random.choice(still_life_names)
+                        self.inject_pattern(pattern)
+                
+                # Add a moving or oscillating pattern
                 pattern_pool = [
                     'glider', 'glider', 'glider',  # 3x weight
                     'lwss', 'lwss', 'lwss',  # 3x weight
@@ -230,6 +257,11 @@ def update():
         game.randomize()
         show_info = True
         info_timer = io.ticks + 1000  # Show "Regenerated" for 1 second
+    
+    # Check for auto-regeneration every 10 minutes
+    if io.ticks - game.last_regen > game.regen_interval:
+        game.randomize()
+        # Don't show message for automatic regeneration
     
     # Update game logic
     if io.ticks - game.last_update > game.update_interval:
