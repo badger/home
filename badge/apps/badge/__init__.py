@@ -80,19 +80,65 @@ def wlan_start():
         if wlan.isconnected():
             return True
 
-        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+    # attempt to find the SSID by scanning; some APs may be hidden intermittently
+    try:
+        ssid_found = False
+        try:
+            scans = wlan.scan()
+        except Exception:
+            scans = []
+
+        for s in scans:
+            # s[0] is SSID (bytes or str)
+            ss = s[0]
+            if isinstance(ss, (bytes, bytearray)):
+                try:
+                    ss = ss.decode("utf-8", "ignore")
+                except Exception:
+                    ss = str(ss)
+            if ss == WIFI_SSID:
+                ssid_found = True
+                break
+
+        if not ssid_found:
+            # not found yet; if still within timeout, keep trying on subsequent calls
+            if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+                # optionally print once every few seconds to avoid spamming
+                if (io.ticks - ticks_start) % 3000 < 50:
+                    print("SSID not visible yet; rescanning...")
+                # return True to indicate we're still attempting to connect (in-progress)
+                return True
+            else:
+                # timed out
+                return False
+
+        # SSID is visible; attempt to connect (or re-attempt)
+        try:
+            wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+        except Exception:
+            # connection initiation failed; we'll retry while still within timeout
+            if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+                return True
+            return False
 
         print("Connecting to WiFi...")
 
-    connected = wlan.isconnected()
+        # update connected state
+        connected = wlan.isconnected()
 
-    if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+        # if connected, return True; otherwise indicate in-progress until timeout
         if connected:
             return True
-    elif not connected:
+        if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+            return True
         return False
-
-    return True
+    except Exception as e:
+        # on unexpected errors, don't crash the UI; report and return False
+        try:
+            print("wlan_start error:", e)
+        except Exception:
+            pass
+        return False
 
 
 def async_fetch_to_disk(url, file, force_update=False):
@@ -245,6 +291,9 @@ class User:
                 next(self._task)
             except StopIteration:
                 self._task = None
+            except:
+                self._task = None
+                handle = "fetch error"
 
         if not connected:
             handle = "connecting..."
