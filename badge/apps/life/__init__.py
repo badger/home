@@ -1,7 +1,4 @@
-import sys
-import os
-
-from badgeware import screen, PixelFont, shapes, brushes, io, run
+from badgeware import screen, PixelFont, shapes, brushes, io, run, Matrix
 import random
 
 # GitHub contribution graph colors (dark mode) - based on neighbor count
@@ -89,6 +86,25 @@ class GameOfLife:
         self.stagnant_count = 0
         self.calculate_neighbors()
     
+    def count_neighbors(self, x, y):
+        """Count alive neighbors for a given cell position"""
+        y_prev = (y - 1) % GRID_HEIGHT
+        y_next = (y + 1) % GRID_HEIGHT
+        x_prev = (x - 1) % GRID_WIDTH
+        x_next = (x + 1) % GRID_WIDTH
+        
+        count = 0
+        if self.grid[y_prev][x_prev]: count += 1
+        if self.grid[y_prev][x]: count += 1
+        if self.grid[y_prev][x_next]: count += 1
+        if self.grid[y][x_prev]: count += 1
+        if self.grid[y][x_next]: count += 1
+        if self.grid[y_next][x_prev]: count += 1
+        if self.grid[y_next][x]: count += 1
+        if self.grid[y_next][x_next]: count += 1
+        
+        return count
+    
     def get_grid_hash(self):
         """Create a hashable representation of current grid state"""
         return tuple(tuple(row) for row in self.grid)
@@ -131,22 +147,8 @@ class GameOfLife:
         # First pass: count neighbors and apply rules
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
-                # Count neighbors inline
-                count = 0
-                y_prev = (y - 1) % GRID_HEIGHT
-                y_next = (y + 1) % GRID_HEIGHT
-                x_prev = (x - 1) % GRID_WIDTH
-                x_next = (x + 1) % GRID_WIDTH
-                
-                # Unrolled loop for speed (avoid nested loops)
-                if self.grid[y_prev][x_prev]: count += 1
-                if self.grid[y_prev][x]: count += 1
-                if self.grid[y_prev][x_next]: count += 1
-                if self.grid[y][x_prev]: count += 1
-                if self.grid[y][x_next]: count += 1
-                if self.grid[y_next][x_prev]: count += 1
-                if self.grid[y_next][x]: count += 1
-                if self.grid[y_next][x_next]: count += 1
+                # Count neighbors using helper method
+                count = self.count_neighbors(x, y)
                 
                 # Apply Conway's rules
                 is_alive = self.grid[y][x]
@@ -189,49 +191,18 @@ class GameOfLife:
         
         # Second pass: calculate neighbor counts for the NEW grid state (for coloring)
         for y in range(GRID_HEIGHT):
-            y_prev = (y - 1) % GRID_HEIGHT
-            y_next = (y + 1) % GRID_HEIGHT
             for x in range(GRID_WIDTH):
-                x_prev = (x - 1) % GRID_WIDTH
-                x_next = (x + 1) % GRID_WIDTH
-                
-                count = 0
-                if self.grid[y_prev][x_prev]: count += 1
-                if self.grid[y_prev][x]: count += 1
-                if self.grid[y_prev][x_next]: count += 1
-                if self.grid[y][x_prev]: count += 1
-                if self.grid[y][x_next]: count += 1
-                if self.grid[y_next][x_prev]: count += 1
-                if self.grid[y_next][x]: count += 1
-                if self.grid[y_next][x_next]: count += 1
-                
-                self.neighbor_counts[y][x] = count
+                self.neighbor_counts[y][x] = self.count_neighbors(x, y)
     
     def calculate_neighbors(self):
         """Calculate neighbor counts for all cells (used only on init)"""
         for y in range(GRID_HEIGHT):
-            y_prev = (y - 1) % GRID_HEIGHT
-            y_next = (y + 1) % GRID_HEIGHT
             for x in range(GRID_WIDTH):
-                x_prev = (x - 1) % GRID_WIDTH
-                x_next = (x + 1) % GRID_WIDTH
-                
-                count = 0
-                if self.grid[y_prev][x_prev]: count += 1
-                if self.grid[y_prev][x]: count += 1
-                if self.grid[y_prev][x_next]: count += 1
-                if self.grid[y][x_prev]: count += 1
-                if self.grid[y][x_next]: count += 1
-                if self.grid[y_next][x_prev]: count += 1
-                if self.grid[y_next][x]: count += 1
-                if self.grid[y_next][x_next]: count += 1
-                
-                self.neighbor_counts[y][x] = count
+                self.neighbor_counts[y][x] = self.count_neighbors(x, y)
     
     def draw(self):
         """Draw the grid with colors based on neighbor count"""
         # Use pre-created shape and brushes for performance
-        from badgeware import Matrix
         for y in range(GRID_HEIGHT):
             py = y * GRID_SIZE
             for x in range(GRID_WIDTH):
