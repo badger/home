@@ -51,9 +51,12 @@ state = {
 
 # Obstacle types: (image, type, height_offset)
 # type: "ground" (jump over) or "air" (duck under)
-# Branch at 16 means: branch_y = 90-16 = 74, branch_bottom = 74+8 = 82
-# Standing player: y=74, top=74, height=16, so top of head at 74 (HITS)
-# Ducking player: y=74, top=82, height=8, so top of head at 82 (CLEARS)
+# Coordinate system: y = top of sprite. Collision boxes use margins and offsets.
+# Air obstacles: branch placed with bottom at GROUND_Y - AIR_GAP (90 - 8 = 82)
+# Standing player: player_y = 74 (sprite top), collision box top = 74 + COLLISION_Y_MARGIN = 76,
+#   collision box height = 12, so collision box bottom = 88 (HITS branch at 82)
+# Ducking player: player_y = 74 (sprite top), collision box top = 74 + DUCKING_Y_OFFSET = 84,
+#   collision box height = 4, so collision box bottom = 88 (CLEARS branch at 82)
 OBSTACLE_TYPES = [
     (log_img, "ground", 12),
     (creature_img, "ground", 12),
