@@ -14,7 +14,7 @@ AIR_GAP = 8  # Vertical gap above ground that the branch bottom sits at (duck to
 
 # Collision box adjustments for forgiving gameplay
 COLLISION_MARGIN = 2  # Pixels reduced from each side of collision boxes
-COLLISION_Y_MARGIN = 2  # Y-offset for standing player collision box
+COLLISION_Y_MARGIN = 2  # Y-margin reducing collision box height from top and bottom
 DUCKING_Y_OFFSET = 10  # Y-offset for ducking player collision box
 DUCKING_SPRITE_Y_OFFSET = 8  # Y-offset for rendering ducking sprite (visual position)
 PLAYER_COLLISION_WIDTH = 16 - (COLLISION_MARGIN * 2)  # Player collision box width (12)
