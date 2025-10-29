@@ -6,11 +6,7 @@ os.chdir("/system/apps/copilot-cli-loop")
 
 from badgeware import Image, screen, run, io
 
-# Load all frames
-frames = []
-for i in range(1, 120):  # 119 frames total
-    frame_file = f"frames/frame_{i:04d}.png"
-    frames.append(Image.load(frame_file))
+
 
 frame_index = 0
 last_frame_time = 0
@@ -21,11 +17,14 @@ def update():
     
     # Update frame every ~33ms (30 fps)
     if io.ticks - last_frame_time >= FRAME_DURATION:
-        frame_index = (frame_index + 1) % len(frames)
+        frame_index = (frame_index + 1) % 119
+        if frame_index == 0:
+            frame_index = 1 
         last_frame_time = io.ticks
-    
+        
     # Draw the current frame
-    screen.blit(frames[frame_index], 0, 0)
-
+    screen.blit(Image.load(f"frames/frame_{frame_index:04d}.png"), 0, 0)
+    
 if __name__ == "__main__":
     run(update)
+
