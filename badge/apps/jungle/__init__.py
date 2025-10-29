@@ -11,6 +11,7 @@ OBSTACLE_SPAWN_MIN = 70
 OBSTACLE_SPAWN_MAX = 120
 OBSTACLE_REMOVAL_THRESHOLD = -50  # X position at which off-screen obstacles are removed
 AIR_GAP = 8  # Vertical gap above ground that the branch bottom sits at (duck to clear)
+GRASS_PATTERN_WIDTH = 8  # Width of the repeating grass pattern
 
 # Collision box adjustments for forgiving gameplay
 COLLISION_MARGIN = 2  # Pixels reduced from each side of collision boxes
@@ -222,8 +223,8 @@ def draw_game():
 
     # Draw grass pattern on ground
     screen.brush = GRASS_COLOR
-    for i in range(0, WIDTH, 8):
-        offset = (state["scroll_offset"] + i) % 8
+    for i in range(0, WIDTH, GRASS_PATTERN_WIDTH):
+        offset = (state["scroll_offset"] + i) % GRASS_PATTERN_WIDTH
         screen.draw(shapes.rectangle(i - offset, GROUND_Y, 4, 2))
 
     # Draw obstacles
