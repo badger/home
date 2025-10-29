@@ -223,8 +223,8 @@ def draw_game():
 
     # Draw grass pattern on ground
     screen.brush = GRASS_COLOR
+    offset = state["scroll_offset"] % GRASS_PATTERN_WIDTH
     for i in range(0, WIDTH, GRASS_PATTERN_WIDTH):
-        offset = (state["scroll_offset"] + i) % GRASS_PATTERN_WIDTH
         screen.draw(shapes.rectangle(i - offset, GROUND_Y, 4, 2))
 
     # Draw obstacles
