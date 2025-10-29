@@ -259,4 +259,5 @@ def draw_gameover():
     screen.text(f"Score: {state['score']}", 52, 60)
     screen.text("Press A to restart", 25, 75)
 
-run(update)
+if __name__ == "__main__":
+    run(update)
