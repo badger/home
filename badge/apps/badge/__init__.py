@@ -167,7 +167,7 @@ def get_user_data(user, force_update=False):
     message(f"Getting user data for {user.handle}...")
     yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), "/user_data.json", force_update)
     r = json.loads(open("/user_data.json", "r").read())
-    user.name = r.get("name", user.handle) # Fallback to handle if user does not have a displayName
+    user.name = r.get("name", user.handle) # Fallback to handle if user does not have a name
     user.handle = r["login"]
     user.followers = r["followers"]
     user.repos = r["public_repos"]
