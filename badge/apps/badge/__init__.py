@@ -47,6 +47,7 @@ def get_connection_details(user):
     try:
         sys.path.insert(0, "/")
         from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
+
         sys.path.pop(0)
     except ImportError:
         WIFI_PASSWORD = None
@@ -165,7 +166,9 @@ def async_fetch_to_disk(url, file, force_update=False):
 
 def get_user_data(user, force_update=False):
     message(f"Getting user data for {user.handle}...")
-    yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), "/user_data.json", force_update)
+    yield from async_fetch_to_disk(
+        DETAILS_URL.format(user=user.handle), "/user_data.json", force_update
+    )
     r = json.loads(open("/user_data.json", "r").read())
     user.name = r["name"]
     user.handle = r["login"]
@@ -177,7 +180,9 @@ def get_user_data(user, force_update=False):
 
 def get_contrib_data(user, force_update=False):
     message(f"Getting contribution data for {user.handle}...")
-    yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update)
+    yield from async_fetch_to_disk(
+        CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update
+    )
     r = json.loads(open("/contrib_data.json", "r").read())
     user.contribs = r["total_contributions"]
     user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
@@ -193,7 +198,9 @@ def get_contrib_data(user, force_update=False):
 
 def get_avatar(user, force_update=False):
     message(f"Getting avatar for {user.handle}...")
-    yield from async_fetch_to_disk(USER_AVATAR.format(user=user.handle), "/avatar.png", force_update)
+    yield from async_fetch_to_disk(
+        USER_AVATAR.format(user=user.handle), "/avatar.png", force_update
+    )
     user.avatar = Image.load("/avatar.png")
 
 
@@ -216,10 +223,10 @@ def placeholder_if_none(text):
 
 class User:
     levels = [
-        brushes.color(21 / 2,  27 / 2,  35 / 2),
-        brushes.color(3 / 2,  58 / 2,  22 / 2),
-        brushes.color(25 / 2, 108 / 2,  46 / 2),
-        brushes.color(46 / 2, 160 / 2,  67 / 2),
+        brushes.color(21 / 2, 27 / 2, 35 / 2),
+        brushes.color(3 / 2, 58 / 2, 22 / 2),
+        brushes.color(25 / 2, 108 / 2, 46 / 2),
+        brushes.color(46 / 2, 160 / 2, 67 / 2),
         brushes.color(86 / 2, 211 / 2, 100 / 2),
     ]
 
@@ -249,8 +256,7 @@ class User:
         # draw contribution graph background
         size = 15
         graph_width = 53 * (size + 2)
-        xo = int(-math.sin(io.ticks / 5000) *
-                 ((graph_width - 160) / 2)) + ((graph_width - 160) / 2)
+        xo = int(-math.sin(io.ticks / 5000) * ((graph_width - 160) / 2)) + ((graph_width - 160) / 2)
 
         screen.font = small_font
         rect = shapes.rounded_rectangle(0, 0, size, size, 2)
@@ -322,66 +328,71 @@ class User:
             screen.brush = brushes.color(211, 250, 55, 50)
             for i in range(4):
                 mul = math.sin(io.ticks / 1000) * 14000
-                squircle.transform = Matrix().translate(42, 75).rotate(
-                    (io.ticks + i * mul) / 40).scale(1 + i / 1.3)
+                squircle.transform = (
+                    Matrix().translate(42, 75).rotate((io.ticks + i * mul) / 40).scale(1 + i / 1.3)
+                )
                 screen.draw(squircle)
         else:
             screen.blit(self.avatar, 5, 37)
 
 
 user = User()
-connected = file_exists("/contrib_data.json") and file_exists("/user_data.json") and file_exists("/avatar.png")
+connected = (
+    file_exists("/contrib_data.json")
+    and file_exists("/user_data.json")
+    and file_exists("/avatar.png")
+)
 force_update = False
 
 
 def center_text(text, y):
-  w, h = screen.measure_text(text)
-  screen.text(text, 80 - (w / 2), y)
+    w, h = screen.measure_text(text)
+    screen.text(text, 80 - (w / 2), y)
 
 
 def wrap_text(text, x, y):
-  lines = text.splitlines()
-  for line in lines:
-    _, h = screen.measure_text(line)
-    screen.text(line, x, y)
-    y += h * 0.8
+    lines = text.splitlines()
+    for line in lines:
+        _, h = screen.measure_text(line)
+        screen.text(line, x, y)
+        y += h * 0.8
 
 
 # tell the user where to fill in their details
 def no_secrets_error():
-  screen.font = large_font
-  screen.brush = white
-  center_text("Missing Details!", 5)
+    screen.font = large_font
+    screen.brush = white
+    center_text("Missing Details!", 5)
 
-  screen.text("1:", 10, 23)
-  screen.text("2:", 10, 55)
-  screen.text("3:", 10, 87)
+    screen.text("1:", 10, 23)
+    screen.text("2:", 10, 55)
+    screen.text("3:", 10, 87)
 
-  screen.brush = phosphor
-  screen.font = small_font
-  wrap_text("""Put your badge into\ndisk mode (tap\nRESET twice)""", 30, 24)
+    screen.brush = phosphor
+    screen.font = small_font
+    wrap_text("""Put your badge into\ndisk mode (tap\nRESET twice)""", 30, 24)
 
-  wrap_text("""Edit 'secrets.py' to\nset WiFi details and\nGitHub username.""", 30, 56)
+    wrap_text("""Edit 'secrets.py' to\nset WiFi details and\nGitHub username.""", 30, 56)
 
-  wrap_text("""Reload to see your\nsweet sweet stats!""", 30, 88)
+    wrap_text("""Reload to see your\nsweet sweet stats!""", 30, 88)
 
 
 # tell the user that the connection failed :-(
 def connection_error():
-  screen.font = large_font
-  screen.brush = white
-  center_text("Connection Failed!", 5)
+    screen.font = large_font
+    screen.brush = white
+    center_text("Connection Failed!", 5)
 
-  screen.text("1:", 10, 63)
-  screen.text("2:", 10, 95)
+    screen.text("1:", 10, 63)
+    screen.text("2:", 10, 95)
 
-  screen.brush = phosphor
-  screen.font = small_font
-  wrap_text("""Could not connect\nto the WiFi network.\n\n:-(""", 16, 20)
+    screen.brush = phosphor
+    screen.font = small_font
+    wrap_text("""Could not connect\nto the WiFi network.\n\n:-(""", 16, 20)
 
-  wrap_text("""Edit 'secrets.py' to\nset WiFi details and\nGitHub username.""", 30, 65)
+    wrap_text("""Edit 'secrets.py' to\nset WiFi details and\nGitHub username.""", 30, 65)
 
-  wrap_text("""Reload to see your\nsweet sweet stats!""", 30, 96)
+    wrap_text("""Reload to see your\nsweet sweet stats!""", 30, 96)
 
 
 def update():
@@ -401,7 +412,7 @@ def update():
             user.draw(connected)
         else:  # Connection Failed
             connection_error()
-    else:      # Get Details Failed
+    else:  # Get Details Failed
         no_secrets_error()
 
 

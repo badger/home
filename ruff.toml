@@ -1,0 +1,57 @@
+# Ruff configuration to match existing code style in the badge app
+
+# Set the line length to accommodate existing style (some lines go up to ~95 chars)
+line-length = 100
+
+[lint]
+# Enable essential linting rules while preserving existing formatting style
+select = ["F", "E9"]  # Pyflakes errors and serious syntax errors only
+ignore = [
+    "E501",  # Line too long - allow longer lines to match existing style
+    "E402",  # Module level import not at top of file - needed for sys.path manipulation
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs", 
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[format]
+# Use double quotes for strings (matches existing style).
+quote-style = "double"
+
+# Use spaces for indentation (matches existing style)
+indent-style = "space"
+
+# Respect magic trailing commas (matches existing style).
+skip-magic-trailing-comma = false
+
+# Automatically detect the appropriate line ending.
+line-ending = "auto"
