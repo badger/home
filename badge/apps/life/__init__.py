@@ -4,17 +4,6 @@ import random
 
 # Multiple color palettes for neighbor count
 NEIGHBOR_PALETTES = {
-    "github_blue": [
-        (13, 17, 23),      # 0 neighbors - background (dead cell)
-        (20, 30, 60),      # 1 neighbor - very dark blue
-        (30, 50, 100),     # 2 neighbors - dark blue
-        (40, 70, 140),     # 3 neighbors - medium dark blue
-        (60, 100, 180),    # 4 neighbors - medium blue
-        (80, 130, 220),    # 5 neighbors - lighter blue
-        (110, 160, 255),   # 6 neighbors - bright blue
-        (150, 190, 255),   # 7 neighbors - lighter bright blue
-        (200, 220, 255),   # 8 neighbors - lightest blue
-    ],
     "github_light": [
         (255, 255, 255),   # 0 neighbors - background (dead cell)
         (198, 228, 139),   # 1 neighbor - very light green
@@ -25,6 +14,17 @@ NEIGHBOR_PALETTES = {
         (0, 109, 50),      # 6 neighbors - even darker
         (14, 68, 41),      # 7 neighbors - very dark
         (13, 17, 23),      # 8 neighbors - darkest
+    ],
+    "github_blue": [
+        (13, 17, 23),      # 0 neighbors - background (dead cell)
+        (20, 30, 60),      # 1 neighbor - very dark blue
+        (30, 50, 100),     # 2 neighbors - dark blue
+        (40, 70, 140),     # 3 neighbors - medium dark blue
+        (60, 100, 180),    # 4 neighbors - medium blue
+        (80, 130, 220),    # 5 neighbors - lighter blue
+        (110, 160, 255),   # 6 neighbors - bright blue
+        (150, 190, 255),   # 7 neighbors - lighter bright blue
+        (200, 220, 255),   # 8 neighbors - lightest blue
     ],
     "classic": [
         (0, 0, 0),         # 0 neighbors - black
@@ -62,7 +62,7 @@ NEIGHBOR_PALETTES = {
 }
 
 # Select active palette
-ACTIVE_PALETTE = "github_blue"
+ACTIVE_PALETTE = "github_light"
 def set_palette(name):
     global ACTIVE_PALETTE, NEIGHBOR_BRUSHES
     if name in NEIGHBOR_PALETTES:
