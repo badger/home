@@ -52,7 +52,8 @@ state = {
 
 # Obstacle types: (image, type, ground_height)
 # type: "ground" (jump over) or "air" (duck under)
-# ground_height: vertical positioning value for ground obstacles (distance from GROUND_Y)
+# ground_height: for ground obstacles, this should equal sprite height so bottom rests at GROUND_Y
+#   (calculation: y_pos = GROUND_Y - ground_height, so bottom = y_pos + height = GROUND_Y)
 # Coordinate system: y = top of sprite. Collision boxes use margins and offsets.
 # Air obstacles: branch placed with bottom at GROUND_Y - AIR_GAP (90 - 8 = 82)
 # Standing player: player_y = 74 (sprite top), collision box top = 74 + COLLISION_Y_MARGIN = 76,
@@ -228,8 +229,8 @@ def draw_game():
     player_y = int(state["player_y"])
     if state["is_ducking"]:
         # Draw ducking (squashed sprite)
-        # Note: DUCKING_SPRITE_Y_OFFSET (8) for rendering differs from DUCKING_Y_OFFSET (10) for collision
-        # This accounts for the visual squashing while maintaining proper collision detection
+        # DUCKING_SPRITE_Y_OFFSET (8) is used for visually positioning the ducked sprite when rendering,
+        # while DUCKING_Y_OFFSET (10) is used for collision detection logic. They serve different purposes.
         screen.scale_blit(player_img, PLAYER_X, int(player_y + DUCKING_SPRITE_Y_OFFSET), 16, 8)
     else:
         screen.blit(player_img, PLAYER_X, player_y)
