@@ -1,4 +1,4 @@
-from badgeware import screen, Image, PixelFont, brushes, shapes, io, run, State
+from badgeware import screen, Image, PixelFont, brushes, shapes, io, run
 import random
 
 # Constants
