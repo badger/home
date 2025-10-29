@@ -115,11 +115,19 @@ def spawn_obstacle():
 def check_collision():
     """Check if player collides with any obstacle"""
     # Reduced collision box for more forgiving gameplay
+    # Calculate Y position based on ducking state
+    if state["is_ducking"]:
+        collision_y = state["player_y"] + DUCKING_Y_OFFSET
+        collision_h = PLAYER_DUCKING_COLLISION_HEIGHT
+    else:
+        collision_y = state["player_y"] + COLLISION_Y_MARGIN
+        collision_h = PLAYER_COLLISION_HEIGHT
+    
     player_rect = {
         "x": PLAYER_X + COLLISION_MARGIN,
-        "y": (state["player_y"] + COLLISION_Y_MARGIN) if not state["is_ducking"] else (state["player_y"] + DUCKING_Y_OFFSET),
+        "y": collision_y,
         "w": PLAYER_COLLISION_WIDTH,
-        "h": PLAYER_COLLISION_HEIGHT if not state["is_ducking"] else PLAYER_DUCKING_COLLISION_HEIGHT
+        "h": collision_h
     }
     
     for obs in state["obstacles"]:
@@ -146,7 +154,7 @@ def check_collision():
 def update():
     if state["game_state"] == "playing":
         # Handle jumping
-        if io.BUTTON_UP in io.pressed and not state["is_jumping"] and not state["is_ducking"]:
+        if io.BUTTON_UP in io.pressed and not state["is_jumping"]:
             state["is_jumping"] = True
             state["player_vel_y"] = -4.5
         
@@ -230,7 +238,12 @@ def draw_game():
     if state["is_ducking"]:
         # Draw ducking (squashed sprite)
         # DUCKING_SPRITE_Y_OFFSET (8) is used for visually positioning the ducked sprite when rendering,
-        # while DUCKING_Y_OFFSET (10) is used for collision detection logic. They serve different purposes.
+        # while DUCKING_Y_OFFSET (10) is used for collision detection logic.
+        # The difference arises because the visual sprite is squashed vertically (16px -> 8px height),
+        # so its rendering position needs adjustment to align with the ground.
+        # DUCKING_SPRITE_Y_OFFSET (8) positions the squashed sprite visually,
+        # while DUCKING_Y_OFFSET (10) ensures the collision box top aligns with the reduced hit area,
+        # allowing for accurate visual alignment and fair collision detection.
         screen.scale_blit(player_img, PLAYER_X, int(player_y + DUCKING_SPRITE_Y_OFFSET), 16, 8)
     else:
         screen.blit(player_img, PLAYER_X, player_y)
