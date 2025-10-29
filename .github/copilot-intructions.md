@@ -1,6 +1,6 @@
-# Copilot Instructions for Tufty 2350 Development
+# Copilot Instructions for Universe 2025 Tufty Badge Development
 
-This project is for developing applications on a U25 Edition GitHub hackable conference badge - an RP2350-based microprocessor running MicroPython with a 320x240 TFT color display.  The board is a custom version of the Pimoroni Tufty 2350 with added IR sensors.
+This project is for developing applications on the GitHub Universe 2025 hackable conference badge - a custom Pimoroni Tufty 2350 edition. It's an RP2350-based device running MicroPython with a 320x240 TFT color display (pixel-doubled to 160x120 for performance) and custom IR sensors.
 
 ## Project Structure
 
@@ -26,18 +26,22 @@ This project is for developing applications on a U25 Edition GitHub hackable con
 
 ## Hardware Specifications
 
-- **Display**: 320x240 TFT LCD (but badge uses 160x120 viewport with X2 scaling for performance)
+- **Processor**: RP2350 Dual-core ARM Cortex-M33 @ 200MHz
+- **Memory**: 512kB SRAM, 16MB QSPI XiP flash
+- **Display**: 320x240 full colour IPS display (pixel doubled to 160x120 for performance)
 - **Screen dimensions**: WIDTH=160, HEIGHT=120 (logical pixels)
-- **Processor**: RP2350 (Raspberry Pi Pico architecture)
+- **Connectivity**: 2.4GHz WiFi and Bluetooth 5
+- **Battery**: 1000mAh rechargeable (up to 8 hours runtime)
 - **Platform**: MicroPython with custom badgeware library
 - **Buttons**: 
-  - UP (pin 22)
-  - DOWN (pin 6) 
-  - A (pin 7)
-  - B (pin 8)
-  - C (pin 9)
-  - HOME (navigation button - triggers quit_to_launcher)
-- **IR Receiver**: Pin 21 (used by quest app for beacon detection)
+  - UP, DOWN, A, B, C (front-facing buttons)
+  - HOME (back button - triggers quit_to_launcher to return to menu)
+  - RESET, BOOTSEL (hardware buttons)
+- **IR**: Receiver and transmitter for beacon hunting and remote control
+- **Ports**: USB-C (charging/programming), Qw/ST, SWD
+- **GPIO**: 4 GPIO pins + power through-hole solder pads
+- **LEDs**: 4-zone backlight (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT)
+- **Case**: Durable polycarbonate with lanyard fixings
 
 ## App Development Guidelines
 
@@ -60,18 +64,18 @@ Every app must be in `/system/apps/<app_name>/` (or `badge/apps/<app_name>/` in 
 ### Core Imports and Setup
 
 ```python
-from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run, State
+from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run, Matrix
 
 # Standard color definitions (RGB values)
 BACKGROUND = brushes.color(r, g, b)
-FOREGROUND = brushes.color(r, g, b, alpha)  # alpha is optional
+FOREGROUND = brushes.color(r, g, b, alpha)  # alpha is optional (0-255)
 HIGHLIGHT = brushes.color(r, g, b)
 
-# Set up font
-screen.font = PixelFont.load("/system/assets/fonts/ark.ppf")
+# Set up font - loads from /system/assets/fonts/
+screen.font = PixelFont.load("/system/assets/fonts/nope.ppf")
 
-# Enable 2x antialiasing if needed
-screen.antialias = Image.X2
+# Enable antialiasing for smooth vector graphics
+screen.antialias = Image.X2  # or Image.X4 for higher quality, Image.OFF to disable
 ```
 
 ### State Management Pattern
@@ -103,31 +107,35 @@ def update():
 
 - Use `io.pressed` to detect button press events (fires once per press)
 - Use `io.held` to detect buttons being held down (continuous detection)
-- Available buttons: `io.BUTTON_A`, `io.BUTTON_B`, `io.BUTTON_C`, `io.BUTTON_UP`, `io.BUTTON_DOWN`
-- Check `io.pressed` set membership: `if io.BUTTON_A in io.pressed:`
-- Access timing: `io.ticks` for current time, `io.ticks_delta` for frame delta
+- Use `io.released` to detect when a button is released
+- Use `io.changed` to detect any state change
+- Available buttons: `io.BUTTON_A`, `io.BUTTON_B`, `io.BUTTON_C`, `io.BUTTON_UP`, `io.BUTTON_DOWN`, `io.BUTTON_HOME`
+- Check button state with set membership: `if io.BUTTON_A in io.pressed:`
+- Access timing: `io.ticks` for milliseconds since boot, `io.ticks_delta` for frame delta time
 
 ### Display and Rendering
 
 #### Basic Display Operations
 ```python
 def update():
-    # Clear screen with background color
+    # Clear screen with background color (fastest method)
     screen.brush = brushes.color(0, 0, 0)
     screen.clear()
     
-    # OR draw a filled rectangle
+    # OR draw a filled rectangle over entire screen
     screen.brush = brushes.color(73, 219, 255)
     screen.draw(shapes.rectangle(0, 0, 160, 120))
     
-    # Set font before text operations
-    screen.font = PixelFont.load("/system/assets/fonts/ark.ppf")
+    # Draw shapes using current brush
+    screen.brush = brushes.color(255, 0, 0)
+    screen.draw(shapes.circle(80, 60, 20))
     
-    # Draw text
+    # Draw text (set font first)
+    screen.font = PixelFont.load("/system/assets/fonts/nope.ppf")
     screen.brush = brushes.color(255, 255, 255)
-    screen.text("Hello", x, y)
+    screen.text("Hello Badge!", 10, 10)
     
-    # No explicit update() call needed - handled by badgeware.run()
+    # No explicit display update needed - handled by badgeware.run()
 ```
 
 #### UI Layout Patterns
@@ -150,33 +158,42 @@ screen.brush = brushes.color(255, 255, 255, 150)  # 150 alpha
 screen.text("semi-transparent", x, y)
 ```
 
-### Image Handling
+### Image and Sprite Handling
 
-#### PNG Support
+#### Loading and Displaying Images
 ```python
-# Load and display PNG image
-image = Image.load("path/to/image.png")
+# Load PNG image (supports true color RGBA and paletted)
+image = Image.load("/system/apps/myapp/assets/sprite.png")
+
+# Blit image at position
 screen.blit(image, x, y)
 
-# Scale blit (useful for sprites)
+# Scale blit to specific dimensions (negative dims flip image)
 screen.scale_blit(image, x, y, width, height)
 
-# Set image alpha
-image.alpha = 150  # 0-255
+# Set transparency
+image.alpha = 150  # 0-255, affects entire image
 screen.blit(image, x, y)
+
+# Create image window (subsection for clipping)
+window = image.window(x, y, width, height)
 ```
 
-#### Sprite Sheets
+#### Sprite Sheets and Animation
 ```python
-# Load animated sprite sheet
-sprite = SpriteSheet("path/to/spritesheet.png", columns, rows).animation()
+# Load sprite sheet (specify columns and rows)
+sprite_sheet = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 7, 1)
 
-# Get frame for current time
-frame = sprite.frame(io.ticks / 100)  # Adjust divisor for speed
+# Create animation from sheet
+animation = sprite_sheet.animation()
+
+# Get current frame based on time
+frame = animation.frame(io.ticks / 100)  # Adjust divisor for animation speed
 screen.blit(frame, x, y)
 
-# Or scale blit
-screen.scale_blit(frame, x, y, width, height)
+# Or get specific sprite from sheet
+sprite = sprite_sheet.sprite(column, row)
+screen.scale_blit(sprite, x, y, width, height)
 ```
 
 #### File System Operations
@@ -185,6 +202,27 @@ screen.scale_blit(frame, x, y, width, height)
 - Skip hidden files (starting with `.`) when listing directories
 - Use `badgeware.file_exists(path)` and `badgeware.is_dir(path)` for checks
 
+### Shape Transformations
+
+Shapes can be transformed using Matrix operations for animations and effects:
+
+```python
+from badgeware import shapes, Matrix
+
+# Create a shape
+rect = shapes.rectangle(-10, -10, 20, 20)
+
+# Apply transformations (chaining supported)
+rect.transform = Matrix().translate(80, 60).scale(2, 2).rotate(io.ticks / 100)
+
+# Draw transformed shape
+screen.brush = brushes.color(255, 0, 0)
+screen.draw(rect)
+
+# Create stroked (outline) shapes
+circle_outline = shapes.circle(80, 60, 30).stroke(3)  # 3px width outline
+```
+
 ### Common Patterns
 
 #### Navigation Lists
@@ -192,60 +230,86 @@ screen.scale_blit(frame, x, y, width, height)
 # Use modulo for wrapping navigation
 current_index = (current_index + 1) % len(items)  # Next
 current_index = (current_index - 1) % len(items)  # Previous
+
+# Clamp values to ranges
+x = max(0, min(x, 160))  # Clamp x to screen width
 ```
 
-#### UI Toggles
+#### Animation Timing
 ```python
-# Boolean state toggles
-state["show_ui"] = not state["show_ui"]
+# Smooth animations using ticks
+angle = (io.ticks / 1000) * 360  # Full rotation per second
+offset = math.sin(io.ticks / 500) * 20  # Oscillate ±20 pixels
 
-# Conditional rendering
-if state["show_ui"]:
-    # Draw UI elements
-else:
-    # Hide UI elements
+# Frame-rate independent movement
+velocity_x = 50  # pixels per second
+x += velocity_x * (io.ticks_delta / 1000)
 ```
 
 #### Error Handling
 ```python
 try:
     # File operations
-    files = os.listdir('directory')
+    files = os.listdir('/system/apps/myapp/assets')
 except OSError:
     # Handle missing directory gracefully
     files = []
+
+# Check before loading
+if file_exists("/system/apps/myapp/data.json"):
+    with open("/system/apps/myapp/data.json", "r") as f:
+        data = json.load(f)
 ```
 
-## Available Libraries
+## Available Libraries and Modules
 
-- `badgeware` - Core system functionality:
-  - `screen` - Display object
-  - `io` - Input handling (buttons, timing)
-  - `brushes` - Color creation
-  - `shapes` - Drawing primitives (rectangle, rounded_rectangle, etc.)
-  - `Image` - Image loading and manipulation
-  - `PixelFont` - Font loading
-  - `SpriteSheet` - Sprite sheet handling
-  - `State` - Persistent state management
-  - `run()` - Main loop runner
-  - `file_exists()`, `is_dir()` - File system helpers
-- `network` - WiFi connectivity
+### badgeware - Core System Library
+- `screen` - Main display framebuffer (160x120 Image object)
+- `io` - Input handling (buttons, timing with ticks/ticks_delta)
+- `brushes.color(r, g, b, alpha=255)` - Create color brushes for drawing
+- `shapes` - Drawing primitives:
+  - `rectangle(x, y, w, h)` - Rectangles
+  - `rounded_rectangle(x, y, w, h, r)` - Rounded corners
+  - `circle(x, y, r)` - Circles
+  - `arc(x, y, r, from_deg, to_deg)` - Arcs
+  - `pie(x, y, r, from_deg, to_deg)` - Pie slices
+  - `line(x1, y1, x2, y2, thickness)` - Lines
+  - `regular_polygon(x, y, r, sides)` - Polygons
+  - `squircle(x, y, r, n=4)` - Squircles
+- `Image` - Image loading, manipulation, and drawing surface
+- `PixelFont` - Pixel font loading and text rendering
+- `SpriteSheet` - Sprite sheet handling with animation support
+- `Matrix` - Transformation matrices (translate, rotate, scale)
+- `run(update_func)` - Main loop runner that calls update_func every frame
+- `file_exists(path)`, `is_dir(path)` - File system helpers
+- `get_battery_level()`, `is_charging()` - Battery status
+
+### Standard MicroPython Libraries
+- `network` - WiFi connectivity (network.WLAN)
 - `urllib.urequest` - HTTP requests
-- `json` - JSON parsing
-- `math`, `random` - Standard math operations
-- Standard MicroPython libraries (`os`, `sys`, `gc`, etc.)
+- `json` - JSON parsing and serialization
+- `math`, `random` - Mathematical operations
+- `os`, `sys`, `gc` - System utilities
+- `time` - Time and sleep functions
+- `bluetooth` - Bluetooth functionality
 
-## Development Tips
+## Development Tips and Best Practices
 
-1. **Always test with real hardware** - MicroPython environment differs from desktop Python
-2. **Memory management** - Be mindful of RAM usage; use `gc.collect()` when needed
-3. **App lifecycle** - Use `init()` for setup, `update()` for main loop, `on_exit()` for cleanup
-4. **User experience** - Provide clear navigation hints and error messages
-5. **State persistence** - Use `State.load()` and `State.save()` for important user data
-6. **File paths** - Use `/system/` prefix for absolute paths, handle missing files gracefully
-7. **Performance** - Keep `update()` function efficient as it runs every frame
-8. **Button handling** - Use `io.pressed` for single actions, `io.held` for continuous input
-9. **Timing** - Use `io.ticks` (milliseconds) for animations and time-based logic
+1. **App Structure** - Every app must have `__init__.py` with `update()` function; `init()` and `on_exit()` are optional
+2. **Icon Required** - Apps need a 24x24 PNG `icon.png` to appear in the menu launcher
+3. **Memory Management** - Limited RAM; use paletted images when possible, call `gc.collect()` for large operations
+4. **Performance** - `update()` runs every frame; keep it efficient, avoid heavy computations
+5. **File Paths** - Use `/system/` for absolute paths; assets in app directory are auto-pathed
+6. **Button Handling** - Use `io.pressed` for single actions, `io.held` for continuous movement
+7. **Screen Clearing** - Use `screen.clear()` with brush color, not drawing full-screen rectangles
+8. **Antialiasing** - Enable `screen.antialias = Image.X2` or `Image.X4` for smooth vector graphics
+9. **Text Rendering** - Always set `screen.font` before calling `screen.text()`
+10. **Transformations** - Use `Matrix()` chaining for efficient shape transformations
+11. **State Management** - Store persistent data in `/` LittleFS partition, not `/system/`
+12. **Error Handling** - Always wrap file operations in try/except for missing files/directories
+13. **Timing** - Use `io.ticks` (milliseconds) for animations; `io.ticks_delta` for frame-independent movement
+14. **HOME Button** - Automatically handled by main.py; calls `on_exit()` before returning to menu
+15. **Testing** - Test on real hardware; MicroPython differs from desktop Python
 
 ## Example Apps Reference
 

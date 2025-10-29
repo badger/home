@@ -1,42 +1,133 @@
-# Tufty Badge
+# Universe 2025 (Tufty) Badge
 
-For GitHub Universe 2025 we have partnered with our friends at Pimoroni to create the 
-Tufty Edition of our hackable conference badge.  This is a custom version of the 
+For GitHub Universe 2025 we have partnered with our friends at Pimoroni to create the Tufty Edition of our hackable conference badge.  This is a custom version of the 
 [Pimoroni Tufty 2350](https://shop.pimoroni.com/) badge, with a custom PCB, added IR
 sensors and pre-loaded with some fun apps.  The source code for the custom apps is 
-available here.
+available [here](./badgerware/).
 
-These apps are designed to be run on the base MonaOS MicroPython firmware pre-installed on your badge with our custom badgeware library.
+These apps are designed to be run on the base MonaOS MicroPython firmware pre-installed on your badge.
 
-## Repository Structure
+## Table of Contents
+- [Universe 2025 (Tufty) Badge](#universe-2025-tufty-badge)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Getting started](#getting-started)
+    - [Creating your own apps](#creating-your-own-apps)
+    - [Editing code on the badge](#editing-code-on-the-badge)
+    - [Flashing your Badge](#flashing-your-badge)
+    - [Writing to files from application code](#writing-to-files-from-application-code)
+  - [Reading button state](#reading-button-state)
+  - [Working with the screen](#working-with-the-screen)
+    - [Drawing shapes](#drawing-shapes)
+    - [Blitting images and sprites](#blitting-images-and-sprites)
+    - [Drawing text](#drawing-text)
+  - [Wireless networking and Bluetooth](#wireless-networking-and-bluetooth)
+
+## Introduction
+
+Your badge this year is based on Pimoroni's upcoming "Tufty" Badgeware product. It's the fourth, most ambitious, and best, digital badge that we've developed for GitHub Universe so far!
+
+On the board we've packed in a bunch of great features:
+
+- RP2350 Dual-core ARM Cortex-M33 @ 200MHz
+- 512kB SRAM
+- 16MB QSPI XiP flash
+- 320x240 full colour IPS display (currently pixel doubled to 160x120)
+- 2.4GHz WiFi and Bluetooth 5
+- 1000mAh chargeable battery (up to 8 hours runtime)
+- Qw/ST and SWD ports for accessories and debugging
+- 4 GPIO pins + power through-hole solder pads for additional hardware hacking
+- IR receiver and transmitter for beacon hunting and remote control
+- Five front facing buttons
+- Battery voltage monitoring and charge status
+- USB-C port for charging and programming
+- RESET / BOOTSEL buttons
+- 4-zone LED backlight
+- Durable polycarbonate case with lanyard fixings
+
+We hope you really love tinkering with it during, and after, the event. Tag the Pimoroni team on [BlueSky](https://bsky.app/profile/pimoroni.com) and show them what you're up to!
+
+> This documentation is an early draft and both it and the API are subject to change! We're putting together a new build with more features and some performance enhancements which we'll share soon!
+
+## Getting started
+
+The board is pre-loaded with a special build of MicroPython that includes drivers for all of the built-in hardware.
+
+We've also included a small suite of example applications to demonstrate how different features of the badge work. Feel free to poke around in the code and experiment!
+
+For an overview of how to put the badge into different modes checkout https://badger.github.io/get-started/.
+
+### Creating your own apps
+The structure for apps is as follows. They live in the `/system/apps` directory.
 
 ```
-/badge/                 # Badge firmware and applications
-  ├── main.py           # Boot loader and app launcher entry point
-  ├── secrets.py        # WiFi configuration (SSID, password, GitHub username)
-  ├── apps/             # Application directory
-  │   ├── badge/        # GitHub profile stats viewer
-  │   ├── flappy/       # Flappy Bird style game
-  │   ├── gallery/      # Image gallery viewer
-  │   ├── menu/         # App launcher/menu system
-  │   ├── monapet/      # Virtual pet simulator
-  │   ├── quest/        # IR beacon scavenger hunt
-  │   ├── sketch/       # Drawing application
-  │   └── startup/      # Boot animation
-  └── assets/           # Shared resources
-      ├── fonts/        # Pixel Perfect Fonts (.ppf) and bitmap fonts (.af)
-      └── mona-sprites/ # Mona character sprite sheets
+/system
+  /apps
+    /my_application
+      icon.png
+      __init__.py
+      /assets
+        ...
 ```
 
-The `badge/` folder contents are pre-loaded in a hidden `/system/` partition on the device.
+Each application has a minimal structure:
 
-> [!NOTE]
-> Looking for the e-ink badge firmware and setup guides? Head over to the `eink/` directory for the dedicated code and documentation.
+- `icon.png` contains the icon for your app, it should be a 24x24 PNG image.
+- `__init__.py` the entry point for your application, this is where `update()` will be implemented.
+- `assets/` a directory to contain any assets your app uses, this is automatically added to the system path when your app launches.
 
-## Flashing your Badge
+Your app should implement an `update()` function within `__init__.py` which will automatically be called every frame to give it a chance to update its state and render new output to the screen.
+
+You'll have to [update the menu app](https://badger.github.io/hack/menu-pagination/) on your device to see your app, the version of the pre-flashed firmware only supports six icons - have fun expanding it!
+
+An app is launched by `main.py`, which handles the intro cinematic, menu and launching your app. It'll call your `init()` and `update()` methods, and call `on_exit()` when you press the `HOME` button to leave your app.
+
+```python
+# example __init__.py for an application
+
+# select a font to use
+screen.font = PixelFont.load("nope.ppf")
+
+# called once when your app launches
+def init():
+  pass
+
+# called every frame, do all your stuff here!
+def update():
+  # clear the framebuffer
+  screen.brush = brushes.color(20, 40, 60)
+  screen.clear()
+
+  # calculate and draw an animated sine wave
+  y = (math.sin(io.ticks / 100) * 20) + 80
+  screen.brush = brushes.color(0, 255, 0)
+  for x in range(160):
+    screen.draw(shapes.rectangle(x, y, 1, 1))
+
+  # write a message
+  screen.brush = brushes.color(255, 255, 255)
+  screen.text("hello badge!", 10, 10)
+
+# called before returning to the menu to allow you to save state
+def on_exit():
+  pass
+```
+
+### Editing code on the badge
+
+The easiest way to edit the code on the device is to put it into mass storage mode:
+
+- Connect your badge up to your computer via a USB-C cable
+- Press the RESET button twice
+- The USB Disk Mode screen will appear
+- The badge should appear as a disk named "BADGER" on your computer
+
+In this mode you can see the contents of the FAT32 `/system/` mount. This is where all application code should live.
+
+### Flashing your Badge
 When your badge arrives, it will be pre-loaded with a factory default Micropython image that will have a custom image of Micropython with our apps pre-installed and a 'MonaOS' app launcher.
 
-To get started building apps for the badge, you will need to flash the latest Micropython
+If you want to reset your badge back to factory conditions, you will need to flash the latest Micropython
 firmware that we have. You can find the latest firmware image in the
 [Releases](https://github.com/badger/home/releases)
 
@@ -47,108 +138,167 @@ firmware that we have. You can find the latest firmware image in the
 5. Drag and drop the `.uf2` file onto the `RP2350` drive.
 6. The badge will automatically reboot and run the new firmware.
 
-## Copying Files to the Badge
+### Writing to files from application code
 
-### Understanding the File System
+The badge has a writeable LittleFS partition located at `/` which is intended for applications to store state information and cache any data they may need to hold on to across resets.
 
-The badge has two partitions:
-- **Hidden `/system/` partition** - Contains pre-loaded apps, assets, and default files (only visible via serial connection)
-- **Visible user partition** - Accessible when in USB Mass Storage mode (the `BADGER` drive)
+You can use normal Python style file access from your code:
 
-When the badge runs, it looks for files in the visible partition first. If a file exists there, it uses that version instead of the one in `/system/`. This allows you to override or customize any pre-installed app without modifying the hidden partition.
-
-### Entering USB Mass Storage Mode
-
-To copy files to the badge, double-press the Reset button on the back. The badge will appear as a USB drive named `BADGER`.
-
-### Customizing or Replacing Apps
-
-To override a pre-installed app or add a new one:
-
-1. Enter USB Mass Storage mode (double-press Reset)
-2. Copy your modified/new app folder to `/apps/<app_name>/` on the BADGER drive
-3. The badge will use your version instead of the `/system/apps/<app_name>/` version
-4. To modify the menu, copy and edit `/apps/menu/__init__.py`
-
-**Example**: To customize the gallery app, copy the entire `/apps/gallery/` folder structure to `/apps/gallery/` on the BADGER drive, then modify it.
-
-### Adding Gallery Images
-
-For the gallery app, create the folder structure and add images:
-- Full-size PNG images: `/apps/gallery/images/`
-- Thumbnail images: `/apps/gallery/thumbnails/`
-
-Ensure the thumbnail images correspond to the full-size images for proper display.
-
-### WiFi Configuration
-
-Create or edit `/secrets.py` on the BADGER drive:
 ```python
-WIFI_SSID = "your_wifi_network"
-WIFI_PASSWORD = "your_password"
-GITHUB_USERNAME = "your_github_username"
+with open("/storage/myfile.txt", "w") as out:
+  out.write("this is some text i want to keep\n")
 ```
 
-This file contains default WiFi details for a WiFi access point available in the 'Hack the Badge' space at GitHub Universe. But you need to edit this file to add your own WiFi credentials and GitHub username.
+## Reading button state
 
-### Finishing Up
+The `io` module also exposes helpful information about the state of the buttons on your badge. [Click here for full documentation of the `io` module](./badgerware/io.md).
 
-When done copying files, safely eject the `BADGER` drive before unplugging or pressing Reset to return to normal mode.
+Each button is represented by a constant (for example, `io.BUTTON_A`). The API lets you check whether a button has been pressed, released, held, or if its state has changed during the current frame.
 
-## Running the Apps
+The following example draws a small white circle in the centre of the screen and allows the user to move it using the buttons:
 
-To run the apps on the badge, press the `Reset` button once to enter normal mode. The badge will boot and look for `/main.py` on the visible partition. If it doesn't exist, it will use `/system/main.py` which runs the startup animation followed by the menu app launcher.
+```python
+import math
+from badgeware import screen, shapes, brushes, io
 
-You can press the `Home` button on the back of the badge to return to the menu app launcher at any time.
+# start the cursor in the middle of the screen
+x, y = 80, 60
 
-In the menu, navigate the apps from the launcher by using `UP`, `DOWN`, `A` and `C` to move around the menu grid. Select the app you want to run and press the `B` button to launch it.
+# clamp a value to within an upper and lower bound
+def clamp(value, lower, upper):
+  return math.max(lower, math.min(upper, value))
 
-## Pre-installed Apps
+# called automatically every frame
+def update():
+  global x, y
 
-### Badge
-GitHub profile statistics viewer that displays:
-- Your contribution graph
-- Follower count
-- Repository count
-- Total contributions
-- Profile avatar
+  # clear the screen
+  screen.brush = brushes.color(20, 40, 60)
+  screen.draw(shapes.rectangle(0, 0, 160, 120))
 
-Requires WiFi configuration and GitHub Username configuration in `/secrets.py`. Press A+C together to force refresh data.
+  # move cursor based on button states
+  if io.BUTTON_A    in io.held: x -= 1  # left
+  if io.BUTTON_C    in io.held: x += 1  # right
+  if io.BUTTON_UP   in io.held: y -= 1  # up
+  if io.BUTTON_DOWN in io.held: y += 1  # down
 
-### Flappy Mona
-A Flappy Bird style game featuring Mona. Press A to jump and avoid obstacles. Try to beat your high score!
+  # clamp position to screen bounds
+  x = clamp(x, 0, 160)
+  y = clamp(y, 0, 120)
 
-### Gallery
-Browse through images with smooth thumbnail navigation. Press A/C to navigate, B to toggle UI visibility.
+  # draw the cursor
+  screen.brush = brushes.color(255, 255, 255)
+  screen.draw(shapes.circle(x, y, 5))
+```
 
-### Mona Pet
-A virtual pet simulator. Take care of Mona by:
-- Pressing A to play (increase happiness)
-- Pressing B to feed (decrease hunger)
-- Pressing C to clean (increase cleanliness)
+## Working with the screen
 
-Keep all stats above 30% or Mona will get sad! Stats are automatically saved.
+The framebuffer is a 160 × 120 true colour `Image` named `screen`. [Click here for full documentation of the `Image` class](./badgerware/Image.md).
 
-### Quest
-An IR beacon scavenger hunt for exploring the conference. Walk around and look for "Mona's Quest" signs to find IR beacons at different locations to unlock quest achievements. Progress is saved automatically.
+Your application can draw to the screen during the update() function.
+After your code finishes executing, the badge automatically pixel-doubles the framebuffer to fit the display.
 
-### Sketch
-A drawing application where you can create pixel art. Use arrow keys and A/C to move the cursor and draw. Watch Mona run away from your cursor!
+The screen supports drawing vector shapes, blitting other images, and rendering text using pixel fonts.
 
-## Development
+### Drawing shapes
 
-For developing your own apps, see the [Copilot Instructions](.github/copilot-intructions.md) which provide comprehensive guidance on:
-- Badge hardware specifications
-- App structure and requirements
-- The badgeware library API
-- Example code patterns
-- Best practices
+The `shapes` module provides ways to create primitive shapes which can then be drawn onto images. [Click here for full documentation of the `shapes` module](./badgerware/shapes.md).
 
-### App Icon Requirements
+Currently supported shapes are rectangles, circles, arcs, pies, lines, rounded rectangles, regular polygons, and squircles.
 
-Each app must include an `icon.png` file in its root directory:
-- **Size**: 24x24 pixels
-- **Format**: Color PNG with optional transparency
-- **Purpose**: Used by the menu launcher to display your app
+Shapes are drawn using the currently assigned brush. [Click here for full documentation of the `brushes` module](./badgerware/brushes.md).
 
-All apps in `badge/apps/` serve as working examples of different features and techniques.
+```python
+# example of drawing a circle in the center of the screen
+
+from badgeware import screen, brushes, shapes
+
+# enable antialiasing for lush smooth edges
+screen.antialias = Image.X4
+
+def update():
+  # clear the background
+  screen.brush = brushes.color(20, 40, 60)
+  screen.clear()
+
+  # draw the circle
+  screen.brush = brushes.color(0, 255, 0)
+  screen.draw(shapes.circle(80, 60, 20))
+```
+
+Shapes can also be given a transformation matrix to adjust their scale, rotation, and skew - this is very useful for creating smooth animations. [Click here for full documentation of the `Matrix` class](Matrix.md).
+
+```python
+# example of animating a rotating rectangle
+
+from badgeware import screen, brushes, shapes
+
+# enable antialiasing for lush smooth edges
+screen.antialias = Image.X4
+
+def update():
+  # clear the background
+  screen.brush = brushes.color(20, 40, 60)
+  screen.clear()
+
+  # transform and draw the rectangle
+  screen.brush = brushes.color(0, 255, 0)
+  rectangle = shapes.rectangle(-1, -1, 2, 2)
+  rectangle.transform = Matrix().translate(80, 60).scale(20, 20).rotate(io.ticks / 100)
+  screen.draw(rectangle)
+```
+
+### Blitting images and sprites
+
+The `Image` class can load images from files on the filesystem which can then be blitted onto the screen. [Click here for full documentation of the `Image` class](./badgerware/Image.md).
+
+```python
+# example of loading a sprite and blitting it to the screen
+from badgeware import screen, brushes, Image
+from lib import SpriteSheet
+
+# load an image as a sprite sheet specifying the number of rows and columns
+mona = SpriteSheet(f"assets/mona-sprites/mona-default.png", 7, 1)
+
+def update():
+  # clear the background
+  screen.brush = brushes.color(20, 40, 60)
+  screen.clear()
+
+  # blit the sprite at 0, 0 in the spritesheet to the screen
+  screen.blit(mona.sprite(0, 0), 10, 10)
+
+  # scale blit the sprite at 3, 0 in the spritesheet to the screen
+  screen.scale_blit(mona.sprite(0, 0), 50, 50, 30, 30)
+```
+
+### Drawing text
+
+The `PixelFont` class provides functions for loading pixel fonts, which can then be used to render text onto images. [Click here for full documentation of the `PixelFont` class](PixelFont.md).
+
+There are thirty licensed pixel fonts included.
+
+```python
+# example of drawing text to the screen
+
+from badgeware import screen, PixelFont
+
+screen.font = PixelFont.load("nope.ppf")
+
+def update():
+  screen.brush = brushes.color(20, 40, 60)
+  screen.clear()
+
+  message = "this font rocks"
+  screen.brush(255, 255, 255)
+  screen.text(message, 10, 10)
+```
+
+## Wireless networking and Bluetooth
+
+You can use the existing MicroPython functionality for wireless networking and bluetooth functionality.
+
+- Wireless networking: https://docs.micropython.org/en/latest/rp2/quickref.html#wlan
+- Bluetooth: https://docs.micropython.org/en/latest/library/bluetooth.html#module-bluetooth
+
+
