@@ -26,6 +26,10 @@ CONTRIB_URL = "https://github.com/{user}.contribs"
 USER_AVATAR = "https://wsrv.nl/?url=https://github.com/{user}.png&w=75&output=png"
 DETAILS_URL = "https://api.github.com/users/{user}"
 
+CONTRIB_PATH = "contrib_data.json"
+DETAILS_PATH = "user_data.json"
+AVATAR_PATH = "avatar.png"
+
 WIFI_PASSWORD = None
 WIFI_SSID = None
 
@@ -166,10 +170,8 @@ def async_fetch_to_disk(url, file, force_update=False):
 
 def get_user_data(user, force_update=False):
     message(f"Getting user data for {user.handle}...")
-    yield from async_fetch_to_disk(
-        DETAILS_URL.format(user=user.handle), "/user_data.json", force_update
-    )
-    r = json.loads(open("/user_data.json", "r").read())
+    yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), DETAILS_PATH, force_update)
+    r = json.loads(open(DETAILS_PATH, "r").read())
     user.name = r["name"]
     user.handle = r["login"]
     user.followers = r["followers"]
@@ -180,10 +182,8 @@ def get_user_data(user, force_update=False):
 
 def get_contrib_data(user, force_update=False):
     message(f"Getting contribution data for {user.handle}...")
-    yield from async_fetch_to_disk(
-        CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update
-    )
-    r = json.loads(open("/contrib_data.json", "r").read())
+    yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), CONTRIB_PATH, force_update)
+    r = json.loads(open(CONTRIB_PATH, "r").read())
     user.contribs = r["total_contributions"]
     user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
     for w, week in enumerate(r["weeks"]):
@@ -198,10 +198,8 @@ def get_contrib_data(user, force_update=False):
 
 def get_avatar(user, force_update=False):
     message(f"Getting avatar for {user.handle}...")
-    yield from async_fetch_to_disk(
-        USER_AVATAR.format(user=user.handle), "/avatar.png", force_update
-    )
-    user.avatar = Image.load("/avatar.png")
+    yield from async_fetch_to_disk(USER_AVATAR.format(user=user.handle), AVATAR_PATH, force_update)
+    user.avatar = Image.load(AVATAR_PATH)
 
 
 def fake_number():
@@ -337,11 +335,7 @@ class User:
 
 
 user = User()
-connected = (
-    file_exists("/contrib_data.json")
-    and file_exists("/user_data.json")
-    and file_exists("/avatar.png")
-)
+connected = file_exists(CONTRIB_PATH) and file_exists(DETAILS_PATH) and file_exists(AVATAR_PATH)
 force_update = False
 
 
