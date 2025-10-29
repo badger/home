@@ -9,7 +9,16 @@ PLAYER_X = 30
 SCROLL_SPEED = 2
 OBSTACLE_SPAWN_MIN = 70
 OBSTACLE_SPAWN_MAX = 120
+OBSTACLE_REMOVAL_THRESHOLD = -50  # X position at which off-screen obstacles are removed
 AIR_GAP = 8  # Vertical gap above ground that the branch bottom sits at (duck to clear)
+
+# Collision box adjustments for forgiving gameplay
+COLLISION_MARGIN = 2  # Pixels reduced from each side of collision boxes
+COLLISION_Y_MARGIN = 2  # Y-offset for standing player collision box
+DUCKING_Y_OFFSET = 10  # Y-offset for ducking player collision box
+PLAYER_COLLISION_WIDTH = 16 - (COLLISION_MARGIN * 2)  # Player collision box width (12)
+PLAYER_COLLISION_HEIGHT = 16 - (COLLISION_MARGIN * 2)  # Standing player collision box height (12)
+PLAYER_DUCKING_COLLISION_HEIGHT = 8 - (COLLISION_MARGIN * 2)  # Ducking player collision box height (4)
 
 # Jungle theme colors
 SKY_COLOR = brushes.color(135, 206, 235)  # Sky blue
@@ -99,24 +108,24 @@ def spawn_obstacle():
 
 def check_collision():
     """Check if player collides with any obstacle"""
-    # Reduced collision box for more forgiving gameplay (2 pixels margin on each side)
+    # Reduced collision box for more forgiving gameplay
     player_rect = {
-        "x": PLAYER_X + 2,
-        "y": (state["player_y"] + 2) if not state["is_ducking"] else (state["player_y"] + 10),
-        "w": 12,
-        "h": 12 if not state["is_ducking"] else 6
+        "x": PLAYER_X + COLLISION_MARGIN,
+        "y": (state["player_y"] + COLLISION_Y_MARGIN) if not state["is_ducking"] else (state["player_y"] + DUCKING_Y_OFFSET),
+        "w": PLAYER_COLLISION_WIDTH,
+        "h": PLAYER_COLLISION_HEIGHT if not state["is_ducking"] else PLAYER_DUCKING_COLLISION_HEIGHT
     }
     
     for obs in state["obstacles"]:
         obs_w = obs["img"].width
         obs_h = obs["img"].height
         
-        # Reduced obstacle collision box (2 pixels margin)
+        # Reduced obstacle collision box
         obs_rect = {
-            "x": obs["x"] + 2,
-            "y": obs["y"] + 2,
-            "w": obs_w - 4,
-            "h": obs_h - 4
+            "x": obs["x"] + COLLISION_MARGIN,
+            "y": obs["y"] + COLLISION_MARGIN,
+            "w": obs_w - (COLLISION_MARGIN * 2),
+            "h": obs_h - (COLLISION_MARGIN * 2)
         }
         
         # Check rectangle collision
@@ -170,7 +179,7 @@ def update():
                 state["score"] += 1
         
         # Remove off-screen obstacles
-        state["obstacles"] = [obs for obs in state["obstacles"] if obs["x"] > -50]
+        state["obstacles"] = [obs for obs in state["obstacles"] if obs["x"] > OBSTACLE_REMOVAL_THRESHOLD]
         
         # Check collision
         if check_collision():
