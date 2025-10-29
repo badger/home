@@ -171,6 +171,23 @@ def get_user_data(user, force_update=False):
     user.handle = r["login"]
     user.followers = r["followers"]
     user.repos = r["public_repos"]
+    
+    # Check if name contains Chinese characters and fetch rendered image
+    if user.name and has_chinese_characters(user.name):
+        message(f"Fetching Chinese name via shields.io: {user.name}")
+        chinese_url = generate_chinese_text_url(user.name)
+        if chinese_url:
+            try:
+                message(f"URL: {chinese_url}")
+                yield from async_fetch_to_disk(chinese_url, "/chinese_name.png", force_update)
+                user.chinese_name_img = Image.load("/chinese_name.png")
+                message("Chinese name image loaded successfully")
+            except Exception as e:
+                message(f"Failed to load Chinese name: {e}")
+                # Set to False (not None) to indicate we tried and failed
+                # This prevents infinite retry loop
+                user.chinese_name_img = False
+    
     del r
     gc.collect()
 
@@ -199,6 +216,34 @@ def get_avatar(user, force_update=False):
 
 def fake_number():
     return random.randint(10000, 99999)
+
+
+def has_chinese_characters(text):
+    """Check if text contains Chinese characters"""
+    if not text:
+        return False
+    return any('\u4e00' <= char <= '\u9fff' for char in text)
+
+
+def generate_chinese_text_url(text, width=150, height=20, font_size=14):
+    """Generate shields.io URL for rendering Chinese text as image"""
+    try:
+        from urllib.parse import quote
+        text_encoded = quote(text)
+        
+        # Using shields.io raster service for PNG format
+        # Direct URL to avoid redirect issues with MicroPython's urlopen
+        # Automatically uses white text on black background for good contrast
+        # No account or API key needed - completely free
+        
+        url = f"https://raster.shields.io/static/v1.png?"
+        url += f"label=&message={text_encoded}"
+        url += f"&color=000000&labelColor=000000&style=flat-square"
+        
+        return url
+    except Exception as e:
+        print(f"Error generating shields.io URL: {e}")
+        return None
 
 
 def placeholder_if_none(text):
@@ -234,6 +279,7 @@ class User:
         self.contribution_data = None
         self.repos = None
         self.avatar = None
+        self.chinese_name_img = None
         self._task = None
         self._force_update = force_update
 
@@ -278,6 +324,12 @@ class User:
                 handle = "fetching user data..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
+            elif self.name and has_chinese_characters(self.name) and self.chinese_name_img is None:
+                # Only show "fetching chinese..." if we haven't tried yet (None)
+                # If it's False, we already tried and failed, so skip
+                handle = "fetching chinese..."
+                if not self._task:
+                    self._task = get_user_data(self, self._force_update)
             elif not self.contribs:
                 handle = "fetching contribs..."
                 if not self._task:
@@ -302,12 +354,18 @@ class User:
         screen.brush = white
         screen.text(handle, 80 - (w / 2), 2)
 
-        # draw name
-        screen.font = small_font
-        screen.brush = phosphor
-        name = placeholder_if_none(self.name)
-        w, _ = screen.measure_text(name)
-        screen.text(name, 80 - (w / 2), 16)
+        # draw name (use image if Chinese characters, otherwise use text)
+        if self.chinese_name_img and self.chinese_name_img is not False:
+            # Display Chinese name as image, centered
+            img_w = self.chinese_name_img.width
+            screen.blit(self.chinese_name_img, 80 - (img_w / 2), 16)
+        else:
+            # Display name as text for non-Chinese names or if image fetch failed
+            screen.font = small_font
+            screen.brush = phosphor
+            name = placeholder_if_none(self.name)
+            w, _ = screen.measure_text(name)
+            screen.text(name, 80 - (w / 2), 16)
 
         # draw statistics
         self.draw_stat("followers", self.followers, 88, 33)
