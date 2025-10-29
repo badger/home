@@ -82,20 +82,20 @@ def spawn_obstacle():
     """Spawn a new obstacle, ensuring it's passable"""
     # Pick random obstacle type
     img, obs_type, ground_height = random.choice(OBSTACLE_TYPES)
-    
+
     # Check if last obstacle was an air obstacle
     last_was_air = False
     if state["obstacles"]:
         last_obs = state["obstacles"][-1]
         if last_obs["type"] == "air":
             last_was_air = True
-    
+
     # Ensure we don't spawn two air obstacles in a row (would be impossible)
     if last_was_air and obs_type == "air":
         # Force ground obstacle instead
         ground_obstacles = [(img, t, h) for img, t, h in OBSTACLE_TYPES if t == "ground"]
         img, obs_type, ground_height = random.choice(ground_obstacles)
-    
+
     # Compute spawn Y: ground obstacles rest on ground; air obstacles have fixed bottom at GROUND_Y - AIR_GAP
     if obs_type == "air":
         y_pos = GROUND_Y - AIR_GAP - img.height
@@ -122,18 +122,18 @@ def check_collision():
     else:
         collision_y = state["player_y"] + COLLISION_Y_MARGIN
         collision_h = PLAYER_COLLISION_HEIGHT
-    
+
     player_rect = {
         "x": PLAYER_X + COLLISION_MARGIN,
         "y": collision_y,
         "w": PLAYER_COLLISION_WIDTH,
         "h": collision_h
     }
-    
+
     for obs in state["obstacles"]:
         obs_w = obs["img"].width
         obs_h = obs["img"].height
-        
+
         # Reduced obstacle collision box
         obs_rect = {
             "x": obs["x"] + COLLISION_MARGIN,
@@ -141,14 +141,14 @@ def check_collision():
             "w": obs_w - (COLLISION_MARGIN * 2),
             "h": obs_h - (COLLISION_MARGIN * 2)
         }
-        
+
         # Check rectangle collision
         if (player_rect["x"] < obs_rect["x"] + obs_rect["w"] and
             player_rect["x"] + player_rect["w"] > obs_rect["x"] and
             player_rect["y"] < obs_rect["y"] + obs_rect["h"] and
             player_rect["y"] + player_rect["h"] > obs_rect["y"]):
             return True
-    
+
     return False
 
 def update():
@@ -157,56 +157,56 @@ def update():
         if io.BUTTON_UP in io.pressed and not state["is_jumping"]:
             state["is_jumping"] = True
             state["player_vel_y"] = -4.5
-        
+
         # Handle ducking
         if io.BUTTON_DOWN in io.held and not state["is_jumping"]:
             state["is_ducking"] = True
         else:
             state["is_ducking"] = False
-        
+
         # Apply gravity
         if state["is_jumping"]:
             state["player_vel_y"] += 0.3
             state["player_y"] += state["player_vel_y"]
-            
+
             # Check if landed
             if state["player_y"] >= GROUND_Y - 16:
                 state["player_y"] = GROUND_Y - 16
                 state["is_jumping"] = False
                 state["player_vel_y"] = 0
-        
+
         # Update obstacles
         state["scroll_offset"] += SCROLL_SPEED
         state["next_spawn"] -= SCROLL_SPEED
-        
+
         # Spawn new obstacle if needed
         if state["next_spawn"] <= 0:
             spawn_obstacle()
-        
+
         # Move obstacles and check scoring
         for obs in state["obstacles"]:
             obs["x"] -= SCROLL_SPEED
-            
+
             # Score point when obstacle passes player
             if not obs["scored"] and obs["x"] + obs["img"].width < PLAYER_X:
                 obs["scored"] = True
                 state["score"] += 1
-        
+
         # Remove off-screen obstacles
         state["obstacles"] = [obs for obs in state["obstacles"] if obs["x"] > OBSTACLE_REMOVAL_THRESHOLD]
-        
+
         # Check collision
         if check_collision():
             state["game_state"] = "gameover"
-        
+
         # Draw game
         draw_game()
-    
+
     elif state["game_state"] == "gameover":
         # Draw game over screen
         draw_game()
         draw_gameover()
-        
+
         # Press A to restart
         if io.BUTTON_A in io.pressed:
             reset_game()
@@ -215,39 +215,34 @@ def draw_game():
     # Draw sky
     screen.brush = SKY_COLOR
     screen.clear()
-    
+
     # Draw ground
     screen.brush = GROUND_COLOR
     screen.draw(shapes.rectangle(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y))
-    
+
     # Draw grass pattern on ground
     screen.brush = GRASS_COLOR
     for i in range(0, WIDTH, 8):
         offset = (state["scroll_offset"] + i) % 8
         screen.draw(shapes.rectangle(i - offset, GROUND_Y, 4, 2))
-    
+
     # Draw obstacles
     for obs in state["obstacles"]:
         x_pos = int(obs["x"])
         y_pos = int(obs["y"])
         # Ensure coordinates are integers to prevent rendering artifacts
         screen.blit(obs["img"], x_pos, y_pos)
-    
+
     # Draw player
     player_y = int(state["player_y"])
     if state["is_ducking"]:
         # Draw ducking (squashed sprite)
-        # DUCKING_SPRITE_Y_OFFSET (8) is used for visually positioning the ducked sprite when rendering,
-        # while DUCKING_Y_OFFSET (10) is used for collision detection logic.
-        # The difference arises because the visual sprite is squashed vertically (16px -> 8px height),
-        # so its rendering position needs adjustment to align with the ground.
-        # DUCKING_SPRITE_Y_OFFSET (8) positions the squashed sprite visually,
-        # while DUCKING_Y_OFFSET (10) ensures the collision box top aligns with the reduced hit area,
-        # allowing for accurate visual alignment and fair collision detection.
+        # DUCKING_SPRITE_Y_OFFSET (8) positions the squashed sprite (16px->8px) visually on ground.
+        # DUCKING_Y_OFFSET (10) positions collision box top for reduced hit area during ducking.
         screen.scale_blit(player_img, PLAYER_X, int(player_y + DUCKING_SPRITE_Y_OFFSET), 16, 8)
     else:
         screen.blit(player_img, PLAYER_X, player_y)
-    
+
     # Draw score
     screen.brush = TEXT_COLOR
     screen.text(f"Score: {state['score']}", 5, 5)
@@ -256,7 +251,7 @@ def draw_gameover():
     # Semi-transparent overlay
     screen.brush = GAMEOVER_BG
     screen.draw(shapes.rectangle(20, 35, 120, 50))
-    
+
     # Game over text
     screen.brush = TEXT_COLOR
     screen.text("GAME OVER!", 45, 45)
