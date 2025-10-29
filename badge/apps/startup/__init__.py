@@ -4,13 +4,17 @@ import os
 sys.path.insert(0, "/system/apps/startup")
 os.chdir("/system/apps/startup")
 
-from badgeware import io, screen, run, brushes, shapes, display
+from badgeware import io, screen, run, brushes, shapes, display, Image
 
 # animation settings
 animation_duration = 3
 fade_duration = 0.75
 frame_count = 159
 hold_frame = 113
+
+# image display phase
+image_phase = False
+startup_image = None
 
 # render the specified frame from the animation
 current_frame = None
@@ -37,8 +41,18 @@ def show_frame(i, alpha=255):
 button_pressed_at = None
 
 
+def load_startup_image():
+    global startup_image
+    if startup_image is None:
+        try:
+            startup_image = Image.load("assets/thorin-megabot.png")
+        except OSError:
+            # If image doesn't exist, we'll skip the image phase
+            pass
+
+
 def update():
-    global button_pressed_at, ticks_start
+    global button_pressed_at, ticks_start, image_phase
 
     if ticks_start is None:
         ticks_start = io.ticks
@@ -47,24 +61,48 @@ def update():
 
     frame, alpha = hold_frame, 255
 
-    # determine which phase of the animation we're in (animation, hold, or fadeout)
+    # determine which phase we're in
     if time < animation_duration:
-        # calculate which frame we're on and display it
+        # Animation phase: calculate which frame we're on and display it
         frame = round((time / animation_duration) * hold_frame)
-    else:
-        # if the startup animation has completed then check if the user has pressed a button
+        show_frame(frame, alpha)
+    elif not image_phase:
+        # Animation completed, start image phase
+        image_phase = True
+        load_startup_image()
+        
+        # Clear screen and show the image
+        screen.brush = brushes.color(0, 0, 0)
+        screen.draw(CLEAR)
+        
+        if startup_image:
+            # Center the image on screen
+            x = (screen.width - startup_image.width) // 2
+            y = (screen.height - startup_image.height) // 2
+            screen.blit(startup_image, x, y)
+    elif image_phase:
+        # Image phase: wait for button press
         if io.pressed:
             button_pressed_at = time
+        
+        # Keep displaying the image
+        screen.brush = brushes.color(0, 0, 0)
+        screen.draw(CLEAR)
+        
+        if startup_image:
+            # Center the image on screen
+            x = (screen.width - startup_image.width) // 2
+            y = (screen.height - startup_image.height) // 2
+            screen.blit(startup_image, x, y)
 
+    # Handle fadeout after button press
     if button_pressed_at:
         time_since_pressed = time - button_pressed_at
         if time_since_pressed < fade_duration:
-            # calculate which frame we're on and display it
-            frame = (
-                round((time_since_pressed / fade_duration) * (frame_count - hold_frame))
-                + hold_frame
-            )
+            # Fade out effect
             alpha = 255 - ((time_since_pressed / fade_duration) * 255)
+            screen.brush = brushes.color(0, 0, 0, 255 - alpha)
+            screen.draw(CLEAR)
         else:
             # Return control to the menu
             screen.brush = brushes.color(0, 0, 0)
@@ -72,7 +110,6 @@ def update():
             display.update()
             return False
 
-    show_frame(frame, alpha)
     return None
 
 
