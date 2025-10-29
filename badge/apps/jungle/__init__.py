@@ -16,6 +16,7 @@ AIR_GAP = 8  # Vertical gap above ground that the branch bottom sits at (duck to
 COLLISION_MARGIN = 2  # Pixels reduced from each side of collision boxes
 COLLISION_Y_MARGIN = 2  # Y-offset for standing player collision box
 DUCKING_Y_OFFSET = 10  # Y-offset for ducking player collision box
+DUCKING_SPRITE_Y_OFFSET = 8  # Y-offset for rendering ducking sprite (visual position)
 PLAYER_COLLISION_WIDTH = 16 - (COLLISION_MARGIN * 2)  # Player collision box width (12)
 PLAYER_COLLISION_HEIGHT = 16 - (COLLISION_MARGIN * 2)  # Standing player collision box height (12)
 PLAYER_DUCKING_COLLISION_HEIGHT = 8 - (COLLISION_MARGIN * 2)  # Ducking player collision box height (4)
@@ -49,8 +50,9 @@ state = {
     "scroll_offset": 0
 }
 
-# Obstacle types: (image, type, height_offset)
+# Obstacle types: (image, type, ground_height)
 # type: "ground" (jump over) or "air" (duck under)
+# ground_height: vertical positioning value for ground obstacles (distance from GROUND_Y)
 # Coordinate system: y = top of sprite. Collision boxes use margins and offsets.
 # Air obstacles: branch placed with bottom at GROUND_Y - AIR_GAP (90 - 8 = 82)
 # Standing player: player_y = 74 (sprite top), collision box top = 74 + COLLISION_Y_MARGIN = 76,
@@ -60,7 +62,7 @@ state = {
 OBSTACLE_TYPES = [
     (log_img, "ground", 12),
     (creature_img, "ground", 12),
-    (branch_img, "air", 0)  # height_offset ignored for air obstacles
+    (branch_img, "air", 0)  # ground_height not used for air obstacles
 ]
 
 def reset_game():
@@ -78,7 +80,7 @@ def reset_game():
 def spawn_obstacle():
     """Spawn a new obstacle, ensuring it's passable"""
     # Pick random obstacle type
-    img, obs_type, height_offset = random.choice(OBSTACLE_TYPES)
+    img, obs_type, ground_height = random.choice(OBSTACLE_TYPES)
     
     # Check if last obstacle was an air obstacle
     last_was_air = False
@@ -91,13 +93,13 @@ def spawn_obstacle():
     if last_was_air and obs_type == "air":
         # Force ground obstacle instead
         ground_obstacles = [(img, t, h) for img, t, h in OBSTACLE_TYPES if t == "ground"]
-        img, obs_type, height_offset = random.choice(ground_obstacles)
+        img, obs_type, ground_height = random.choice(ground_obstacles)
     
     # Compute spawn Y: ground obstacles rest on ground; air obstacles have fixed bottom at GROUND_Y - AIR_GAP
     if obs_type == "air":
         y_pos = GROUND_Y - AIR_GAP - img.height
     else:
-        y_pos = GROUND_Y - height_offset
+        y_pos = GROUND_Y - ground_height
 
     obstacle = {
         "x": WIDTH,
@@ -225,8 +227,10 @@ def draw_game():
     # Draw player
     player_y = int(state["player_y"])
     if state["is_ducking"]:
-        # Draw ducking (squashed sprite) - use int coordinates
-        screen.scale_blit(player_img, PLAYER_X, int(player_y + 8), 16, 8)
+        # Draw ducking (squashed sprite)
+        # Note: DUCKING_SPRITE_Y_OFFSET (8) for rendering differs from DUCKING_Y_OFFSET (10) for collision
+        # This accounts for the visual squashing while maintaining proper collision detection
+        screen.scale_blit(player_img, PLAYER_X, int(player_y + DUCKING_SPRITE_Y_OFFSET), 16, 8)
     else:
         screen.blit(player_img, PLAYER_X, player_y)
     
