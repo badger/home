@@ -237,7 +237,7 @@ def draw_game():
     player_y = int(state["player_y"])
     if state["is_ducking"]:
         # Draw ducking (squashed sprite)
-        # DUCKING_SPRITE_Y_OFFSET (8) positions the squashed sprite (16px->8px) visually on ground.
+        # DUCKING_SPRITE_Y_OFFSET (8) positions the squashed sprite so its bottom aligns with GROUND_Y (90).
         # DUCKING_Y_OFFSET (10) positions collision box top for reduced hit area during ducking.
         screen.scale_blit(player_img, PLAYER_X, int(player_y + DUCKING_SPRITE_Y_OFFSET), 16, 8)
     else:
