@@ -87,7 +87,7 @@ def spawn_obstacle():
     last_was_air = False
     if state["obstacles"]:
         last_obs = state["obstacles"][-1]
-        if last_obs["type"] == "air":
+        if last_obs.get("type") == "air":
             last_was_air = True
 
     # Ensure we don't spawn two air obstacles in a row (would be impossible)
