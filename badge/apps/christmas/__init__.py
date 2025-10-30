@@ -69,24 +69,34 @@ MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 # Cache for fetched time data
 _cached_time = None
 _last_fetch_attempt = 0
-FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds)
+_fetch_success = False
+FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds) when successful
+RETRY_INTERVAL = 5 * 1000  # Retry every 5 seconds (in milliseconds) when failed
 
 def fetch_current_date():
     """
     Fetch current date from worldtimeapi.org
     Returns (year, month, day) tuple or None if fetch fails
     """
-    global _cached_time, _last_fetch_attempt
+    global _cached_time, _last_fetch_attempt, _fetch_success
     
     if not NETWORK_AVAILABLE:
         return None
     
     # Return cached time if still valid
     current_ticks = io.ticks
-    if _cached_time and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
+    if _cached_time and _fetch_success and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
         return _cached_time
     
-    # Only update last fetch attempt on an actual attempt (not when returning cached value)
+    # Check if we should retry (use shorter interval when failed)
+    if not _fetch_success and _last_fetch_attempt > 0:
+        if current_ticks - _last_fetch_attempt < RETRY_INTERVAL:
+            return None  # Return None to indicate we're still waiting to retry
+    
+    # Update last fetch attempt timestamp before trying
+    _last_fetch_attempt = current_ticks
+    
+    # Attempt to fetch current date from the API
     try:
         # Use worldtimeapi.org - a free API that doesn't require authentication
         # Reduced timeout to 3 seconds to keep badge responsive
@@ -108,16 +118,17 @@ def fetch_current_date():
                         raise ValueError("date part does not have three components")
                     year, month, day = parts
                     _cached_time = (int(year), int(month), int(day))
-                    # Only update last fetch attempt after successful parse
-                    _last_fetch_attempt = current_ticks
+                    _fetch_success = True
                     return _cached_time
                 except (ValueError, TypeError) as parse_err:
                     print(f"Failed to parse date from API response: {parse_err}")
+                    _fetch_success = False
         finally:
             response.close()
     except Exception as e:
-        # Network request failed, will fall back to local time
+        # Network request failed, will retry on next attempt
         print(f"Failed to fetch time from internet: {e}")
+        _fetch_success = False
     
     return None
 
@@ -131,7 +142,7 @@ def format_date(year, month, day):
 def get_current_date_string():
     """
     Get current date formatted as DD MMM YYYY
-    Returns formatted string or None if date cannot be determined
+    Returns formatted string or "thinking..." if date cannot be determined
     """
     # Try to fetch current date from internet
     fetched_date = fetch_current_date()
@@ -141,27 +152,22 @@ def get_current_date_string():
         year, month, day = fetched_date
         return format_date(year, month, day)
     
-    # Fall back to local time
-    try:
-        now = time.localtime()
-        return format_date(now[0], now[1], now[2])
-    except Exception:
-        return None
+    # Return "thinking..." if we don't have a date yet (no fallback to local time)
+    return "thinking..."
 
 def get_days_until_christmas():
-    """Calculate days until next Christmas (Dec 25)"""
+    """
+    Calculate days until next Christmas (Dec 25)
+    Returns None if date cannot be determined from network
+    """
     # Try to fetch current date from internet
     fetched_date = fetch_current_date()
     
-    if fetched_date:
-        # Use internet time
-        current_year, current_month, current_day = fetched_date
-    else:
-        # Fall back to local time
-        now = time.localtime()
-        current_year = now[0]
-        current_month = now[1]
-        current_day = now[2]
+    if not fetched_date:
+        # Cannot calculate without valid date from network
+        return None
+    
+    current_year, current_month, current_day = fetched_date
     
     # Determine which Christmas to count down to
     christmas_year = current_year
@@ -209,28 +215,36 @@ def update():
     # Calculate days until Christmas
     days = get_days_until_christmas()
     
-    # Draw countdown
     screen.font = large_font
     screen.brush = TEXT_BRUSH
     
-    # Main number (at top)
-    days_text = str(days)
-    w, h = screen.measure_text(days_text)
-    screen.text(days_text, 80 - (w // 2), 30)
+    if days is not None:
+        # We have a valid date - show countdown
+        # Main number (at top)
+        days_text = str(days)
+        w, h = screen.measure_text(days_text)
+        screen.text(days_text, 80 - (w // 2), 30)
+        
+        # Labels
+        screen.font = small_font
+        label = "days until"
+        w, _ = screen.measure_text(label)
+        screen.text(label, 80 - (w // 2), 60)
+        
+        label2 = "Christmas"
+        w, _ = screen.measure_text(label2)
+        screen.text(label2, 80 - (w // 2), 75)
+    else:
+        # Still fetching date - show "thinking..."
+        screen.font = small_font
+        message = "thinking..."
+        w, _ = screen.measure_text(message)
+        screen.text(message, 80 - (w // 2), 55)
     
-    # Labels
-    screen.font = small_font
-    label = "days until"
-    w, _ = screen.measure_text(label)
-    screen.text(label, 80 - (w // 2), 60)
-    
-    label2 = "Christmas"
-    w, _ = screen.measure_text(label2)
-    screen.text(label2, 80 - (w // 2), 75)
-    
-    # Display today's date at the bottom
+    # Display today's date at the bottom (only if we have a real date, not "thinking...")
     date_string = get_current_date_string()
-    if date_string:
+    if date_string and date_string != "thinking...":
+        screen.font = small_font
         w, _ = screen.measure_text(date_string)
         screen.text(date_string, 80 - (w // 2), 105)
 
