@@ -4,9 +4,8 @@ import sys
 from badgeware import screen, PixelFont, shapes, brushes, io, run, Matrix
 
 try:
-    from urllib.urequest import urlopen
-    import json
     import network
+    import ntptime
     NETWORK_AVAILABLE = True
 except ImportError:
     NETWORK_AVAILABLE = False
@@ -68,12 +67,11 @@ BASE_DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-# Cache for fetched time data
-_cached_time = None
-_last_fetch_attempt = 0
-_fetch_success = False
-FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds) when successful
-RETRY_INTERVAL = 5 * 1000  # Retry every 5 seconds (in milliseconds) when failed
+# NTP sync state
+_ntp_synced = False
+_ntp_sync_attempt = 0
+_last_sync_attempt = 0
+SYNC_RETRY_INTERVAL = 5 * 1000  # Retry NTP sync every 5 seconds (in milliseconds) when failed
 
 # Network connection state
 WIFI_TIMEOUT = 60
@@ -180,67 +178,68 @@ def wlan_start():
             pass
         return False
 
-def fetch_current_date():
+def sync_time_via_ntp():
     """
-    Fetch current date from worldtimeapi.org
-    Returns (year, month, day) tuple or None if fetch fails
+    Sync system time using NTP
+    Returns True if sync was successful, False otherwise
     """
-    global _cached_time, _last_fetch_attempt, _fetch_success
+    global _ntp_synced, _ntp_sync_attempt, _last_sync_attempt
     
     if not NETWORK_AVAILABLE:
-        return None
+        return False
     
     if not connected:
+        return False
+    
+    # If already synced, don't sync again
+    if _ntp_synced:
+        return True
+    
+    # Check if we should retry
+    current_ticks = io.ticks
+    if _ntp_sync_attempt > 0:
+        if current_ticks - _last_sync_attempt < SYNC_RETRY_INTERVAL:
+            return False  # Still waiting to retry
+    
+    # Update last sync attempt timestamp
+    _last_sync_attempt = current_ticks
+    _ntp_sync_attempt += 1
+    
+    try:
+        # Sync time via NTP
+        ntptime.settime()
+        _ntp_synced = True
+        print("NTP time sync successful")
+        return True
+    except Exception as e:
+        print(f"NTP sync failed (attempt {_ntp_sync_attempt}): {e}")
+        return False
+
+def get_current_date():
+    """
+    Get current date from system time (after NTP sync)
+    Returns (year, month, day) tuple or None if time is not synced
+    """
+    if not _ntp_synced:
         return None
     
-    # Return cached time if still valid
-    current_ticks = io.ticks
-    if _cached_time and _fetch_success and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
-        return _cached_time
-    
-    # Check if we should retry (use shorter interval when failed)
-    if not _fetch_success and _last_fetch_attempt > 0:
-        if current_ticks - _last_fetch_attempt < RETRY_INTERVAL:
-            return None  # Return None to indicate we're still waiting to retry
-    
-    # Update last fetch attempt timestamp before trying
-    _last_fetch_attempt = current_ticks
-    
-    # Attempt to fetch current date from the API
     try:
-        # Use worldtimeapi.org - a free API that doesn't require authentication
-        # Reduced timeout to 3 seconds to keep badge responsive
-        response = urlopen("https://worldtimeapi.org/api/timezone/Etc/UTC", timeout=3)
-        try:
-            data = response.read()
-            time_data = json.loads(data)
-            # datetime format: "2025-10-30T01:23:45.123456+00:00"
-            datetime_str = time_data.get("datetime", "")
-            
-            if datetime_str:
-                # Parse the date part (YYYY-MM-DD) with validation
-                try:
-                    if "T" not in datetime_str:
-                        raise ValueError("datetime string missing 'T' separator")
-                    date_part = datetime_str.split("T")[0]
-                    parts = date_part.split("-")
-                    if len(parts) != 3:
-                        raise ValueError("date part does not have three components")
-                    year, month, day = parts
-                    _cached_time = (int(year), int(month), int(day))
-                    _fetch_success = True
-                    return _cached_time
-                except (ValueError, TypeError) as parse_err:
-                    print(f"Failed to parse date from API response: {parse_err}")
-                    _fetch_success = False
-        finally:
-            response.close()
+        # Get current time from system
+        # time.localtime() returns: (year, month, day, hour, minute, second, weekday, yearday)
+        current_time = time.localtime()
+        year = current_time[0]
+        month = current_time[1]
+        day = current_time[2]
+        
+        # Sanity check: if year is unreasonable, NTP didn't actually work
+        # Valid range: 2025-2100 (the badge was created in 2025)
+        if year < 2025 or year > 2100:
+            return None
+        
+        return (year, month, day)
     except Exception as e:
-        # Network request failed, will retry on next attempt
-        print(f"Failed to fetch time from internet: {e}")
-        _fetch_success = False
-    
-    return None
+        print(f"Failed to get current date from system time: {e}")
+        return None
 
 def format_date(year, month, day):
     """
@@ -254,30 +253,30 @@ def get_current_date_string():
     Get current date formatted as DD MMM YYYY
     Returns formatted string or "thinking..." if date cannot be determined
     """
-    # Try to fetch current date from internet
-    fetched_date = fetch_current_date()
+    # Get current date from NTP-synced system time
+    current_date = get_current_date()
     
-    if fetched_date:
-        # Use internet time
-        year, month, day = fetched_date
+    if current_date:
+        # Use synced time
+        year, month, day = current_date
         return format_date(year, month, day)
     
-    # Return "thinking..." if we don't have a date yet (no fallback to local time)
+    # Return "thinking..." if we don't have a synced time yet
     return "thinking..."
 
 def get_days_until_christmas():
     """
     Calculate days until next Christmas (Dec 25)
-    Returns None if date cannot be determined from network
+    Returns None if date cannot be determined from NTP-synced time
     """
-    # Try to fetch current date from internet
-    fetched_date = fetch_current_date()
+    # Get current date from NTP-synced system time
+    current_date = get_current_date()
     
-    if not fetched_date:
-        # Cannot calculate without valid date from network
+    if not current_date:
+        # Cannot calculate without valid synced date
         return None
     
-    current_year, current_month, current_day = fetched_date
+    current_year, current_month, current_day = current_date
     
     # Determine which Christmas to count down to
     christmas_year = current_year
@@ -328,6 +327,9 @@ def update():
     if NETWORK_AVAILABLE:
         if get_connection_details():
             wlan_start()
+            # Once connected, attempt NTP sync
+            if connected:
+                sync_time_via_ntp()
     
     # Calculate days until Christmas
     days = get_days_until_christmas()
