@@ -2,6 +2,13 @@ import time
 import random
 from badgeware import screen, PixelFont, shapes, brushes, io, run, Matrix
 
+try:
+    from urllib.urequest import urlopen
+    import json
+    NETWORK_AVAILABLE = True
+except ImportError:
+    NETWORK_AVAILABLE = False
+
 # Christmas colors
 BG_COLOR = (10, 20, 40)  # Dark blue night sky
 TEXT_COLOR = (255, 255, 255)  # White text
@@ -55,12 +62,75 @@ snowflakes = [Snowflake() for _ in range(15)]
 # Base days in each month (non-leap year)
 BASE_DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
+# Cache for fetched time data
+_cached_time = None
+_last_fetch_attempt = 0
+FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds)
+
+def fetch_current_date():
+    """
+    Fetch current date from worldtimeapi.org
+    Returns (year, month, day) tuple or None if fetch fails
+    """
+    global _cached_time, _last_fetch_attempt
+    
+    if not NETWORK_AVAILABLE:
+        return None
+    
+    # Return cached time if still valid
+    current_ticks = io.ticks
+    if _cached_time and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
+        return _cached_time
+    
+    # Only update last fetch attempt on an actual attempt (not when returning cached value)
+    try:
+        # Use worldtimeapi.org - a free API that doesn't require authentication
+        # Reduced timeout to 3 seconds to keep badge responsive
+        response = urlopen("https://worldtimeapi.org/api/timezone/Etc/UTC", timeout=3)
+        try:
+            data = response.read()
+            time_data = json.loads(data)
+            # datetime format: "2025-10-30T01:23:45.123456+00:00"
+            datetime_str = time_data.get("datetime", "")
+            
+            if datetime_str:
+                # Parse the date part (YYYY-MM-DD) with validation
+                try:
+                    if "T" not in datetime_str:
+                        raise ValueError("datetime string missing 'T' separator")
+                    date_part = datetime_str.split("T")[0]
+                    parts = date_part.split("-")
+                    if len(parts) != 3:
+                        raise ValueError("date part does not have three components")
+                    year, month, day = parts
+                    _cached_time = (int(year), int(month), int(day))
+                    # Only update last fetch attempt after successful parse
+                    _last_fetch_attempt = current_ticks
+                    return _cached_time
+                except (ValueError, TypeError) as parse_err:
+                    print(f"Failed to parse date from API response: {parse_err}")
+        finally:
+            response.close()
+    except Exception as e:
+        # Network request failed, will fall back to local time
+        print(f"Failed to fetch time from internet: {e}")
+    
+    return None
+
 def get_days_until_christmas():
     """Calculate days until next Christmas (Dec 25)"""
-    now = time.localtime()
-    current_year = now[0]
-    current_month = now[1]
-    current_day = now[2]
+    # Try to fetch current date from internet
+    fetched_date = fetch_current_date()
+    
+    if fetched_date:
+        # Use internet time
+        current_year, current_month, current_day = fetched_date
+    else:
+        # Fall back to local time
+        now = time.localtime()
+        current_year = now[0]
+        current_month = now[1]
+        current_day = now[2]
     
     # Determine which Christmas to count down to
     christmas_year = current_year
