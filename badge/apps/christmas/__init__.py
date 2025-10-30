@@ -62,6 +62,10 @@ snowflakes = [Snowflake() for _ in range(15)]
 # Base days in each month (non-leap year)
 BASE_DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
+# Month names (short format)
+MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
 # Cache for fetched time data
 _cached_time = None
 _last_fetch_attempt = 0
@@ -116,6 +120,33 @@ def fetch_current_date():
         print(f"Failed to fetch time from internet: {e}")
     
     return None
+
+def format_date(year, month, day):
+    """
+    Format date as DD MMM YYYY (e.g., 30 Oct 2025)
+    """
+    month_name = MONTH_NAMES[month - 1] if 1 <= month <= 12 else "???"
+    return f"{day:02d} {month_name} {year}"
+
+def get_current_date_string():
+    """
+    Get current date formatted as DD MMM YYYY
+    Returns formatted string or None if date cannot be determined
+    """
+    # Try to fetch current date from internet
+    fetched_date = fetch_current_date()
+    
+    if fetched_date:
+        # Use internet time
+        year, month, day = fetched_date
+        return format_date(year, month, day)
+    
+    # Fall back to local time
+    try:
+        now = time.localtime()
+        return format_date(now[0], now[1], now[2])
+    except Exception:
+        return None
 
 def get_days_until_christmas():
     """Calculate days until next Christmas (Dec 25)"""
@@ -196,6 +227,12 @@ def update():
     label2 = "Christmas"
     w, _ = screen.measure_text(label2)
     screen.text(label2, 80 - (w // 2), 75)
+    
+    # Display today's date at the bottom
+    date_string = get_current_date_string()
+    if date_string:
+        w, _ = screen.measure_text(date_string)
+        screen.text(date_string, 80 - (w // 2), 105)
 
 if __name__ == "__main__":
     run(update)
