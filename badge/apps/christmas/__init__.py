@@ -1,10 +1,12 @@
 import time
 import random
+import sys
 from badgeware import screen, PixelFont, shapes, brushes, io, run, Matrix
 
 try:
     from urllib.urequest import urlopen
     import json
+    import network
     NETWORK_AVAILABLE = True
 except ImportError:
     NETWORK_AVAILABLE = False
@@ -73,6 +75,111 @@ _fetch_success = False
 FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds) when successful
 RETRY_INTERVAL = 5 * 1000  # Retry every 5 seconds (in milliseconds) when failed
 
+# Network connection state
+WIFI_TIMEOUT = 60
+WIFI_PASSWORD = None
+WIFI_SSID = None
+wlan = None
+connected = False
+ticks_start = None
+
+def get_connection_details():
+    """Get WiFi credentials from secrets.py"""
+    global WIFI_PASSWORD, WIFI_SSID
+
+    if WIFI_SSID is not None:
+        return True
+
+    try:
+        sys.path.insert(0, "/")
+        from secrets import WIFI_PASSWORD, WIFI_SSID
+        sys.path.pop(0)
+    except ImportError:
+        WIFI_PASSWORD = None
+        WIFI_SSID = None
+
+    if not WIFI_SSID:
+        return False
+
+    return True
+
+def wlan_start():
+    """Initialize and connect to WiFi network"""
+    global wlan, ticks_start, connected, WIFI_PASSWORD, WIFI_SSID
+
+    if not NETWORK_AVAILABLE:
+        return False
+
+    if ticks_start is None:
+        ticks_start = io.ticks
+
+    if connected:
+        return True
+
+    if wlan is None:
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+
+        if wlan.isconnected():
+            connected = True
+            return True
+
+    # attempt to find the SSID by scanning; some APs may be hidden intermittently
+    try:
+        ssid_found = False
+        try:
+            scans = wlan.scan()
+        except Exception:
+            scans = []
+
+        for s in scans:
+            # s[0] is SSID (bytes or str)
+            ss = s[0]
+            if isinstance(ss, (bytes, bytearray)):
+                try:
+                    ss = ss.decode("utf-8", "ignore")
+                except Exception:
+                    ss = str(ss)
+            if ss == WIFI_SSID:
+                ssid_found = True
+                break
+
+        if not ssid_found:
+            # not found yet; if still within timeout, keep trying on subsequent calls
+            if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+                # return True to indicate we're still attempting to connect (in-progress)
+                return True
+            else:
+                # timed out
+                return False
+
+        # SSID is visible; attempt to connect (or re-attempt)
+        try:
+            wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+        except Exception:
+            # connection initiation failed; we'll retry while still within timeout
+            if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+                return True
+            return False
+
+        # update connected state
+        connected = wlan.isconnected()
+
+        # if connected, return True; otherwise indicate in-progress until timeout
+        if connected:
+            return True
+        if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
+            return True
+        return False
+    except Exception as e:
+        # on unexpected errors, don't crash the UI; report and return False
+        try:
+            print("wlan_start error:", e)
+        except Exception:
+            # Ignore errors in error reporting to avoid crashing the UI
+            pass
+        return False
+
 def fetch_current_date():
     """
     Fetch current date from worldtimeapi.org
@@ -81,6 +188,9 @@ def fetch_current_date():
     global _cached_time, _last_fetch_attempt, _fetch_success
     
     if not NETWORK_AVAILABLE:
+        return None
+    
+    if not connected:
         return None
     
     # Return cached time if still valid
@@ -203,6 +313,8 @@ def get_days_until_christmas():
     return max(0, days_left)
 
 def update():
+    global connected
+    
     # Clear screen with dark blue background
     screen.brush = BG_BRUSH
     screen.clear()
@@ -211,6 +323,11 @@ def update():
     for snowflake in snowflakes:
         snowflake.update()
         snowflake.draw()
+    
+    # Try to get connection details and start WLAN if network is available
+    if NETWORK_AVAILABLE:
+        if get_connection_details():
+            wlan_start()
     
     # Calculate days until Christmas
     days = get_days_until_christmas()
@@ -235,9 +352,16 @@ def update():
         w, _ = screen.measure_text(label2)
         screen.text(label2, 80 - (w // 2), 75)
     else:
-        # Still fetching date - show "thinking..."
+        # Still fetching date - show appropriate message
         screen.font = small_font
-        message = "thinking..."
+        if not NETWORK_AVAILABLE:
+            message = "network unavailable"
+        elif not get_connection_details():
+            message = "no wifi config"
+        elif not connected:
+            message = "connecting..."
+        else:
+            message = "thinking..."
         w, _ = screen.measure_text(message)
         screen.text(message, 80 - (w // 2), 55)
     
