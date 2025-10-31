@@ -1,4 +1,4 @@
-# Universe 2025 (Tufty) Badge
+# JonathanHoskins Universe 2025 (Tufty) Badge
 
 For GitHub Universe 2025 we have partnered with our friends at Pimoroni to create the Tufty Edition of our hackable conference badge.  This is a custom version of the 
 [Pimoroni Tufty 2350](https://shop.pimoroni.com/) badge, with a custom PCB, added IR
