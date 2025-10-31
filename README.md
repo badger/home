@@ -113,6 +113,19 @@ def on_exit():
   pass
 ```
 
+## Repository quick checks (CI)
+
+This repository includes a lightweight structural checker at `scripts/quick_checks.py` and a GitHub Action that runs it on pull requests.
+
+Run the checks locally before opening a PR:
+
+```powershell
+python .\scripts\quick_checks.py
+```
+
+On PRs the Action will run and post a comment with the script output if checks fail. Use this to catch missing assets, malformed icons, and missing app entry points.
+```
+
 ### Editing code on the badge
 
 The easiest way to edit the code on the device is to put it into mass storage mode:
