@@ -24,25 +24,33 @@ jobs:
           python scripts/quick_checks.py 2>&1 | tee quick_checks.out
           echo $? > quick_checks.rc
 
-      - name: Post PR comment on failure
-        uses: actions/github-script@v6
+      - name: Read quick checks output
+        id: read_output
+        run: |
+          # Safely set the content of quick_checks.out to an output variable
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat quick_checks.out || true
+          echo "EOF" >> $GITHUB_OUTPUT
+          rc=$(cat quick_checks.rc || echo "")
+          echo "rc=$rc" >> $GITHUB_OUTPUT
+
+      - name: Post or update single PR comment
+        uses: peter-evans/create-or-update-comment@v4
         with:
-          script: |
-            const fs = require('fs')
-            const out = fs.readFileSync('quick_checks.out', 'utf8')
-            const rc = fs.readFileSync('quick_checks.rc', 'utf8').trim()
-            if (rc !== '0') {
-              // build a fenced code block safely using unicode escapes for backticks
-              const threeBackticks = '\u0060\u0060\u0060'
-              const fenced = threeBackticks + '\n' + out + '\n' + threeBackticks
-              const body = "**Quick checks failed (exit code " + rc + ")**\n\n<details><summary>Output</summary>\n\n" + fenced + "\n</details>"
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              })
-            }
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            **Quick checks status:**
+            
+            Exit code: `${{ steps.read_output.outputs.rc }}`
+            
+            <details>
+            <summary>Output</summary>
+
+            ${{ steps.read_output.outputs.body }}
+
+            </details>
+          identifier: quick-checks-report
 
       - name: Fail job if checks failed
         run: |
