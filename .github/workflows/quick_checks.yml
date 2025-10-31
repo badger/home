@@ -20,7 +20,8 @@ jobs:
       - name: Run quick checks
         # capture output and return code so we can comment on PRs
         run: |
-          python scripts/quick_checks.py 2>&1 | tee quick_checks.out || true
+          set -o pipefail
+          python scripts/quick_checks.py 2>&1 | tee quick_checks.out
           echo $? > quick_checks.rc
 
       - name: Post PR comment on failure
@@ -40,57 +41,6 @@ jobs:
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
                 body: body
-              })
-            }
-
-      - name: Fail job if checks failed
-        run: |
-          rc=$(cat quick_checks.rc)
-          if [ "$rc" != "0" ]; then
-            echo "Quick checks failed (exit code $rc) -- see PR comment for details"
-            exit $rc
-          fi
-name: Quick repository checks
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-
-jobs:
-  quick-checks:
-    name: Run quick checks script
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Run quick checks
-        # capture output and return code so we can comment on PRs
-        run: |
-          python scripts/quick_checks.py 2>&1 | tee quick_checks.out || true
-          echo $? > quick_checks.rc
-
-      - name: Post PR comment on failure
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const fs = require('fs')
-            const out = fs.readFileSync('quick_checks.out', 'utf8')
-            const rc = fs.readFileSync('quick_checks.rc', 'utf8').trim()
-            if (rc !== '0') {
-              const body = `**Quick checks failed (exit code ${rc})**\n\n<details><summary>Output</summary>\n\n\n\n+` + '```
-`' + `\n${out}\n` + '```
-` + '\n</details>'
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body
               })
             }
 
