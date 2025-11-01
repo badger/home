@@ -1067,7 +1067,8 @@ def load_game_module(module_path: str) -> ModuleType:
     # Make local imports work (e.g. `from mona import Mona`)
     game_dir = os.path.dirname(game_abs)
     sim_root = SIM_ROOT if SIM_ROOT is not None else _find_sim_root(game_dir)
-    for p in (game_dir, os.path.join(sim_root, "apps")):
+    simulator_dir = os.path.dirname(os.path.abspath(__file__))
+    for p in (game_dir, os.path.join(sim_root, "apps"), simulator_dir):
         if p not in sys.path:
             sys.path.insert(0, p)
 

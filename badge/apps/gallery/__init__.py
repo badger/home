@@ -4,137 +4,146 @@ import os
 sys.path.insert(0, "/system/apps/gallery")
 os.chdir("/system/apps/gallery")
 
-import math
-from badgeware import SpriteSheet, PixelFont, Image, screen, run, io, brushes, shapes
+from badgeware import PixelFont, Image, screen, run, io, brushes, shapes
 
-mona = SpriteSheet("/system/assets/mona-sprites/mona-heart.png", 14, 1).animation()
 screen.font = PixelFont.load("/system/assets/fonts/nope.ppf")
 screen.antialias = Image.X2
 
-ui_hidden = False
-
-# create a dictionary of all the images in the images directory
+# Build list of PNG image files
 files = []
-for file in os.listdir("images"):
-    file = file.rsplit("/", 1)[-1]
-    name, ext = file.rsplit(".", 1)
-    if ext == "png":
-        files.append({
-            "name": file,
-            "title": name.replace("-", " ")
-        })
+try:
+    for file in os.listdir("images"):
+        if file.startswith("."):
+            continue
+        if file.lower().endswith(".png"):
+            name = file.rsplit(".", 1)[0]
+            files.append({
+                "name": file,
+                "title": name.replace("-", " ").replace("_", " ")
+            })
+except OSError:
+    pass
 
-# load the thumbnail images to match
-thumbnails = []
-for file in files:
-    thumbnails.append(Image.load(f"thumbnails/{file["name"]}"))
+# Ensure we have at least one entry
+if not files:
+    files.append({"name": None, "title": "No images found"})
 
-# given a gallery image index it clamps it into the range of available images
-
-
-def clamp_index(index):
-    return index % len(files)
-
-# load the main image based on the gallery index provided
-
-
-def load_image(index):
-    global image
-    index = clamp_index(index)
-    image = Image.load(f"images/{files[index]["name"]}")
-
-# render the thumbnail strip
-
-
-def draw_thumbnails():
-    if ui_hidden:
-        return
-
-    spacing = 36
-    # render the thumbnail strip
-    for i in range(-3, 4):
-        offset = thumbnail_scroll - int(thumbnail_scroll)
-
-        pos = (((i + -offset) * spacing) + 60, 92)
-
-        # determine which gallery image we're drawing the thumbnail for
-        thumbnail = clamp_index(int(thumbnail_scroll) + i)
-        thumbnail_image = thumbnails[thumbnail]
-
-        # draw the thumbnail shadow
-        screen.brush = brushes.color(0, 0, 0, 50)
-        screen.draw(shapes.rectangle(
-            pos[0] + 2, pos[1] + 2, thumbnail_image.width, thumbnail_image.height))
-
-        # draw the active thumbnail outline
-        if i == 0:
-            brightness = (math.sin(io.ticks / 200) * 127) + 127
-            screen.brush = brushes.color(
-                brightness, brightness, brightness, 150)
-            screen.draw(shapes.rectangle(
-                pos[0] - 1, pos[1] - 1, thumbnail_image.width + 2, thumbnail_image.height + 2))
-
-        screen.blit(thumbnail_image, *pos)
-
-    # draw a jumping mona
-    mona_off = abs(((thumbnail_scroll - int(thumbnail_scroll)) * math.pi))
-    mona_y = math.sin(mona_off) * 20
-    screen.scale_blit(mona.frame(io.ticks / 100), 130, 68 - mona_y, -24, 24)
-
-
-# start up with the first image in the gallery
 index = 0
-load_image(index)
-
-thumbnail_scroll = index
+error = None
+ui_hidden = False
 image_changed_at = None
+current_image = None
+
+
+def clamp_index(i):
+    return i % len(files)
+
+
+def load_image(i):
+    global error, current_image
+    i = clamp_index(i)
+    
+    if files[i]["name"] is None:
+        error = "No images in images/"
+        current_image = None
+        return
+    
+    filename = files[i]["name"]
+    filepath = f"images/{filename}"
+    
+    try:
+        # Load PNG using badgeware Image
+        current_image = Image.load(filepath)
+        error = None
+    except OSError as e:
+        error = f"File error: {e}"
+        current_image = None
+    except Exception as e:
+        error = f"Load failed: {e}"
+        current_image = None
+
+
+# Load first image
+load_image(index)
 
 
 def update():
-    global index, thumbnail_scroll, ui_hidden, image_changed_at
-
-    # if the user presses left or right then switch image
-    if io.BUTTON_A in io.pressed:
+    global index, ui_hidden, image_changed_at
+    
+    # Initialize timer on first frame
+    if image_changed_at is None and not error:
+        image_changed_at = io.ticks
+    
+    # Navigation
+    navigated = False
+    if io.BUTTON_UP in io.pressed:
         index -= 1
+        navigated = True
         ui_hidden = False
         image_changed_at = io.ticks
-        load_image(index)
-
-    if io.BUTTON_C in io.pressed:
+    
+    if io.BUTTON_DOWN in io.pressed:
         index += 1
+        navigated = True
         ui_hidden = False
         image_changed_at = io.ticks
-        load_image(index)
-
-    if io.BUTTON_B in io.pressed:
-        ui_hidden = not ui_hidden
-        image_changed_at = io.ticks
-
-    if image_changed_at and (io.ticks - image_changed_at) > 2000:
+    
+    # Auto-hide UI after 3 seconds
+    if image_changed_at and (io.ticks - image_changed_at) > 3000:
         ui_hidden = True
-
-    # draw the currently selected image
-    screen.blit(image, 0, 0)
-
-    # smooth scroll towards the newly selected image
-    if thumbnail_scroll < index:
-        thumbnail_scroll = min(thumbnail_scroll + 0.1, index)
-    if thumbnail_scroll > index:
-        thumbnail_scroll = max(thumbnail_scroll - 0.1, index)
-
-    # draw the thumbnail ui
-    draw_thumbnails()
-
-    title = files[clamp_index(index)]["title"]
-    width, _ = screen.measure_text(title)
-
+    
+    # Load new image when navigating
+    if navigated:
+        load_image(index)
+    
+    # Clear screen
+    screen.brush = brushes.color(0, 0, 0)
+    screen.clear()
+    
+    # Draw current image (centered)
+    if current_image and not error:
+        img_width = current_image.width
+        img_height = current_image.height
+        x = max(0, (160 - img_width) // 2)
+        y = max(0, (120 - img_height) // 2)
+        screen.blit(current_image, x, y)
+    
+    # Draw error if present
+    if error:
+        # Simple error display
+        screen.brush = brushes.color(255, 100, 100)
+        screen.text("Error:", 10, 40)
+        screen.brush = brushes.color(255, 255, 255)
+        
+        # Word wrap error message
+        words = error.split()
+        line = ""
+        y = 55
+        for word in words:
+            test = line + (" " if line else "") + word
+            if len(test) > 20:
+                screen.text(line, 10, y)
+                line = word
+                y += 12
+                if y > 100:
+                    break
+            else:
+                line = test
+        if line and y <= 100:
+            screen.text(line, 10, y)
+    
+    # Draw title overlay (only if not hidden)
     if not ui_hidden:
-        screen.brush = brushes.color(0, 0, 0, 100)
+        title = files[clamp_index(index)]["title"]
+        width, _ = screen.measure_text(title)
+        
+        screen.brush = brushes.color(0, 0, 0, 150)
         screen.draw(shapes.rounded_rectangle(
             80 - (width / 2) - 8, -6, width + 16, 22, 6))
-        screen.text(title, 80 - (width / 2) + 1, 1)
+        
         screen.brush = brushes.color(255, 255, 255)
         screen.text(title, 80 - (width / 2), 0)
+
 
 
 if __name__ == "__main__":
