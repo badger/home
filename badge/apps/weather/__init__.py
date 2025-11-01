@@ -27,6 +27,7 @@ orange = brushes.color(255, 165, 0)
 LATITUDE = None
 LONGITUDE = None
 LOCATION_NAME = "Detecting..."
+COUNTRY_CODE = None
 
 # State
 WIFI_TIMEOUT = 60
@@ -42,6 +43,7 @@ error_message = None
 last_update = None
 auto_refresh = True
 location_detected = False
+use_fahrenheit = False  # Will be set based on location
 
 
 def get_wifi_credentials():
@@ -95,7 +97,7 @@ def wlan_start():
 
 def detect_location():
     """Auto-detect location from IP using ipapi.co (free, no key needed)"""
-    global LATITUDE, LONGITUDE, LOCATION_NAME, location_detected
+    global LATITUDE, LONGITUDE, LOCATION_NAME, COUNTRY_CODE, location_detected, use_fahrenheit
     
     if location_detected:
         return True
@@ -120,9 +122,14 @@ def detect_location():
         LATITUDE = result['latitude']
         LONGITUDE = result['longitude']
         LOCATION_NAME = result['city']
+        COUNTRY_CODE = result.get('country_code', 'US')
         location_detected = True
         
-        print(f"Location detected: {LOCATION_NAME} ({LATITUDE}, {LONGITUDE})")
+        # Default to Fahrenheit for USA, Celsius for everywhere else
+        use_fahrenheit = (COUNTRY_CODE == 'US')
+        
+        print(f"Location detected: {LOCATION_NAME} ({LATITUDE}, {LONGITUDE}), Country: {COUNTRY_CODE}")
+        print(f"Temperature unit: {'Fahrenheit' if use_fahrenheit else 'Celsius'}")
         
         del response, data, chunk, result
         gc.collect()
@@ -135,6 +142,8 @@ def detect_location():
         LATITUDE = 37.7749
         LONGITUDE = -122.4194
         LOCATION_NAME = "San Francisco"
+        COUNTRY_CODE = "US"
+        use_fahrenheit = True
         location_detected = True
         return False
 
@@ -154,7 +163,10 @@ def fetch_weather():
     
     try:
         # Open-Meteo API - free weather data
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1"
+        # Fetch in both units to allow switching without refetching
+        temp_unit = "fahrenheit" if use_fahrenheit else "celsius"
+        wind_unit = "mph" if use_fahrenheit else "kmh"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&temperature_unit={temp_unit}&wind_speed_unit={wind_unit}&forecast_days=1"
         
         response = urlopen(url, headers={"User-Agent": "GitHubBadge"})
         data = b""
@@ -179,7 +191,8 @@ def fetch_weather():
             'condition': get_weather_condition(current['weather_code'])
         }
         
-        print(f"Weather: {weather_data['temp']}°F, {weather_data['condition']}")
+        unit = "F" if use_fahrenheit else "C"
+        print(f"Weather: {weather_data['temp']}°{unit}, {weather_data['condition']}")
         
         del response, data, chunk, result
         gc.collect()
@@ -339,7 +352,8 @@ def draw_weather():
         # Draw temperature (large)
         screen.font = large_font
         screen.brush = white
-        temp_text = f"{int(weather_data['temp'])}F"
+        unit = "F" if use_fahrenheit else "C"
+        temp_text = f"{int(weather_data['temp'])}{unit}"
         center_text(temp_text, 25)
         
         # Draw condition
@@ -363,7 +377,8 @@ def draw_weather():
         screen.brush = blue
         screen.text("Wind:", 10, y)
         screen.brush = white
-        wind_text = f"{int(weather_data['wind_speed'])} mph"
+        wind_unit_text = "mph" if use_fahrenheit else "km/h"
+        wind_text = f"{int(weather_data['wind_speed'])} {wind_unit_text}"
         w, _ = screen.measure_text(wind_text)
         screen.text(wind_text, 150 - w, y)
     
@@ -371,15 +386,20 @@ def draw_weather():
     screen.font = small_font
     if connected:
         screen.brush = phosphor
-        screen.text("B:Refresh", 2, 112)
+        screen.text("B:Refresh", 2, 108)
+        # Show unit toggle
+        screen.brush = gray
+        unit_text = f"C:{unit if weather_data else '°'}"
+        w, _ = screen.measure_text(unit_text)
+        screen.text(unit_text, 155 - w, 108)
     else:
         screen.brush = gray
-        screen.text("Connecting...", 2, 112)
+        screen.text("Connecting...", 2, 108)
 
 
 def update():
     """Main update loop"""
-    global connected, loading, last_update, auto_refresh
+    global connected, loading, last_update, auto_refresh, use_fahrenheit
     
     # Handle WiFi connection
     if not get_wifi_credentials():
@@ -410,6 +430,12 @@ def update():
         # Detect location first, then fetch weather
         if not location_detected:
             detect_location()
+        fetch_weather()
+    
+    # Toggle temperature unit on C button
+    if io.BUTTON_C in io.pressed and weather_data and not loading:
+        use_fahrenheit = not use_fahrenheit
+        # Refetch weather data with new units
         fetch_weather()
     
     # Manual refresh on B button
