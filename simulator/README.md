@@ -5,14 +5,51 @@ API on top of Pygame. Use it to iterate quickly or to smoke-test changes before
 shipping them to the hardware badge.
 
 ## Prerequisites
-- Python 3.10 or newer (3.11 is what we use for local testing).
+- Python 3.10 or newer (3.13 recommended).
 - Pygame (`pip install pygame`).
 
-## Quick Start
+## Setup
+
+### Option 1: Virtual Environment (Recommended)
+
+Create and activate a virtual environment to isolate dependencies:
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate it (macOS/Linux)
+source .venv/bin/activate
+
+# Activate it (Windows)
+.venv\Scripts\activate
+
+# Install pygame
+pip install pygame
+```
+
+Once activated, your shell prompt will show `(.venv)` and you can use `python` directly:
 
 ```bash
 python simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
 ```
+
+To deactivate the virtual environment when done:
+
+```bash
+deactivate
+```
+
+### Option 2: System Python
+
+If you prefer not to use a virtual environment:
+
+```bash
+pip3 install pygame
+python3 simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
+```
+
+**Note:** If you have multiple Python versions installed, ensure pygame is installed for the version you're using to run the simulator.
 
 - `--scale` enlarges the 160×120 framebuffer so the window is easier to see
   (default is 4).

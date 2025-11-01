@@ -713,11 +713,13 @@ class Screen(_SurfaceTarget):
         self.width = width
         self.height = height
         self.scale = scale
-        self._window = pygame.display.set_mode((width * scale, height * scale))
+        # Add space below for keyboard hints (30 pixels)
+        self._window = pygame.display.set_mode((width * scale, height * scale + 30))
         pygame.display.set_caption("Badge Local Simulator")
         surface = pygame.Surface((width, height), pygame.SRCALPHA)
         super().__init__(surface)
         self.antialias = Image.OFF
+        self._hint_font = pygame.font.Font(None, 16)
 
     def load_into(self, path: str) -> None:
         """Load an image directly into the screen buffer."""
@@ -731,9 +733,36 @@ class Screen(_SurfaceTarget):
         return _Window(self, x, y, width, height)
 
     def present(self) -> None:
-        pygame.transform.scale(
-            self._surface, (self.width * self.scale, self.height * self.scale), self._window
+        # Scale and blit the game screen to a temporary surface
+        scaled_game = pygame.transform.scale(
+            self._surface, (self.width * self.scale, self.height * self.scale)
         )
+        
+        # Blit the scaled game to the window
+        self._window.blit(scaled_game, (0, 0))
+        
+        # Draw keyboard hints below the screen
+        y_offset = self.height * self.scale
+        hint_bg = (40, 40, 40)
+        hint_text = (200, 200, 200)
+        
+        # Fill the hint area with dark background
+        hint_rect = pygame.Rect(0, y_offset, self.width * self.scale, 30)
+        pygame.draw.rect(self._window, hint_bg, hint_rect)
+        
+        # Draw the hint text
+        hints = [
+            ("Z/A: A", 10),
+            ("X/B: B", 100),
+            ("Space/C: C", 180),
+            ("Arrows: D-pad", 300),
+            ("H/Esc: Home", 450)
+        ]
+        
+        for hint, x_pos in hints:
+            text_surf = self._hint_font.render(hint, True, hint_text)
+            self._window.blit(text_surf, (x_pos, y_offset + 8))
+        
         pygame.display.flip()
 
 
