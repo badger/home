@@ -709,10 +709,12 @@ class Matrix:
 
 
 class Screen(_SurfaceTarget):
-    def __init__(self, width: int = 160, height: int = 120, scale: int = 4) -> None:
+    def __init__(self, width: int = 160, height: int = 120, scale: int = 4, screenshot_dir: str = None) -> None:
         self.width = width
         self.height = height
         self.scale = scale
+        self.screenshot_dir = screenshot_dir
+        self._screenshot_counter = 0
         # Add space below for keyboard hints (30 pixels)
         self._window = pygame.display.set_mode((width * scale, height * scale + 30))
         pygame.display.set_caption("Badge Local Simulator")
@@ -731,6 +733,24 @@ class Screen(_SurfaceTarget):
 
     def window(self, x: float, y: float, width: float, height: float):
         return _Window(self, x, y, width, height)
+
+    def take_screenshot(self) -> None:
+        """Save a screenshot of the current screen at native resolution."""
+        if self.screenshot_dir is None:
+            print("Screenshot directory not configured. Use --screenshots to set it.")
+            return
+        
+        # Ensure directory exists
+        os.makedirs(self.screenshot_dir, exist_ok=True)
+        
+        # Generate filename
+        filename = f"screenshot_{self._screenshot_counter:04d}.png"
+        filepath = os.path.join(self.screenshot_dir, filename)
+        self._screenshot_counter += 1
+        
+        # Save the native resolution surface (not the scaled version)
+        pygame.image.save(self._surface, filepath)
+        print(f"Screenshot saved: {filepath}")
 
     def present(self) -> None:
         # Scale and blit the game screen to a temporary surface
@@ -894,7 +914,10 @@ class IO:
                 pygame.quit()
                 sys.exit(0)
             if event.type == pygame.KEYDOWN:
-                if event.key in self._key_map:
+                # Handle screenshot key (F12)
+                if event.key == pygame.K_F12:
+                    screen.take_screenshot()
+                elif event.key in self._key_map:
                     name = self._key_map[event.key]
                     self.pressed.add(name)
                     self.down.add(name)
@@ -1087,12 +1110,18 @@ def main() -> None:
         metavar="DIR",
         help="Use DIR as the root for '/system' lookups and asset loading.",
     )
+    parser.add_argument(
+        "--screenshots",
+        dest="screenshot_dir",
+        metavar="DIR",
+        help="Directory to save screenshots (press F12 to capture).",
+    )
     args = parser.parse_args()
 
     pygame.init()
 
     global screen, io, SIM_ROOT
-    screen = Screen(scale=args.scale)
+    screen = Screen(scale=args.scale, screenshot_dir=args.screenshot_dir)
     io = IO()
     if args.system_root:
         root = os.path.abspath(args.system_root)
