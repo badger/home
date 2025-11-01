@@ -94,6 +94,8 @@ GITHUB_USERNAME = "yourusername"
   live outside the repo or you want to point at generated assets.
 - `--screenshots DIR` specifies a directory to save screenshots when you press F12.
   Screenshots are saved at native badge resolution (160×120) in PNG format.
+- `--clean` removes all temporary files (cached downloads, saved state) before starting.
+  Useful for forcing apps to re-fetch data or testing the initial load experience.
 - The simulator automatically makes `/system/...` imports and file operations
   point at the repository tree so you can run unmodified badge apps.
 
@@ -132,3 +134,10 @@ Use a custom system root:
 ```bash
 python3 simulator/badge_simulator.py -C /path/to/custom/badge badge/apps/quest
 ```
+
+Clean cached files and start fresh:
+```bash
+python3 simulator/badge_simulator.py badge/apps/badge --clean
+```
+
+This removes temporary files including downloaded avatars, API responses, and saved app state.

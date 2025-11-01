@@ -1481,7 +1481,24 @@ def main() -> None:
         metavar="DIR",
         help="Directory to save screenshots (press F12 to capture).",
     )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Clean temporary files (cached downloads, state) before starting.",
+    )
     args = parser.parse_args()
+    
+    # Clean temporary files if requested
+    if args.clean:
+        import tempfile
+        import shutil
+        root_dir = os.path.join(tempfile.gettempdir(), "badge_simulator_root")
+        if os.path.exists(root_dir):
+            try:
+                shutil.rmtree(root_dir)
+                print(f"Cleaned temporary files: {root_dir}")
+            except Exception as e:
+                print(f"Warning: Could not clean temporary files: {e}")
 
     pygame.init()
 
