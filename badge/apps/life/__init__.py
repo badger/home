@@ -277,9 +277,10 @@ class GameOfLife:
 game = GameOfLife()
 show_info = False
 info_timer = 0
+info_message = ""
 
 def update():
-    global show_info, info_timer
+    global show_info, info_timer, info_message
     
     # Clear screen with pre-created brush
     screen.brush = BACKGROUND_BRUSH
@@ -288,15 +289,20 @@ def update():
 
     # Handle input
     if io.BUTTON_B in io.pressed:
-        if show_info and io.ticks < info_timer:
-            # Cycle palette
-            palette_names = list(NEIGHBOR_PALETTES.keys())
-            current_index = palette_names.index(ACTIVE_PALETTE)
-            next_index = (current_index + 1) % len(palette_names)
-            set_palette(palette_names[next_index])
         game.randomize()
         show_info = True
+        info_message = "Regenerated!"
         info_timer = io.ticks + 1000  # Show "Regenerated" for 1 second
+    
+    if io.BUTTON_C in io.pressed:
+        # Cycle palette
+        palette_names = list(NEIGHBOR_PALETTES.keys())
+        current_index = palette_names.index(ACTIVE_PALETTE)
+        next_index = (current_index + 1) % len(palette_names)
+        set_palette(palette_names[next_index])
+        show_info = True
+        info_message = f"Palette: {palette_names[next_index]}"
+        info_timer = io.ticks + 1000  # Show palette name for 1 second
     
     # Update game logic
     if io.ticks - game.last_update > game.update_interval:
@@ -306,16 +312,15 @@ def update():
     # Draw the grid
     game.draw()
     
-    # Show regeneration message
+    # Show info message
     if show_info and io.ticks < info_timer:
-        msg = "Regenerated!"
-        w, _ = screen.measure_text(msg)
+        w, _ = screen.measure_text(info_message)
         # Draw background for text
         screen.brush = INFO_BG_BRUSH
         screen.draw(shapes.rectangle(80 - (w // 2) - 2, 55, w + 4, 10))
         # Draw text
         screen.brush = TEXT_BRUSH
-        screen.text(msg, 80 - (w // 2), 56)
+        screen.text(info_message, 80 - (w // 2), 56)
     elif io.ticks >= info_timer:
         show_info = False
 
