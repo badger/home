@@ -135,7 +135,6 @@ class Shield:
         self.width = 16
         self.height = 10
         # Create a 2D grid of blocks (1 = intact, 0 = destroyed)
-        self.blocks = []
         # Shield shape (classic space invaders shield)
         pattern = [
             [1, 1, 1, 1, 1],
