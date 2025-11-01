@@ -8,6 +8,7 @@ from badgeware import io, brushes, shapes, screen, PixelFont, run, Image
 import network
 import ntptime
 import time
+import gc
 from machine import RTC
 
 # Load fonts
@@ -45,6 +46,11 @@ SYNC_INTERVAL = 3600  # Sync every hour (3600 seconds)
 # Time display state
 current_time = None
 current_date = None
+local_time = None
+timezone_offset = 0  # Offset in seconds from UTC
+timezone_name = "UTC"
+location_name = "Unknown"
+location_detected = False
 
 # Animation state
 blink_colon = True
@@ -130,6 +136,58 @@ def disconnect_wifi():
         print(f"WiFi disconnect error: {e}")
 
 
+def detect_timezone():
+    """Detect timezone from IP location using ipapi.co"""
+    global timezone_offset, timezone_name, location_name, location_detected
+    
+    # Always fetch fresh timezone data (in case user traveled or changed location)
+    try:
+        print("Detecting timezone from IP...")
+        from urllib.urequest import urlopen
+        import json
+        
+        # ipapi.co provides free IP geolocation with timezone info
+        url = "https://ipapi.co/json/"
+        
+        response = urlopen(url, headers={"User-Agent": "GitHubBadge"})
+        data = b""
+        chunk = bytearray(512)
+        
+        while True:
+            length = response.readinto(chunk)
+            if length == 0:
+                break
+            data += chunk[:length]
+        
+        result = json.loads(data.decode('utf-8'))
+        
+        # Get timezone info
+        timezone_name = result.get('timezone', 'UTC')
+        location_name = result.get('city', 'Unknown')
+        utc_offset_str = result.get('utc_offset', '+0000')
+        
+        # Parse UTC offset (format: +0500 or -0800)
+        sign = 1 if utc_offset_str[0] == '+' else -1
+        hours = int(utc_offset_str[1:3])
+        minutes = int(utc_offset_str[3:5])
+        timezone_offset = sign * (hours * 3600 + minutes * 60)
+        
+        location_detected = True
+        print(f"Location: {location_name}, Timezone: {timezone_name}, Offset: {utc_offset_str}")
+        
+        del response, data, chunk, result
+        gc.collect()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error detecting timezone: {e}")
+        timezone_offset = 0
+        timezone_name = "UTC"
+        location_name = "Unknown"
+        return False
+
+
 def sync_time():
     """Sync time from NTP server and update RTC"""
     global sync_status, syncing, last_sync_time, rtc, initial_sync_done
@@ -146,6 +204,10 @@ def sync_time():
     try:
         syncing = True
         sync_status = "Syncing..."
+        
+        # Detect timezone first (if not already detected)
+        if not location_detected:
+            detect_timezone()
         
         # Set NTP server (default is pool.ntp.org)
         ntptime.settime()
@@ -174,22 +236,41 @@ def sync_time():
 
 def update_time_display():
     """Update the time and date strings from RTC"""
-    global current_time, current_date, rtc
+    global current_time, current_date, local_time, rtc
     
     if not rtc:
         if not init_rtc():
             current_time = "--:--:--"
             current_date = "-- --- ----"
+            local_time = "--:--:--"
             return
     
     try:
         # machine.RTC returns: (year, month, day, weekday, hour, minute, second, subseconds)
         dt = rtc.datetime()
         
-        # Format time as HH:MM:SS
+        # Format UTC time as HH:MM:SS
         current_time = f"{dt[4]:02d}:{dt[5]:02d}:{dt[6]:02d}"
         
-        # Format date
+        # Calculate local time by applying timezone offset
+        total_seconds = dt[4] * 3600 + dt[5] * 60 + dt[6] + timezone_offset
+        
+        # Handle day overflow/underflow
+        days_offset = 0
+        if total_seconds < 0:
+            days_offset = -1
+            total_seconds += 86400
+        elif total_seconds >= 86400:
+            days_offset = 1
+            total_seconds -= 86400
+        
+        local_hour = (total_seconds // 3600) % 24
+        local_minute = (total_seconds % 3600) // 60
+        local_second = total_seconds % 60
+        
+        local_time = f"{local_hour:02d}:{local_minute:02d}:{local_second:02d}"
+        
+        # Format date (using UTC date, could adjust for timezone if needed)
         weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -203,6 +284,7 @@ def update_time_display():
         print(f"Error reading RTC: {e}")
         current_time = "--:--:--"
         current_date = "-- --- ----"
+        local_time = "--:--:--"
 
 
 def center_text(text, y):
@@ -281,13 +363,13 @@ def update():
         blink_colon = not blink_colon
         last_blink = io.ticks
     
-    # Display time with large font
+    # Display LOCAL time with large font (primary display)
     screen.font = time_font
     screen.brush = white
     
-    if current_time:
+    if local_time:
         # Split time into parts for blinking colon
-        parts = current_time.split(":")
+        parts = local_time.split(":")
         if len(parts) == 3:
             hours = parts[0]
             mins = parts[1]
@@ -301,7 +383,7 @@ def update():
             
             total_w = h_w + colon_w + m_w + colon_w + s_w
             x = 80 - (total_w / 2)
-            y = 35
+            y = 30
             
             # Draw hours
             screen.text(hours, x, y)
@@ -332,11 +414,20 @@ def update():
             screen.brush = white
             screen.text(secs, x, y)
     
-    # Display date
+    # Display timezone and location
     screen.font = small_font
     screen.brush = phosphor
+    if location_detected:
+        # Show location and timezone
+        tz_display = f"{location_name} ({timezone_name})"
+        center_text(tz_display, 50)
+    else:
+        center_text("UTC (detecting...)", 50)
+    
+    # Display date
+    screen.brush = gray
     if current_date:
-        center_text(current_date, 60)
+        center_text(current_date, 62)
     
     # Draw status section
     y = 75
@@ -355,22 +446,22 @@ def update():
                 sync_text = f"{elapsed // 60}m ago"
             else:
                 sync_text = f"{elapsed // 3600}h ago"
-            screen.text(sync_text, 55, y)
+            screen.text(sync_text, 75, y)
         else:
-            screen.text("Synced", 55, y)
+            screen.text("Synced", 75, y)
     elif syncing:
         screen.brush = blue
-        screen.text("Syncing...", 55, y)
+        screen.text("Syncing...", 75, y)
     elif connecting:
         screen.brush = blue
         dots = "." * ((int(io.ticks / 500) % 3) + 1)
-        screen.text(f"WiFi{dots}", 55, y)
+        screen.text(f"WiFi{dots}", 75, y)
     elif not initial_sync_done:
         screen.brush = phosphor
-        screen.text("Pending", 55, y)
+        screen.text("Pending", 75, y)
     else:
         screen.brush = red
-        screen.text(sync_status[:15], 55, y)
+        screen.text(sync_status[:15], 75, y)
     
     y += 12
     
@@ -388,10 +479,10 @@ def update():
             else:
                 next_text = f"{remaining // 3600}h {(remaining % 3600) // 60}m"
             screen.brush = phosphor
-            screen.text(next_text, 55, y)
+            screen.text(next_text, 75, y)
         else:
             screen.brush = blue
-            screen.text("Now", 55, y)
+            screen.text("Now", 75, y)
     
     # Draw bottom instructions
     screen.font = small_font
