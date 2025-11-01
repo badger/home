@@ -31,7 +31,7 @@ pip install pygame
 Once activated, your shell prompt will show `(.venv)` and you can use `python` directly:
 
 ```bash
-python simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
+python simulator/badge_simulator.py badge/apps/flappy
 ```
 
 To deactivate the virtual environment when done:
@@ -46,7 +46,7 @@ If you prefer not to use a virtual environment:
 
 ```bash
 pip3 install pygame
-python3 simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
+python3 simulator/badge_simulator.py badge/apps/flappy
 ```
 
 **Note:** If you have multiple Python versions installed, ensure pygame is installed for the version you're using to run the simulator.
@@ -54,14 +54,21 @@ python3 simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
 ## Quick Start
 
 ```bash
-python simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
+python3 simulator/badge_simulator.py badge/apps/flappy
 ```
+
+The simulator automatically:
+- Uses `badge/` as the default system root (no need for `-C badge`)
+- Looks for `__init__.py` when you specify a directory
+- Sets the window title and icon based on the app
+- Cleans up `__pycache__` directories when you exit
 
 ## Command Line Options
 
 - `--scale` enlarges the 160×120 framebuffer so the window is easier to see
   (default is 4).
-- `-C DIR` forces the simulator to treat `DIR` as `/system`, useful when apps
+- `-C DIR` forces the simulator to treat `DIR` as `/system`. By default, the simulator
+  uses `badge/` relative to the simulator directory. Override this when apps
   live outside the repo or you want to point at generated assets.
 - `--screenshots DIR` specifies a directory to save screenshots when you press F12.
   Screenshots are saved at native badge resolution (160×120) in PNG format.
@@ -81,15 +88,25 @@ python simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
 
 Run the menu app:
 ```bash
-python simulator/badge_simulator.py -C badge badge/apps/menu/__init__.py
+python3 simulator/badge_simulator.py badge/apps/menu
 ```
 
 Run Flappy Bird with screenshots enabled:
 ```bash
-python simulator/badge_simulator.py -C badge --screenshots ./screenshots badge/apps/flappy/__init__.py
+python3 simulator/badge_simulator.py badge/apps/flappy --screenshots ./screenshots
 ```
 
 Run at 2x scale for a smaller window:
 ```bash
-python simulator/badge_simulator.py -C badge --scale 2 badge/apps/life/__init__.py
+python3 simulator/badge_simulator.py badge/apps/life --scale 2
+```
+
+Run a specific file directly (also works):
+```bash
+python3 simulator/badge_simulator.py badge/apps/gallery/__init__.py
+```
+
+Use a custom system root:
+```bash
+python3 simulator/badge_simulator.py -C /path/to/custom/badge badge/apps/quest
 ```
