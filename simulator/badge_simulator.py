@@ -1244,6 +1244,11 @@ class _MockNetwork:
 
 # Store reference to real urllib.request before we create mocks
 import urllib.request as _real_urllib_request
+import time as _real_time
+
+# Global RTC time offset storage
+_rtc_time_offset = None  # Offset in seconds from local machine time
+
 
 class _MockUrequestResponse:
     """Mock response object for urlopen that uses Python's urllib."""
@@ -1280,7 +1285,80 @@ class _MockUrequest:
     @staticmethod
     def urlopen(url, data=None, headers=None):
         """Open a URL and return a response object."""
-        # Use the real urllib.request we saved earlier
+        # Intercept ipapi.co requests to provide mock data
+        if "ipapi.co/json" in url:
+            import json
+            import datetime
+            import io
+            
+            # Get system timezone info
+            try:
+                # Try to get local timezone offset
+                local_time = datetime.datetime.now()
+                utc_time = datetime.datetime.utcnow()
+                offset = local_time - utc_time
+                offset_seconds = int(offset.total_seconds())
+                
+                # Format offset as +HHMM or -HHMM
+                sign = '+' if offset_seconds >= 0 else '-'
+                abs_seconds = abs(offset_seconds)
+                hours = abs_seconds // 3600
+                minutes = (abs_seconds % 3600) // 60
+                utc_offset = f"{sign}{hours:02d}{minutes:02d}"
+                
+                # Try to get timezone name (this is system-dependent)
+                import time as time_module
+                timezone_name = time_module.tzname[time_module.daylight]
+                
+                # For demo, detect common timezones
+                if offset_seconds == -28800:  # UTC-8
+                    timezone_name = "America/Los_Angeles"
+                    city = "San Francisco"
+                elif offset_seconds == -18000:  # UTC-5
+                    timezone_name = "America/New_York"
+                    city = "New York"
+                elif offset_seconds == 0:  # UTC
+                    timezone_name = "UTC"
+                    city = "London"
+                elif offset_seconds == 3600:  # UTC+1
+                    timezone_name = "Europe/Paris"
+                    city = "Paris"
+                else:
+                    # Use system timezone
+                    city = "Local"
+                    if not timezone_name or timezone_name in ('UTC', 'GMT'):
+                        timezone_name = "UTC"
+                
+            except Exception:
+                # Fallback values
+                utc_offset = "+0000"
+                timezone_name = "UTC"
+                city = "Unknown"
+            
+            # Create mock response data
+            mock_data = {
+                "ip": "192.168.1.100",
+                "city": city,
+                "region": "CA",
+                "country": "US",
+                "country_code": "US",
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "timezone": timezone_name,
+                "utc_offset": utc_offset
+            }
+            
+            # Convert to JSON bytes
+            json_data = json.dumps(mock_data).encode('utf-8')
+            
+            # Create a BytesIO object to simulate response
+            response_buffer = io.BytesIO(json_data)
+            
+            print(f"[Simulator] Mock ipapi.co response: {city}, {timezone_name}, offset {utc_offset}")
+            
+            return _MockUrequestResponse(response_buffer)
+        
+        # For other URLs, use the real urllib.request
         if headers:
             req = _real_urllib_request.Request(url, data=data, headers=headers)
         else:
@@ -1455,6 +1533,95 @@ def load_game_module(module_path: str) -> ModuleType:
     urandom_module.random = _urandom_random
     urandom_module.uniform = _urandom_uniform
     sys.modules["urandom"] = urandom_module
+    
+    # Provide mock `machine` module with RTC class
+    machine_module = ModuleType("machine")
+    
+    class _MockRTC:
+        """Mock RTC (Real-Time Clock) that tracks time offset from system time."""
+        
+        def __init__(self):
+            pass
+        
+        def datetime(self, new_datetime=None):
+            """Get or set the datetime.
+            
+            Format: (year, month, day, weekday, hour, minute, second, subseconds)
+            Note: weekday is 0-6 where 0=Monday
+            """
+            global _rtc_time_offset
+            
+            if new_datetime is not None:
+                # Setting RTC time - calculate offset from system time
+                # new_datetime format: (year, month, day, weekday, hour, minute, second, subseconds)
+                year, month, day, weekday, hour, minute, second = new_datetime[:7]
+                
+                # Convert to timestamp (UTC)
+                import datetime
+                dt = datetime.datetime(year, month, day, hour, minute, second)
+                rtc_timestamp = dt.timestamp()
+                
+                # Get current system time
+                system_timestamp = _real_time.time()
+                
+                # Store offset
+                _rtc_time_offset = rtc_timestamp - system_timestamp
+                print(f"[Simulator] RTC time set: {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
+                print(f"[Simulator] RTC offset from system: {_rtc_time_offset:.1f} seconds")
+                return None
+            else:
+                # Getting RTC time - use system time with offset
+                import datetime
+                
+                # Get system time and apply offset
+                if _rtc_time_offset is not None:
+                    current_timestamp = _real_time.time() + _rtc_time_offset
+                else:
+                    # No offset set, use system time
+                    current_timestamp = _real_time.time()
+                
+                # Convert to datetime tuple
+                dt = datetime.datetime.fromtimestamp(current_timestamp)
+                
+                # Calculate weekday (Python uses 0=Monday, same as MicroPython)
+                weekday = dt.weekday()
+                
+                # Return tuple: (year, month, day, weekday, hour, minute, second, subseconds)
+                return (dt.year, dt.month, dt.day, weekday, dt.hour, dt.minute, dt.second, 0)
+    
+    machine_module.RTC = _MockRTC
+    sys.modules["machine"] = machine_module
+    
+    # Provide mock `ntptime` module
+    ntptime_module = ModuleType("ntptime")
+    
+    def _mock_settime():
+        """Mock NTP time sync - sets RTC to current system time (UTC)."""
+        global _rtc_time_offset
+        import datetime
+        
+        # Get current UTC time
+        utc_now = datetime.datetime.utcnow()
+        
+        # Calculate offset to make RTC return UTC time
+        utc_timestamp = utc_now.timestamp()
+        system_timestamp = _real_time.time()
+        _rtc_time_offset = utc_timestamp - system_timestamp
+        
+        print(f"[Simulator] NTP sync: {utc_now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"[Simulator] RTC offset from system: {_rtc_time_offset:.1f} seconds")
+    
+    ntptime_module.settime = _mock_settime
+    sys.modules["ntptime"] = ntptime_module
+    
+    # Provide mock `gc` module for garbage collection
+    gc_module = ModuleType("gc")
+    import gc as _real_gc
+    
+    gc_module.collect = _real_gc.collect
+    gc_module.mem_free = lambda: 100000  # Mock free memory
+    gc_module.mem_alloc = lambda: 50000  # Mock allocated memory
+    sys.modules["gc"] = gc_module
 
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore
@@ -1499,6 +1666,11 @@ def main() -> None:
                 print(f"Cleaned temporary files: {root_dir}")
             except Exception as e:
                 print(f"Warning: Could not clean temporary files: {e}")
+        
+        # Reset RTC offset on clean start
+        global _rtc_time_offset
+        _rtc_time_offset = None
+        print("[Simulator] Reset RTC time offset")
 
     pygame.init()
 

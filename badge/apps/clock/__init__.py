@@ -94,6 +94,9 @@ def connect_wifi():
     
     if wlan is None:
         wlan = network.WLAN(network.STA_IF)
+    
+    # Ensure WiFi is active (might have been deactivated by disconnect_wifi)
+    if not wlan.active():
         wlan.active(True)
     
     if wlan.isconnected():
