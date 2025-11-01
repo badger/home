@@ -13,6 +13,7 @@ These apps are designed to be run on the base MonaOS MicroPython firmware pre-in
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
     - [Creating your own apps](#creating-your-own-apps)
+    - [Testing apps with the simulator](#testing-apps-with-the-simulator)
     - [Editing code on the badge](#editing-code-on-the-badge)
     - [Flashing your Badge](#flashing-your-badge)
     - [Writing to files from application code](#writing-to-files-from-application-code)
@@ -22,6 +23,7 @@ These apps are designed to be run on the base MonaOS MicroPython firmware pre-in
     - [Blitting images and sprites](#blitting-images-and-sprites)
     - [Drawing text](#drawing-text)
   - [Wireless networking and Bluetooth](#wireless-networking-and-bluetooth)
+  - [Contributing](#contributing)
 
 ## Introduction
 
@@ -81,6 +83,36 @@ Your app should implement an `update()` function within `__init__.py` which will
 You'll have to [update the menu app](https://badger.github.io/hack/menu-pagination/) on your device to see your app, the version of the pre-flashed firmware only supports six icons - have fun expanding it!
 
 An app is launched by `main.py`, which handles the intro cinematic, menu and launching your app. It'll call your `init()` and `update()` methods, and call `on_exit()` when you press the `HOME` button to leave your app.
+
+### Testing apps with the simulator
+
+The badge simulator lets you test your apps on your computer before deploying them to the hardware. This is much faster for development and debugging.
+
+**Prerequisites:**
+- Python 3.10 or newer (3.13 recommended)
+- Pygame (`pip install pygame`)
+
+**Basic usage:**
+```bash
+python simulator/badge_simulator.py -C badge badge/apps/your_app/__init__.py
+```
+
+**Controls:**
+- `A` / `Z` → Button A
+- `B` / `X` → Button B  
+- `C` / `Space` → Button C
+- Arrow keys → D-pad
+- `H` / `Esc` → Home / exit
+- `F12` → Take screenshot (when --screenshots is configured)
+
+**Taking screenshots:**
+```bash
+python simulator/badge_simulator.py -C badge --screenshots ./screenshots badge/apps/your_app/__init__.py
+```
+
+Screenshots are saved at native badge resolution (160×120) in PNG format, perfect for documentation and pull requests.
+
+For more details and advanced options, see the [simulator documentation](./simulator/README.md).
 
 ```python
 # example __init__.py for an application
@@ -300,5 +332,11 @@ You can use the existing MicroPython functionality for wireless networking and b
 
 - Wireless networking: https://docs.micropython.org/en/latest/rp2/quickref.html#wlan
 - Bluetooth: https://docs.micropython.org/en/latest/library/bluetooth.html#module-bluetooth
+
+## Contributing
+
+We welcome contributions! If you've created a new app or improved an existing one, please consider submitting a pull request.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute to this project.
 
 
