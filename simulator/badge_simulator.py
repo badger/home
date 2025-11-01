@@ -722,6 +722,18 @@ class Screen(_SurfaceTarget):
         super().__init__(surface)
         self.antialias = Image.OFF
         self._hint_font = pygame.font.Font(None, 16)
+    
+    def set_icon(self, icon_path: str) -> None:
+        """Set the application icon (displayed in dock/taskbar)."""
+        try:
+            icon_path = map_system_path(icon_path)
+            if os.path.exists(icon_path):
+                icon = pygame.image.load(icon_path)
+                pygame.display.set_icon(icon)
+            else:
+                print(f"Icon file not found: {icon_path}")
+        except Exception as e:
+            print(f"Failed to set icon: {e}")
 
     def load_into(self, path: str) -> None:
         """Load an image directly into the screen buffer."""
@@ -1018,6 +1030,23 @@ def is_charging() -> bool:
 # Runner
 # -----------------------------------------------------------------------------
 
+def _cleanup_pycache():
+    """Remove __pycache__ directories in the game/app directory."""
+    try:
+        import shutil
+        sim_root = SIM_ROOT or _find_sim_root(os.getcwd())
+        apps_dir = os.path.join(sim_root, "apps")
+        if os.path.isdir(apps_dir):
+            for root, dirs, files in os.walk(apps_dir):
+                if "__pycache__" in dirs:
+                    pycache_path = os.path.join(root, "__pycache__")
+                    try:
+                        shutil.rmtree(pycache_path)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
 def run(update_func, fps: int = 60, init=None, on_exit=None):
     if not callable(init):
         module_name = getattr(update_func, "__module__", None)
@@ -1044,6 +1073,8 @@ def run(update_func, fps: int = 60, init=None, on_exit=None):
                 on_exit()
             except Exception:
                 traceback.print_exc()
+        # Clean up __pycache__ directory
+        _cleanup_pycache()
     return result
 
 # -----------------------------------------------------------------------------
@@ -1102,7 +1133,7 @@ def load_game_module(module_path: str) -> ModuleType:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a GitHub Badge game locally using Pygame.")
-    parser.add_argument("game", help="Path to the game .py or a dotted module name.")
+    parser.add_argument("game", help="Path to the game .py, directory containing __init__.py, or a dotted module name.")
     parser.add_argument("--scale", type=int, default=4, help="Scale factor (default: 4)")
     parser.add_argument(
         "-C",
@@ -1124,6 +1155,8 @@ def main() -> None:
     global screen, io, SIM_ROOT
     screen = Screen(scale=args.scale, screenshot_dir=args.screenshot_dir)
     io = IO()
+    
+    # Set system root with default to ./badge relative to simulator
     if args.system_root:
         root = os.path.abspath(args.system_root)
         if not os.path.isdir(root):
@@ -1132,10 +1165,44 @@ def main() -> None:
             sys.exit(2)
         SIM_ROOT = root
     else:
-        SIM_ROOT = _find_sim_root(os.getcwd())
+        # Default to ./badge relative to the simulator directory
+        simulator_dir = os.path.dirname(os.path.abspath(__file__))
+        default_root = os.path.join(simulator_dir, "..", "badge")
+        if os.path.isdir(default_root):
+            SIM_ROOT = os.path.abspath(default_root)
+        else:
+            SIM_ROOT = _find_sim_root(os.getcwd())
+    
+    # If game argument is a directory, append __init__.py
+    game_path = args.game
+    game_dir = None
+    app_name = "Badge App"
+    if os.path.isdir(game_path):
+        game_dir = game_path
+        app_name = os.path.basename(os.path.abspath(game_path))
+        init_path = os.path.join(game_path, "__init__.py")
+        if os.path.isfile(init_path):
+            game_path = init_path
+        else:
+            print(f"Directory '{game_path}' does not contain __init__.py", file=sys.stderr)
+            pygame.quit()
+            sys.exit(1)
+    else:
+        # If it's a file, use its directory
+        game_dir = os.path.dirname(os.path.abspath(game_path))
+        app_name = os.path.basename(game_dir)
+    
+    # Set window title with app name
+    pygame.display.set_caption(f"Badge Simulator - {app_name}")
+    
+    # Try to set app icon from the game's directory
+    if game_dir:
+        icon_path = os.path.join(game_dir, "icon.png")
+        if os.path.isfile(icon_path):
+            screen.set_icon(icon_path)
 
     try:
-        module = load_game_module(args.game)
+        module = load_game_module(game_path)
     except SystemExit:
         raise
     except Exception:
