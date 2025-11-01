@@ -51,10 +51,20 @@ python3 simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
 
 **Note:** If you have multiple Python versions installed, ensure pygame is installed for the version you're using to run the simulator.
 
+## Quick Start
+
+```bash
+python simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
+```
+
+## Command Line Options
+
 - `--scale` enlarges the 160×120 framebuffer so the window is easier to see
   (default is 4).
 - `-C DIR` forces the simulator to treat `DIR` as `/system`, useful when apps
   live outside the repo or you want to point at generated assets.
+- `--screenshots DIR` specifies a directory to save screenshots when you press F12.
+  Screenshots are saved at native badge resolution (160×120) in PNG format.
 - The simulator automatically makes `/system/...` imports and file operations
   point at the repository tree so you can run unmodified badge apps.
 
@@ -64,4 +74,22 @@ python3 simulator/badge_simulator.py -C badge badge/apps/flappy/__init__.py
 - `C` / `Space` → Button C
 - Arrow keys → D-pad
 - `H` / `Esc` → Home / exit back to menu
+- `F12` → Take screenshot (when --screenshots is configured)
 - Close the window or press `Ctrl+C` in the terminal to stop the simulator.
+
+## Examples
+
+Run the menu app:
+```bash
+python simulator/badge_simulator.py -C badge badge/apps/menu/__init__.py
+```
+
+Run Flappy Bird with screenshots enabled:
+```bash
+python simulator/badge_simulator.py -C badge --screenshots ./screenshots badge/apps/flappy/__init__.py
+```
+
+Run at 2x scale for a smaller window:
+```bash
+python simulator/badge_simulator.py -C badge --scale 2 badge/apps/life/__init__.py
+```
