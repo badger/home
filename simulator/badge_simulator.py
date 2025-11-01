@@ -43,13 +43,22 @@ def _find_sim_root(start_dir: str) -> str:
 
 
 def map_system_path(p: str) -> str:
-    """Map '/system/...' -> '<SIM_ROOT>/...'. Leave other paths unchanged."""
+    """Map '/system/...' paths to SIM_ROOT and root files to temp directory."""
     global SIM_ROOT
     if SIM_ROOT is None:
         SIM_ROOT = _find_sim_root(os.getcwd())
     if p.startswith("/system"):
         tail = p[len("/system"):].lstrip("/\\")
         return os.path.join(SIM_ROOT, tail) if tail else SIM_ROOT
+    # Map root-level files (e.g., /avatar.png) to writable temp directory
+    elif p.startswith("/") and not p.startswith("//"):
+        tail = p[1:]  # Remove leading /
+        # Only map simple filenames (no subdirectories)
+        if "/" not in tail and "\\" not in tail and tail != "":
+            import tempfile
+            root_dir = os.path.join(tempfile.gettempdir(), "badge_simulator_root")
+            os.makedirs(root_dir, exist_ok=True)
+            return os.path.join(root_dir, tail)
     return p
 
 
@@ -62,6 +71,31 @@ def _safe_chdir(path: str):
 
 
 os.chdir = _safe_chdir  # type: ignore
+
+# Intercept open() to map /system and badge root paths
+_real_open = open
+
+def _safe_open(file, mode='r', *args, **kwargs):
+    if isinstance(file, (str, bytes, os.PathLike)):
+        fs_path = os.fspath(file)
+        if isinstance(fs_path, str):
+            # Map /system paths to badge directory
+            if fs_path.startswith("/system"):
+                file = map_system_path(fs_path)
+            # Map root-level files (e.g., /avatar.png) to writable temp directory
+            elif fs_path.startswith("/") and not fs_path.startswith("//"):
+                tail = fs_path[1:]  # Remove leading /
+                # Only map simple filenames (no subdirectories)
+                # This avoids mapping system paths like /Users/... or /var/...
+                if "/" not in tail and "\\" not in tail and tail != "":
+                    import tempfile
+                    root_dir = os.path.join(tempfile.gettempdir(), "badge_simulator_root")
+                    os.makedirs(root_dir, exist_ok=True)
+                    file = os.path.join(root_dir, tail)
+    return _real_open(file, mode, *args, **kwargs)
+
+import builtins
+builtins.open = _safe_open  # type: ignore
 
 # Allow `os.listdir("/system/...")`
 _real_listdir = os.listdir
@@ -77,6 +111,55 @@ def _safe_listdir(path="."):
 
 
 os.listdir = _safe_listdir  # type: ignore
+
+# Intercept os.remove so games can remove files from root
+_real_remove = os.remove
+
+def _safe_remove(path):
+    if isinstance(path, (str, bytes, os.PathLike)):
+        fs_path = os.fspath(path)
+        if isinstance(fs_path, str):
+            if fs_path.startswith("/system"):
+                return _real_remove(map_system_path(fs_path))
+            elif fs_path.startswith("/") and not fs_path.startswith("//"):
+                tail = fs_path[1:]
+                if "/" not in tail and "\\" not in tail and tail != "":
+                    import tempfile
+                    root_dir = os.path.join(tempfile.gettempdir(), "badge_simulator_root")
+                    return _real_remove(os.path.join(root_dir, tail))
+        return _real_remove(fs_path)
+    return _real_remove(path)
+
+os.remove = _safe_remove  # type: ignore
+
+# Intercept sys.path operations to map "/" to SIM_ROOT
+class _SafePathList(list):
+    """Wrapper for sys.path that maps "/" to SIM_ROOT when inserted."""
+    
+    def __init__(self, original_path):
+        super().__init__(original_path)
+        self._original = original_path
+    
+    def insert(self, index, item):
+        if item == "/":
+            # Map "/" to SIM_ROOT for secrets.py imports
+            global SIM_ROOT
+            if SIM_ROOT is None:
+                SIM_ROOT = _find_sim_root(os.getcwd())
+            item = SIM_ROOT
+        super().insert(index, item)
+    
+    def append(self, item):
+        if item == "/":
+            # Map "/" to SIM_ROOT for secrets.py imports
+            global SIM_ROOT
+            if SIM_ROOT is None:
+                SIM_ROOT = _find_sim_root(os.getcwd())
+            item = SIM_ROOT
+        super().append(item)
+
+# Replace sys.path with our safe wrapper
+sys.path = _SafePathList(sys.path)
 
 # -----------------------------------------------------------------------------
 # Badgeware API stubs
@@ -452,7 +535,10 @@ class _SurfaceTarget:
 
 class shapes:
     @staticmethod
-    def rectangle(x: float, y: float, w: float, h: float) -> _Rectangle:
+    def rectangle(x: float, y: float, w: float, h: float, radius: float = 0) -> _Rectangle | _RoundedRectangle:
+        # Device firmware supports optional radius parameter for rounded corners
+        if radius > 0:
+            return _RoundedRectangle(x, y, w, h, radius)
         return _Rectangle(x, y, w, h)
 
     @staticmethod
@@ -1027,6 +1113,187 @@ def is_charging() -> bool:
     return False
 
 # -----------------------------------------------------------------------------
+# Mock network module for WiFi simulation
+# -----------------------------------------------------------------------------
+
+# Global reference to io object for timing (set during load_game_module)
+_io_ref = None
+
+class _MockWLAN:
+    """Mock WLAN interface that simulates WiFi connectivity using host network."""
+    
+    def __init__(self, interface_id):
+        self._interface_id = interface_id
+        self._active = False
+        self._connected = False
+        self._ssid = None
+        self._password = None
+        self._connect_time = None
+        self._secrets_ssid = None
+        
+        # Try to read SSID from secrets.py
+        try:
+            secrets_path = map_system_path("/")
+            if secrets_path:
+                secrets_file = os.path.join(secrets_path, "secrets.py")
+                if os.path.exists(secrets_file):
+                    with open(secrets_file, 'r') as f:
+                        for line in f:
+                            if line.strip().startswith('WIFI_SSID'):
+                                # Extract SSID from line like: WIFI_SSID = "u25-badger-party"
+                                parts = line.split('=', 1)
+                                if len(parts) == 2:
+                                    ssid = parts[1].strip().strip('"').strip("'")
+                                    if ssid:
+                                        self._secrets_ssid = ssid
+                                        break
+        except Exception:
+            pass
+        
+    def active(self, state=None):
+        """Get or set the active state of the WLAN interface."""
+        if state is None:
+            return self._active
+        self._active = bool(state)
+        return self._active
+    
+    def isconnected(self):
+        """Check if connected to a network."""
+        # Simulate connection delay (takes ~1-2 seconds)
+        if self._connect_time is not None:
+            # Use io.ticks from global reference for consistent timing
+            if _io_ref is not None:
+                elapsed = _io_ref.ticks - self._connect_time
+            else:
+                # Fallback to pygame ticks if io not available yet
+                elapsed = pygame.time.get_ticks() - self._connect_time
+            if elapsed > 1500:  # 1.5 second connection time
+                self._connected = True
+        return self._connected
+    
+    def scan(self):
+        """Simulate WiFi scan - return fake networks including the one being connected to."""
+        # Return a list of tuples: (ssid, bssid, channel, RSSI, security, hidden)
+        networks = [
+            (b"GH Events", b"\x00\x11\x22\x33\x44\x66", 11, -70, 3, False),
+            (b"FreeWiFi", b"\x00\x11\x22\x33\x44\x77", 1, -75, 0, False),
+        ]
+        
+        # Add SSID from secrets.py if we found one
+        if self._secrets_ssid:
+            ssid_bytes = self._secrets_ssid.encode('utf-8') if isinstance(self._secrets_ssid, str) else self._secrets_ssid
+            if not any(net[0] == ssid_bytes for net in networks):
+                networks.insert(0, (ssid_bytes, b"\x00\x11\x22\x33\x44\x55", 6, -50, 3, False))
+        
+        # Add the requested SSID if one was specified and different from secrets
+        if self._ssid and self._ssid != self._secrets_ssid:
+            ssid_bytes = self._ssid.encode('utf-8') if isinstance(self._ssid, str) else self._ssid
+            # Check if already in list
+            if not any(net[0] == ssid_bytes for net in networks):
+                networks.insert(0, (ssid_bytes, b"\xAA\xBB\xCC\xDD\xEE\xFF", 1, -45, 3, False))
+        
+        return networks
+    
+    def connect(self, ssid, password=None):
+        """Simulate connecting to a WiFi network (accepts any password)."""
+        # Only initiate connection if not already connecting to this network
+        if self._ssid == ssid and self._connect_time is not None:
+            # Already connecting to this SSID, don't reset the timer
+            return
+            
+        self._ssid = ssid
+        self._password = password
+        # Use io.ticks from global reference for consistent timing
+        if _io_ref is not None:
+            self._connect_time = _io_ref.ticks
+        else:
+            # Fallback to pygame ticks if io not available yet
+            self._connect_time = pygame.time.get_ticks()
+        self._connected = False  # Will become True after delay
+        print(f"[Simulator] Connecting to WiFi: {ssid}")
+    
+    def disconnect(self):
+        """Disconnect from the network."""
+        self._connected = False
+        self._connect_time = None
+        self._ssid = None
+        self._password = None
+        print("[Simulator] Disconnected from WiFi")
+    
+    def ifconfig(self):
+        """Return network interface configuration."""
+        if self._connected:
+            return ("192.168.1.100", "255.255.255.0", "192.168.1.1", "8.8.8.8")
+        return ("0.0.0.0", "0.0.0.0", "0.0.0.0", "0.0.0.0")
+
+
+class _MockNetwork:
+    """Mock network module matching MicroPython's network API."""
+    STA_IF = 0  # Station interface (client mode)
+    AP_IF = 1   # Access Point interface
+    
+    @staticmethod
+    def WLAN(interface_id):
+        """Create a WLAN network interface object."""
+        return _MockWLAN(interface_id)
+
+
+# -----------------------------------------------------------------------------
+# Mock urllib.urequest for MicroPython compatibility
+# -----------------------------------------------------------------------------
+
+# Store reference to real urllib.request before we create mocks
+import urllib.request as _real_urllib_request
+
+class _MockUrequestResponse:
+    """Mock response object for urlopen that uses Python's urllib."""
+    
+    def __init__(self, real_response):
+        self._response = real_response
+    
+    def read(self, size=-1):
+        """Read response data."""
+        return self._response.read(size)
+    
+    def readinto(self, buffer):
+        """Read response data into a buffer (MicroPython style)."""
+        data = self._response.read(len(buffer))
+        if not data:
+            return 0
+        buffer[:len(data)] = data
+        return len(data)
+    
+    def close(self):
+        """Close the response."""
+        self._response.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *args):
+        self.close()
+
+
+class _MockUrequest:
+    """Mock urllib.urequest module for MicroPython compatibility."""
+    
+    @staticmethod
+    def urlopen(url, data=None, headers=None):
+        """Open a URL and return a response object."""
+        # Use the real urllib.request we saved earlier
+        if headers:
+            req = _real_urllib_request.Request(url, data=data, headers=headers)
+        else:
+            req = _real_urllib_request.Request(url, data=data)
+        
+        try:
+            response = _real_urllib_request.urlopen(req)
+            return _MockUrequestResponse(response)
+        except Exception as e:
+            print(f"[Simulator] HTTP Error: {e}")
+            raise
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 
@@ -1122,6 +1389,72 @@ def load_game_module(module_path: str) -> ModuleType:
     badgeware.State = State
     badgeware.clamp = clamp
     sys.modules["badgeware"] = badgeware
+    
+    # Set global reference for mock network timing
+    global _io_ref
+    _io_ref = io
+    
+    # Provide mock `network` module for WiFi apps
+    network_module = ModuleType("network")
+    network_module.WLAN = _MockNetwork.WLAN
+    network_module.STA_IF = _MockNetwork.STA_IF
+    network_module.AP_IF = _MockNetwork.AP_IF
+    sys.modules["network"] = network_module
+    
+    # Provide mock `urllib` with `urequest` submodule for MicroPython compatibility
+    # Create the main urllib module
+    urllib_module = ModuleType("urllib")
+    
+    # Create urllib.urequest as a submodule
+    urequest_module = ModuleType("urllib.urequest")
+    urequest_module.urlopen = _MockUrequest.urlopen
+    
+    # Add urequest to urllib
+    urllib_module.urequest = urequest_module
+    
+    # Register both modules
+    sys.modules["urllib"] = urllib_module
+    sys.modules["urllib.urequest"] = urequest_module
+    
+    # Also provide a top-level urequest for direct imports
+    sys.modules["urequest"] = urequest_module
+    
+    # Provide mock `urandom` module for MicroPython compatibility
+    # Uses Python's standard random module
+    urandom_module = ModuleType("urandom")
+    import random as _random
+    
+    def _urandom_getrandbits(n):
+        """Get n random bits as an integer."""
+        return _random.getrandbits(n)
+    
+    def _urandom_randint(a, b):
+        """Return random integer in range [a, b], including both end points."""
+        return _random.randint(a, b)
+    
+    def _urandom_randrange(*args):
+        """randrange([start,] stop[, step]) - like range() but returns random value."""
+        return _random.randrange(*args)
+    
+    def _urandom_choice(seq):
+        """Choose a random element from a non-empty sequence."""
+        return _random.choice(seq)
+    
+    def _urandom_random():
+        """Return random float in [0.0, 1.0)."""
+        return _random.random()
+    
+    def _urandom_uniform(a, b):
+        """Return random float in [a, b] or [a, b) depending on rounding."""
+        return _random.uniform(a, b)
+    
+    urandom_module.getrandbits = _urandom_getrandbits
+    urandom_module.randint = _urandom_randint
+    urandom_module.randrange = _urandom_randrange
+    urandom_module.choice = _urandom_choice
+    urandom_module.random = _urandom_random
+    urandom_module.uniform = _urandom_uniform
+    sys.modules["urandom"] = urandom_module
 
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore
@@ -1205,7 +1538,8 @@ def main() -> None:
         module = load_game_module(game_path)
     except SystemExit:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"[Simulator Error] Failed to load game module: {e}", file=sys.stderr)
         traceback.print_exc()
         pygame.quit()
         sys.exit(1)

@@ -62,6 +62,28 @@ The simulator automatically:
 - Looks for `__init__.py` when you specify a directory
 - Sets the window title and icon based on the app
 - Cleans up `__pycache__` directories when you exit
+- Provides mock `network` and `urllib.urequest` modules for WiFi-enabled apps
+
+## Network Simulation
+
+Apps that use WiFi (like the badge stats viewer) work in the simulator through mock network modules:
+
+- **`network.WLAN`**: Simulates WiFi connectivity, accepting any SSID/password
+- **`urllib.urequest.urlopen`**: Proxies HTTP requests through your computer's network
+- Connection simulation includes a realistic 1.5 second delay
+- All network requests use your local machine's internet connection
+
+To test WiFi apps:
+1. Create a `badge/secrets.py` file with your WiFi credentials and GitHub username
+2. Run the app - the simulator will mock the WiFi connection and fetch real data
+3. The app behaves identically to the hardware badge, but uses your computer's network
+
+Example `badge/secrets.py`:
+```python
+WIFI_SSID = "YourNetworkName"
+WIFI_PASSWORD = "YourPassword"
+GITHUB_USERNAME = "yourusername"
+```
 
 ## Command Line Options
 

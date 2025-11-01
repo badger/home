@@ -1,0 +1,147 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Badge App (Current File)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "${fileDirname}"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "badge",
+                "order": 1
+            }
+        },
+        {
+            "name": "Badge App with Screenshots",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "${fileDirname}",
+                "--screenshots",
+                "${env:HOME}/Downloads/"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "badge",
+                "order": 2
+            }
+        },
+        {
+            "name": "Badge App: menu",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "badge/apps/menu"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "apps",
+                "order": 1
+            }
+        },
+        {
+            "name": "Badge App: badge",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "badge/apps/badge"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "apps",
+                "order": 2
+            }
+        },
+        {
+            "name": "Badge App: flappy",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "badge/apps/flappy"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "apps",
+                "order": 3
+            }
+        },
+        {
+            "name": "Badge App: stocks",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "badge/apps/stocks"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "apps",
+                "order": 4
+            }
+        },
+        {
+            "name": "Badge App: weather",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulator/badge_simulator.py",
+            "args": [
+                "badge/apps/weather"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "presentation": {
+                "hidden": false,
+                "group": "apps",
+                "order": 5
+            }
+        }
+    ]
+}
