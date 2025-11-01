@@ -42,6 +42,7 @@ This project is for developing applications on the GitHub Universe 2025 hackable
 - **GPIO**: 4 GPIO pins + power through-hole solder pads
 - **LEDs**: 4-zone backlight (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT)
 - **Case**: Durable polycarbonate with lanyard fixings
+- **Runtime**: MicroPython v1.14-5485 with custom badgeware library and built-in modules (see below)
 
 ## App Development Guidelines
 
@@ -60,6 +61,11 @@ Every app must be in `/system/apps/<app_name>/` (or `badge/apps/<app_name>/` in 
    - **Format**: 24x24 pixel color PNG file
    - **Color space**: RGB with optional transparency
    - **Location**: Must be in the app's root directory
+
+### Built-in Modules ###
+The following built in modules are available to the MicroPython code running on the device:
+
+array, binascii, builtins, cmath, collections, errno, gc, hashlib, heapq, io, json, machine, math, micropython, network, os, platform, random, re,select, socket, ssl, struct, sys,time, uctypes, rp2, bluetooth, cryptolib, deflate, framebuf, vfs, lwip, ntptime, mip, badgeware,picovector, pimoroni, pimoroni_i2c, qrcode, st7789, powman, board, boot, datetime, ezwifi, pcf85063a, qwstpad, cppmem, adcfft, aioble, asyncio, uasyncio, requests, urequests, urllib, webrepl, websocket, umqtt, ulab, aye_arr, breakout_as7262, breakout_as7343, breakout_bh1745, breakout_bme280, breakout_bme68x, breakout_bme69x, breakout_bmp280, breakout_dotmatrix, breakout_encoder, breakout_encoder_wheel, breakout_icp10125, breakout_ioexpander, breakout_ltr559, breakout_matrix11x7, breakout_mics6814, breakout_msa301, breakout_paa5100, breakout_pmw3901, breakout_potentiometer, breakout_rgbmatrix5x5, breakout_rtc, breakout_scd41, breakout_sgp30, breakout_trackball, breakout_vl53l5cx
 
 ### Core Imports and Setup
 
