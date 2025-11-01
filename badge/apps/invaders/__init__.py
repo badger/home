@@ -66,7 +66,6 @@ class Alien:
         self.height = 8
         self.alive = True
         self.alien_type = alien_type
-        self.frame = 0
         
     def draw(self):
         if not self.alive:
