@@ -33,6 +33,7 @@ COUNTRY_CODE = None
 WIFI_TIMEOUT = 60
 WIFI_PASSWORD = None
 WIFI_SSID = None
+WEATHER_LOCATION = None  # Can be set in secrets.py to override detection
 
 wlan = None
 connected = False
@@ -44,11 +45,12 @@ last_update = None
 auto_refresh = True
 location_detected = False
 use_fahrenheit = False  # Will be set based on location
+use_mph = True  # Wind speed in mph (true) or kmh (false)
 
 
 def get_wifi_credentials():
-    """Load WiFi credentials from secrets.py"""
-    global WIFI_PASSWORD, WIFI_SSID
+    """Load WiFi credentials and optional weather location from secrets.py"""
+    global WIFI_PASSWORD, WIFI_SSID, WEATHER_LOCATION
     
     if WIFI_SSID is not None:
         return True
@@ -56,6 +58,12 @@ def get_wifi_credentials():
     try:
         sys.path.insert(0, "/")
         from secrets import WIFI_PASSWORD, WIFI_SSID
+        # Try to import optional weather location override
+        try:
+            from secrets import WEATHER_LOCATION as WL
+            WEATHER_LOCATION = WL
+        except ImportError:
+            pass
         sys.path.pop(0)
     except ImportError:
         WIFI_PASSWORD = None
@@ -95,12 +103,131 @@ def wlan_start():
     return True
 
 
+def geocode_city(city, country=None):
+    """Geocode a city name to coordinates using Nominatim (OpenStreetMap)"""
+    try:
+        # Build query
+        query = city
+        if country:
+            query = f"{city}, {country}"
+        
+        # URL encode the query
+        query_encoded = query.replace(' ', '+')
+        url = f"https://nominatim.openstreetmap.org/search?q={query_encoded}&format=json&limit=1"
+        
+        print(f"Geocoding: {query}")
+        response = urlopen(url, headers={"User-Agent": "GitHubBadge"})
+        data = b""
+        chunk = bytearray(512)
+        
+        while True:
+            length = response.readinto(chunk)
+            if length == 0:
+                break
+            data += chunk[:length]
+        
+        results = json.loads(data.decode('utf-8'))
+        
+        if results and len(results) > 0:
+            result = results[0]
+            lat = float(result['lat'])
+            lon = float(result['lon'])
+            name = result['display_name'].split(',')[0]  # First part is usually the city
+            
+            del response, data, chunk, results, result
+            gc.collect()
+            
+            return lat, lon, name
+        else:
+            print(f"No results found for: {query}")
+            return None
+            
+    except Exception as e:
+        print(f"Geocoding error: {e}")
+        return None
+
+
 def detect_location():
-    """Auto-detect location from IP using ipapi.co (free, no key needed)"""
+    """Auto-detect location from IP using ipapi.co (free, no key needed)
+    
+    Can be overridden by setting WEATHER_LOCATION in secrets.py to:
+    - A dict with coordinates: {"lat": 37.7749, "lon": -122.4194, "name": "San Francisco", "country": "US"}
+    - A dict with city: {"city": "Tokyo", "country": "JP"}  # country is optional
+    - A tuple with coordinates: (lat, lon, name, country_code)  # country is optional
+    - A tuple with city: ("London", "GB")  # country is optional
+    - A string: "Paris" or "New York"
+    """
     global LATITUDE, LONGITUDE, LOCATION_NAME, COUNTRY_CODE, location_detected, use_fahrenheit
     
     if location_detected:
         return True
+    
+    # Check for manual override in secrets.py
+    if WEATHER_LOCATION is not None:
+        try:
+            geocode_result = None
+            
+            if isinstance(WEATHER_LOCATION, dict):
+                # Check if it's a city-based dict or coordinate-based dict
+                if 'city' in WEATHER_LOCATION:
+                    # Geocode the city
+                    city = WEATHER_LOCATION['city']
+                    country = WEATHER_LOCATION.get('country')
+                    geocode_result = geocode_city(city, country)
+                    if geocode_result:
+                        LATITUDE, LONGITUDE, LOCATION_NAME = geocode_result
+                        COUNTRY_CODE = WEATHER_LOCATION.get('country', 'US')
+                else:
+                    # Use provided coordinates
+                    LATITUDE = WEATHER_LOCATION.get('lat')
+                    LONGITUDE = WEATHER_LOCATION.get('lon')
+                    LOCATION_NAME = WEATHER_LOCATION.get('name', 'Custom')
+                    COUNTRY_CODE = WEATHER_LOCATION.get('country', 'US')
+                    
+            elif isinstance(WEATHER_LOCATION, str):
+                # Simple city name as string
+                geocode_result = geocode_city(WEATHER_LOCATION)
+                if geocode_result:
+                    LATITUDE, LONGITUDE, LOCATION_NAME = geocode_result
+                    COUNTRY_CODE = 'US'  # Default to US if not specified
+                    
+            elif isinstance(WEATHER_LOCATION, (tuple, list)):
+                # Check if first element is a number (coordinates) or string (city)
+                if isinstance(WEATHER_LOCATION[0], (int, float)):
+                    # Coordinates tuple: (lat, lon, name, country_code)
+                    LATITUDE = WEATHER_LOCATION[0]
+                    LONGITUDE = WEATHER_LOCATION[1]
+                    LOCATION_NAME = WEATHER_LOCATION[2] if len(WEATHER_LOCATION) > 2 else 'Custom'
+                    COUNTRY_CODE = WEATHER_LOCATION[3] if len(WEATHER_LOCATION) > 3 else 'US'
+                else:
+                    # City tuple: ("City", "Country") or just ("City",)
+                    city = WEATHER_LOCATION[0]
+                    country = WEATHER_LOCATION[1] if len(WEATHER_LOCATION) > 1 else None
+                    geocode_result = geocode_city(city, country)
+                    if geocode_result:
+                        LATITUDE, LONGITUDE, LOCATION_NAME = geocode_result
+                        COUNTRY_CODE = country if country else 'US'
+            else:
+                print(f"Invalid WEATHER_LOCATION format: {WEATHER_LOCATION}")
+                raise ValueError("WEATHER_LOCATION must be dict, tuple, or string")
+            
+            # Check if we successfully got coordinates
+            if LATITUDE is None or LONGITUDE is None:
+                print("Failed to determine coordinates")
+                raise ValueError("Could not determine coordinates")
+            
+            # Default to Fahrenheit+mph for USA, Celsius+kmh for everywhere else
+            use_fahrenheit = (COUNTRY_CODE == 'US')
+            use_mph = (COUNTRY_CODE == 'US')
+            location_detected = True
+            
+            print(f"Using manual location: {LOCATION_NAME} ({LATITUDE}, {LONGITUDE}), Country: {COUNTRY_CODE}")
+            print(f"Units: {'Fahrenheit' if use_fahrenheit else 'Celsius'} + {'mph' if use_mph else 'kmh'}")
+            return True
+            
+        except Exception as e:
+            print(f"Error parsing WEATHER_LOCATION: {e}")
+            # Fall through to auto-detection
     
     try:
         print("Detecting location from IP...")
@@ -125,11 +252,12 @@ def detect_location():
         COUNTRY_CODE = result.get('country_code', 'US')
         location_detected = True
         
-        # Default to Fahrenheit for USA, Celsius for everywhere else
+        # Default to Fahrenheit+mph for USA, Celsius+kmh for everywhere else
         use_fahrenheit = (COUNTRY_CODE == 'US')
+        use_mph = (COUNTRY_CODE == 'US')
         
         print(f"Location detected: {LOCATION_NAME} ({LATITUDE}, {LONGITUDE}), Country: {COUNTRY_CODE}")
-        print(f"Temperature unit: {'Fahrenheit' if use_fahrenheit else 'Celsius'}")
+        print(f"Units: {'Fahrenheit' if use_fahrenheit else 'Celsius'} + {'mph' if use_mph else 'kmh'}")
         
         del response, data, chunk, result
         gc.collect()
@@ -144,6 +272,7 @@ def detect_location():
         LOCATION_NAME = "San Francisco"
         COUNTRY_CODE = "US"
         use_fahrenheit = True
+        use_mph = True
         location_detected = True
         return False
 
@@ -163,9 +292,8 @@ def fetch_weather():
     
     try:
         # Open-Meteo API - free weather data
-        # Fetch in both units to allow switching without refetching
         temp_unit = "fahrenheit" if use_fahrenheit else "celsius"
-        wind_unit = "mph" if use_fahrenheit else "kmh"
+        wind_unit = "mph" if use_mph else "kmh"
         url = f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&temperature_unit={temp_unit}&wind_speed_unit={wind_unit}&forecast_days=1"
         
         response = urlopen(url, headers={"User-Agent": "GitHubBadge"})
@@ -377,7 +505,7 @@ def draw_weather():
         screen.brush = blue
         screen.text("Wind:", 10, y)
         screen.brush = white
-        wind_unit_text = "mph" if use_fahrenheit else "km/h"
+        wind_unit_text = "mph" if use_mph else "km/h"
         wind_text = f"{int(weather_data['wind_speed'])} {wind_unit_text}"
         w, _ = screen.measure_text(wind_text)
         screen.text(wind_text, 150 - w, y)
@@ -389,7 +517,12 @@ def draw_weather():
         screen.text("B:Refresh", 2, 108)
         # Show unit toggle
         screen.brush = gray
-        unit_text = f"C:{unit if weather_data else '°'}"
+        if weather_data:
+            temp_unit = "F" if use_fahrenheit else "C"
+            wind_unit = "mph" if use_mph else "kmh"
+            unit_text = f"C:{temp_unit}/{wind_unit}"
+        else:
+            unit_text = "C:Units"
         w, _ = screen.measure_text(unit_text)
         screen.text(unit_text, 155 - w, 108)
     else:
@@ -399,7 +532,7 @@ def draw_weather():
 
 def update():
     """Main update loop"""
-    global connected, loading, last_update, auto_refresh, use_fahrenheit
+    global connected, loading, last_update, auto_refresh, use_fahrenheit, use_mph
     
     # Handle WiFi connection
     if not get_wifi_credentials():
@@ -432,9 +565,19 @@ def update():
             detect_location()
         fetch_weather()
     
-    # Toggle temperature unit on C button
+    # Cycle through unit modes on C button: F+mph → C+mph → C+kmh → F+mph
     if io.BUTTON_C in io.pressed and weather_data and not loading:
-        use_fahrenheit = not use_fahrenheit
+        if use_fahrenheit:
+            # F+mph → C+mph
+            use_fahrenheit = False
+            use_mph = True
+        elif use_mph:
+            # C+mph → C+kmh
+            use_mph = False
+        else:
+            # C+kmh → F+mph
+            use_fahrenheit = True
+            use_mph = True
         # Refetch weather data with new units
         fetch_weather()
     
