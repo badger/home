@@ -241,8 +241,8 @@ def update():
     # Draw bottom instructions
     screen.font = small_font
     screen.brush = gray
-    screen.draw(shapes.rectangle(5, 107, 150, 1))
-    center_text("Edit via USB mode", 110)
+    screen.draw(shapes.rectangle(5, 103, 150, 1))
+    center_text("Edit via USB mode", 106)
 
 
 if __name__ == "__main__":

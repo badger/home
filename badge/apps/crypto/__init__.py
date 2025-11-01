@@ -288,10 +288,10 @@ def draw_cryptos():
     screen.font = small_font
     if connected:
         screen.brush = phosphor
-        screen.text("B:Refresh", 2, 112)
+        screen.text("B:Refresh", 2, 108)
     else:
         screen.brush = gray
-        screen.text("Connecting...", 2, 112)
+        screen.text("Connecting...", 2, 108)
 
 
 def update():
