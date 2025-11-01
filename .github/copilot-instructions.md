@@ -4,6 +4,8 @@ This project is for developing applications on the GitHub Universe 2025 hackable
 
 ## Project Structure
 
+**Default launcher structure:**
+
 ```
 /
 ├── badge/                     # Badge firmware and apps (deployed to /system/ on device)
@@ -23,6 +25,22 @@ This project is for developing applications on the GitHub Universe 2025 hackable
 │       └── mona-sprites/     # Mona character sprite sheets
 └── README.md
 ```
+
+**With menu subfolder support enabled:**
+
+```
+badge/apps/
+├── games/                    # Folder without __init__.py; appears as a submenu
+│   ├── flappy/               # App (has __init__.py, icon.png)
+│   └── snake/
+├── utilities/
+│   ├── wifi/
+│   └── weather/
+├── menu/                     # Launcher logic (hidden from menu list)
+└── startup/                  # Boot animation (hidden from menu list)
+```
+
+When this structure is active, the launcher treats any directory lacking an `__init__.py` as a navigable folder, pins a back entry at the first slot inside subfolders, and continues to hide the `menu` and `startup` apps from the user-facing list.
 
 ## Hardware Specifications
 
