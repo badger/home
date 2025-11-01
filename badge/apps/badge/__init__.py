@@ -323,18 +323,23 @@ class User:
 
         # draw avatar imagee
         if not self.avatar:
-            # create a spinning loading animation while we wait for the avatar to load
-            screen.brush = phosphor
-            squircle = shapes.squircle(0, 0, 10, 5)
-            screen.brush = brushes.color(211, 250, 55, 50)
-            for i in range(4):
-                mul = math.sin(io.ticks / 1000) * 14000
-                squircle.transform = Matrix().translate(42, 75).rotate(
-                    (io.ticks + i * mul) / 40).scale(1 + i / 1.3)
-                screen.draw(squircle)
+            drawDefaultAvatar()
         else:
-            screen.blit(self.avatar, 5, 37)
+            try:
+                screen.blit(self.avatar, 5, 37)
+            except Exception as e:
+                drawDefaultAvatar()
 
+def drawDefaultAvatar():
+    # create a spinning loading animation while we wait for the avatar to load
+    screen.brush = phosphor
+    squircle = shapes.squircle(0, 0, 10, 5)
+    screen.brush = brushes.color(211, 250, 55, 50)
+    for i in range(4):
+        mul = math.sin(io.ticks / 1000) * 14000
+        squircle.transform = Matrix().translate(42, 75).rotate(
+            (io.ticks + i * mul) / 40).scale(1 + i / 1.3)
+        screen.draw(squircle)
 
 user = User()
 connected = file_exists("/contrib_data.json") and file_exists("/user_data.json") and file_exists("/avatar.png")
