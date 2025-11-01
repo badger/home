@@ -306,7 +306,9 @@ def _to_gameover():
     if state["score"] > state["hiscore"]:
         state["hiscore"] = state["score"]
         try: State.save("tetris_hiscore", {"hiscore": state["hiscore"]})
-        except Exception: pass
+        except Exception:
+            # Ignore errors saving high score (e.g., file system full or read-only).
+            pass
     state["screen"] = "gameover"
 
 # ---------------- Toast (tiny overlay) ----------------
