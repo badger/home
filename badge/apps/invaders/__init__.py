@@ -415,7 +415,7 @@ def game_over():
 def draw_background():
     # Space background
     screen.brush = brushes.color(10, 10, 30)
-    screen.draw(shapes.rectangle(0, 0, 160, 120))
+    screen.clear()
     
     # Draw stars
     random.seed(12345)  # Fixed seed for consistent star positions
