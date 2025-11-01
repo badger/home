@@ -307,7 +307,7 @@ def update():
 
 ### Drawing text
 
-The `PixelFont` class provides functions for loading pixel fonts, which can then be used to render text onto images. [Click here for full documentation of the `PixelFont` class](PixelFont.md).
+The `PixelFont` class provides functions for loading pixel fonts, which can then be used to render text onto images. [Click here for full documentation of the `PixelFont` class](./badgerware/PixelFont.md).
 
 There are thirty licensed pixel fonts included.
 
