@@ -4,6 +4,17 @@ import random
 
 # Multiple color palettes for neighbor count
 NEIGHBOR_PALETTES = {
+    "github_dark": [
+        (13, 17, 23),      # 0 neighbors - background (dead cell)
+        (14, 68, 41),      # 1 neighbor - very dark green
+        (0, 109, 50),      # 2 neighbors - dark green
+        (25, 108, 46),     # 3 neighbors - #196c2e
+        (38, 166, 65),     # 4 neighbors - medium green
+        (46, 160, 67),     # 5 neighbors - #2ea043
+        (57, 211, 83),     # 6 neighbors - bright green
+        (86, 211, 100),    # 7 neighbors - #56d364
+        (120, 255, 140),   # 8 neighbors - brightest green
+    ],
     "github_light": [
         (255, 255, 255),   # 0 neighbors - background (dead cell)
         (198, 228, 139),   # 1 neighbor - very light green
@@ -62,20 +73,23 @@ NEIGHBOR_PALETTES = {
 }
 
 # Select active palette
-ACTIVE_PALETTE = "github_light"
+ACTIVE_PALETTE = "github_dark"
 def set_palette(name):
-    global ACTIVE_PALETTE, NEIGHBOR_BRUSHES
+    global ACTIVE_PALETTE, NEIGHBOR_COLORS, NEIGHBOR_BRUSHES, BACKGROUND_COLOR, BACKGROUND_BRUSH
     if name in NEIGHBOR_PALETTES:
         ACTIVE_PALETTE = name
-        NEIGHBOR_BRUSHES = [brushes.color(*color) for color in NEIGHBOR_PALETTES[ACTIVE_PALETTE]]
+        NEIGHBOR_COLORS = NEIGHBOR_PALETTES[ACTIVE_PALETTE]
+        NEIGHBOR_BRUSHES = [brushes.color(*color) for color in NEIGHBOR_COLORS]
+        BACKGROUND_COLOR = NEIGHBOR_COLORS[0]
+        BACKGROUND_BRUSH = brushes.color(*BACKGROUND_COLOR)
     else:
         raise ValueError(f"Palette '{name}' not found.")
 
 NEIGHBOR_COLORS = NEIGHBOR_PALETTES[ACTIVE_PALETTE]
 
-BACKGROUND_COLOR = (13, 17, 23)  # Dark GitHub background
+# Always use the first color of the active palette as background
+BACKGROUND_COLOR = NEIGHBOR_COLORS[0]
 TEXT_COLOR = (255, 255, 255)
-
 
 # Pre-create brushes for performance
 NEIGHBOR_BRUSHES = [brushes.color(*color) for color in NEIGHBOR_COLORS]
