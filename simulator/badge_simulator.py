@@ -1094,6 +1094,7 @@ def main() -> None:
         exit_func = getattr(module, "on_exit", None)
         run(module.update, init=init_func, on_exit=exit_func)
     except SystemExit:
+        # Allow clean exit (e.g., user requested quit); suppress traceback and exit quietly.
         pass
     except Exception:
         traceback.print_exc()
