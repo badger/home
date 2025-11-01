@@ -114,6 +114,7 @@ try:
     State.load("tetris_hiscore", wrap)
     state["hiscore"] = int(wrap.get("hiscore", 0))
 except Exception:
+    # Ignore errors loading high score (e.g., file missing or corrupt); use default of 0.
     pass
 
 # ---------------- Tetrominoes (SRS-ish) ----------------
