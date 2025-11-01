@@ -1,8 +1,8 @@
 import sys
 import os
 
-sys.path.insert(0, "/system/apps/copilot-cli-loop")
-os.chdir("/system/apps/copilot-cli-loop")
+sys.path.insert(0, "/system/apps/copilot-loop")
+os.chdir("/system/apps/copilot-loop")
 
 from badgeware import Image, screen, run, io
 
