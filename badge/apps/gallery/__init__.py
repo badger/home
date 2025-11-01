@@ -5,24 +5,18 @@ sys.path.insert(0, "/system/apps/gallery")
 os.chdir("/system/apps/gallery")
 
 from badgeware import PixelFont, Image, screen, run, io, brushes, shapes
-import jpegdec
-import pngdec
 
 screen.font = PixelFont.load("/system/assets/fonts/nope.ppf")
 screen.antialias = Image.X2
 
-# Create decoders
-jpeg = jpegdec.JPEG(screen)
-png = pngdec.PNG(screen)
-
-# Build list of image files
+# Build list of PNG image files
 files = []
 try:
     for file in os.listdir("images"):
         if file.startswith("."):
             continue
-        name, ext = file.rsplit(".", 1)
-        if ext.lower() in ["png", "jpg", "jpeg"]:
+        if file.lower().endswith(".png"):
+            name = file.rsplit(".", 1)[0]
             files.append({
                 "name": file,
                 "title": name.replace("-", " ").replace("_", " ")
@@ -38,6 +32,7 @@ index = 0
 error = None
 ui_hidden = False
 image_changed_at = None
+current_image = None
 
 
 def clamp_index(i):
@@ -45,42 +40,27 @@ def clamp_index(i):
 
 
 def load_image(i):
-    global error
+    global error, current_image
     i = clamp_index(i)
     
     if files[i]["name"] is None:
         error = "No images in images/"
+        current_image = None
         return
     
     filename = files[i]["name"]
     filepath = f"images/{filename}"
     
     try:
-        # Clear screen first
-        screen.brush = brushes.color(0, 0, 0)
-        screen.clear()
-        
-        if filename.lower().endswith('.png'):
-            # Handle PNG files
-            png.open_file(filepath)
-            png.decode(0, 0)
-        else:
-            # Handle JPEG files
-            jpeg.open_file(filepath)
-            
-            # Get dimensions and center
-            img_width = jpeg.get_width()
-            img_height = jpeg.get_height()
-            x = max(0, (160 - img_width) // 2)
-            y = max(0, (120 - img_height) // 2)
-            
-            jpeg.decode(x, y)
-        
+        # Load PNG using badgeware Image
+        current_image = Image.load(filepath)
         error = None
     except OSError as e:
         error = f"File error: {e}"
+        current_image = None
     except Exception as e:
         error = f"Load failed: {e}"
+        current_image = None
 
 
 # Load first image
@@ -112,37 +92,24 @@ def update():
     if image_changed_at and (io.ticks - image_changed_at) > 3000:
         ui_hidden = True
     
-    # Load/redraw image when navigating or when UI visibility changes
+    # Load new image when navigating
     if navigated:
         load_image(index)
-    elif not error:
-        # Redraw to clear old title overlay when hiding
-        screen.brush = brushes.color(0, 0, 0)
-        screen.clear()
-        
-        # Redecode the current image
-        filename = files[clamp_index(index)]["name"]
-        if filename:
-            filepath = f"images/{filename}"
-            try:
-                if filename.lower().endswith('.png'):
-                    png.open_file(filepath)
-                    png.decode(0, 0)
-                else:
-                    jpeg.open_file(filepath)
-                    img_width = jpeg.get_width()
-                    img_height = jpeg.get_height()
-                    x = max(0, (160 - img_width) // 2)
-                    y = max(0, (120 - img_height) // 2)
-                    jpeg.decode(x, y)
-            except:
-                pass
+    
+    # Clear screen
+    screen.brush = brushes.color(0, 0, 0)
+    screen.clear()
+    
+    # Draw current image (centered)
+    if current_image and not error:
+        img_width = current_image.width
+        img_height = current_image.height
+        x = max(0, (160 - img_width) // 2)
+        y = max(0, (120 - img_height) // 2)
+        screen.blit(current_image, x, y)
     
     # Draw error if present
     if error:
-        screen.brush = brushes.color(0, 0, 0)
-        screen.clear()
-        
         # Simple error display
         screen.brush = brushes.color(255, 100, 100)
         screen.text("Error:", 10, 40)
