@@ -28,6 +28,7 @@ DETAILS_URL = "https://api.github.com/users/{user}"
 
 WIFI_PASSWORD = None
 WIFI_SSID = None
+GITHUB_TOKEN = None
 
 wlan = None
 connected = False
@@ -39,19 +40,20 @@ def message(text):
 
 
 def get_connection_details(user):
-    global WIFI_PASSWORD, WIFI_SSID
+    global WIFI_PASSWORD, WIFI_SSID, GITHUB_TOKEN
 
     if WIFI_SSID is not None and user.handle is not None:
         return True
 
     try:
         sys.path.insert(0, "/")
-        from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
+        from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME, GITHUB_TOKEN
         sys.path.pop(0)
     except ImportError:
         WIFI_PASSWORD = None
         WIFI_SSID = None
         GITHUB_USERNAME = None
+        GITHUB_TOKEN = None
 
     if not WIFI_SSID:
         return False
@@ -145,8 +147,13 @@ def async_fetch_to_disk(url, file, force_update=False):
     if not force_update and file_exists(file):
         return
     try:
+        # Prepare headers with authentication if token is available
+        headers = {"User-Agent": "GitHub Universe Badge 2025"}
+        if GITHUB_TOKEN and url.startswith("https://api.github.com"):
+            headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
         # Grab the data
-        response = urlopen(url, headers={"User-Agent": "GitHub Universe Badge 2025"})
+        response = urlopen(url, headers=headers)
         data = bytearray(512)
         total = 0
         with open(file, "wb") as f:
@@ -167,7 +174,7 @@ def get_user_data(user, force_update=False):
     message(f"Getting user data for {user.handle}...")
     yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), "/user_data.json", force_update)
     r = json.loads(open("/user_data.json", "r").read())
-    user.name = r.get("name", "Unknown User")
+    user.name = r.get("name", user.handle) # Fallback to handle if user does not have a name
     user.handle = r.get("login", "Unknown Handle")
     user.followers = r.get("followers", 0)
     user.repos = r.get("public_repos", 0)
