@@ -64,12 +64,12 @@ def intro():
 
     # show high score on intro screen
     screen.font = small_font
-    center_text(f"High score: {high_score}", 56)
+    center_text(f"High Score: {high_score}", 56)
 
     # blink button message
     if int(io.ticks / 500) % 2:
         screen.font = small_font
-        center_text("Press A to start", 70)
+        center_text("Press A to start", 80)
 
     if io.BUTTON_A in io.pressed:
         # reset game state
@@ -137,15 +137,15 @@ def game_over():
 
     # players final score
     screen.font = small_font
-    center_text(f"Final score: {mona.score}", 40)
+    center_text(f"Final Score: {mona.score}", 40)
 
     # high score
-    center_text(f"High score: {high_score}", 52)
+    center_text(f"High Score: {high_score}", 56)
 
     # flash press button message
     if int(io.ticks / 500) % 2:
         screen.brush = brushes.color(255, 255, 255)
-        center_text("Press A to restart", 70)
+        center_text("Press A to restart", 80)
 
     if io.BUTTON_A in io.pressed:
         # return game to intro state
