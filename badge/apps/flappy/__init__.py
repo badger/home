@@ -27,6 +27,7 @@ state = GameState.INTRO
 
 # High score tracking
 high_score = 0
+new_high_score_achieved = False
 
 # Load high score from persistent storage
 try:
@@ -62,9 +63,10 @@ def intro():
     screen.font = large_font
     center_text("FLAPPY MONA", 38)
 
-    # show high score on intro screen
-    screen.font = small_font
-    center_text(f"High Score: {high_score}", 56)
+    if high_score > 0:
+        # show high score on intro screen
+        screen.font = small_font
+        center_text(f"High Score: {high_score}", 56)
 
     # blink button message
     if int(io.ticks / 500) % 2:
@@ -73,7 +75,9 @@ def intro():
 
     if io.BUTTON_A in io.pressed:
         # reset game state
+        global new_high_score_achieved
         state = GameState.PLAYING
+        new_high_score_achieved = False
         Obstacle.obstacles = []
         Obstacle.next_spawn_time = io.ticks + 500
         mona = Mona()
@@ -120,10 +124,11 @@ def play():
 
 
 def game_over():
-    global state, high_score
+    global state, high_score, new_high_score_achieved
 
-    # check if current score beats high score
+    # check if current score beats high score (only on first entry to game over)
     if mona.score > high_score:
+        new_high_score_achieved = True
         high_score = mona.score
         try:
             State.save("flappy_hiscore", {"hiscore": high_score})
@@ -138,9 +143,11 @@ def game_over():
     # players final score
     screen.font = small_font
     center_text(f"Final Score: {mona.score}", 40)
-
-    # high score
-    center_text(f"High Score: {high_score}", 56)
+        
+    if new_high_score_achieved:
+        center_text(f"New High Score!", 56)
+    else:
+        center_text(f"High Score: {high_score}", 56)
 
     # flash press button message
     if int(io.ticks / 500) % 2:
