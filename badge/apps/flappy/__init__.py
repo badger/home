@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, "/system/apps/flappy")
 os.chdir("/system/apps/flappy")
 
-from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run
+from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run, State
 from mona import Mona
 from obstacle import Obstacle
 
@@ -24,6 +24,18 @@ class GameState:
 
 
 state = GameState.INTRO
+
+# High score tracking
+high_score = 0
+
+# Load high score from persistent storage
+try:
+    wrap = {"hiscore": 0}
+    State.load("flappy_hiscore", wrap)
+    high_score = int(wrap.get("hiscore", 0))
+except Exception:
+    # Ignore errors loading high score (e.g., file missing or corrupt); use default of 0.
+    pass
 
 
 def update():
@@ -49,6 +61,10 @@ def intro():
     # draw title
     screen.font = large_font
     center_text("FLAPPY MONA", 38)
+
+    # show high score on intro screen
+    screen.font = small_font
+    center_text(f"High score: {high_score}", 56)
 
     # blink button message
     if int(io.ticks / 500) % 2:
@@ -104,7 +120,16 @@ def play():
 
 
 def game_over():
-    global state
+    global state, high_score
+
+    # check if current score beats high score
+    if mona.score > high_score:
+        high_score = mona.score
+        try:
+            State.save("flappy_hiscore", {"hiscore": high_score})
+        except Exception:
+            # Ignore errors saving high score (e.g., file system full or read-only).
+            pass
 
     # game over caption
     screen.font = large_font
@@ -113,6 +138,9 @@ def game_over():
     # players final score
     screen.font = small_font
     center_text(f"Final score: {mona.score}", 40)
+
+    # high score
+    center_text(f"High score: {high_score}", 52)
 
     # flash press button message
     if int(io.ticks / 500) % 2:
