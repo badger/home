@@ -30,8 +30,8 @@ connection_status = "Not Connected"
 connecting = False
 connection_start_time = None
 ip_address = "0.0.0.0"
-channel = 0
-security = 'None'
+channel = None
+security = None
 last_attempt_time = None
 WIFI_TIMEOUT = 15  # seconds
 RETRY_DELAY = 15  # seconds
@@ -330,7 +330,10 @@ def update():
             content_y += 10
             visible_y = content_y - scroll_y
             if visible_y >= 18 and visible_y <= 100:
-                screen.brush = white
+                if ip_address == "0.0.0.0":
+                    screen.brush = gray
+                else:
+                    screen.brush = white
                 screen.text(ip_address, 10, visible_y)
             content_y += 12
 
@@ -343,8 +346,12 @@ def update():
             content_y += 10
             visible_y = content_y - scroll_y
             if visible_y >= 18 and visible_y <= 100:
-                screen.brush = white
-                screen.text(str(channel), 10, visible_y)
+                if channel is None:
+                    screen.brush = gray
+                    screen.text("N/A", 10, visible_y)
+                else:
+                    screen.brush = white
+                    screen.text(str(channel), 10, visible_y)
             content_y += 12
         
         # Security
@@ -356,8 +363,12 @@ def update():
             content_y += 10
             visible_y = content_y - scroll_y
             if visible_y >= 18 and visible_y <= 100:
-                screen.brush = white
-                screen.text(str(security), 10, visible_y)
+                if security is None:
+                    screen.brush = gray
+                    screen.text("N/A", 10, visible_y)
+                else:
+                    screen.brush = white
+                    screen.text(str(security), 10, visible_y)
             content_y += 12
 
         # Update total content height
