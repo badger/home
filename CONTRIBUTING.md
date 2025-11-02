@@ -43,7 +43,7 @@ See the [README.md](./README.md#creating-your-own-apps) for detailed app develop
 Before submitting your app, **test it thoroughly using the badge simulator**:
 
 ```bash
-python simulator/badge_simulator.py -C badge badge/apps/your_app/__init__.py
+python simulator/badge_simulator.py badge/apps/your_app
 ```
 
 The simulator helps you:
