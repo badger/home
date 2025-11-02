@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, "/system/apps/flappy")
 os.chdir("/system/apps/flappy")
 
-from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run
+from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run, State
 from mona import Mona
 from obstacle import Obstacle
 
@@ -24,6 +24,19 @@ class GameState:
 
 
 state = GameState.INTRO
+
+# High score tracking
+high_score = 0
+new_high_score_achieved = False
+
+# Load high score from persistent storage
+try:
+    wrap = {"hiscore": 0}
+    State.load("flappy_hiscore", wrap)
+    high_score = int(wrap.get("hiscore", 0))
+except Exception:
+    # Ignore errors loading high score (e.g., file missing or corrupt); use default of 0.
+    pass
 
 
 def update():
@@ -50,14 +63,21 @@ def intro():
     screen.font = large_font
     center_text("FLAPPY MONA", 38)
 
+    if high_score > 0:
+        # show high score on intro screen
+        screen.font = small_font
+        center_text(f"High Score: {high_score}", 56)
+
     # blink button message
     if int(io.ticks / 500) % 2:
         screen.font = small_font
-        center_text("Press A to start", 70)
+        center_text("Press A to start", 80)
 
     if io.BUTTON_A in io.pressed:
         # reset game state
+        global new_high_score_achieved
         state = GameState.PLAYING
+        new_high_score_achieved = False
         Obstacle.obstacles = []
         Obstacle.next_spawn_time = io.ticks + 500
         mona = Mona()
@@ -104,7 +124,17 @@ def play():
 
 
 def game_over():
-    global state
+    global state, high_score, new_high_score_achieved
+
+    # check if current score beats high score (only on first entry to game over)
+    if mona.score > high_score:
+        new_high_score_achieved = True
+        high_score = mona.score
+        try:
+            State.save("flappy_hiscore", {"hiscore": high_score})
+        except Exception:
+            # Ignore errors saving high score (e.g., file system full or read-only).
+            pass
 
     # game over caption
     screen.font = large_font
@@ -112,12 +142,17 @@ def game_over():
 
     # players final score
     screen.font = small_font
-    center_text(f"Final score: {mona.score}", 40)
+    center_text(f"Final Score: {mona.score}", 40)
+        
+    if new_high_score_achieved:
+        center_text(f"New High Score!", 56)
+    else:
+        center_text(f"High Score: {high_score}", 56)
 
     # flash press button message
     if int(io.ticks / 500) % 2:
         screen.brush = brushes.color(255, 255, 255)
-        center_text("Press A to restart", 70)
+        center_text("Press A to restart", 80)
 
     if io.BUTTON_A in io.pressed:
         # return game to intro state
