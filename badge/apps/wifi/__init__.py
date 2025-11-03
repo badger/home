@@ -381,7 +381,6 @@ def update():
             screen.draw(shapes.rectangle(150, 103, 10, 2))  # Down indicator
         
         # Debug info
-        print(f"Content height: {content_height}, Scroll Y: {scroll_y}, Max scroll: {max_scroll}")
     
     # Draw bottom instructions (fixed position)
     screen.font = small_font
