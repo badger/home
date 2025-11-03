@@ -6,7 +6,6 @@ from badgeware import run, io
 import machine
 import gc
 import powman
-import badge_app_runtime
 
 SKIP_CINEMATIC = powman.get_wake_reason() == powman.WAKE_WATCHDOG
 
@@ -59,7 +58,6 @@ machine.Pin.board.BUTTON_HOME.irq(
 
 sys.path.insert(0, app)
 os.chdir(app)
-badge_app_runtime.active_path = app
 
 running_app = __import__(app)
 
