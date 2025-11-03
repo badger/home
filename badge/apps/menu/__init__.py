@@ -22,7 +22,12 @@ icons = []
 active = 0
 
 
-def folder_has_entries(path):
+FOLDER_SCAN_DEPTH = 4
+
+
+def folder_has_entries(path, depth=0):
+    if depth >= FOLDER_SCAN_DEPTH:
+        return False
     try:
         for name in os.listdir(path):
             if name.startswith("."):
@@ -31,7 +36,7 @@ def folder_has_entries(path):
             if is_dir(child_path):
                 if file_exists("{}/__init__.py".format(child_path)):
                     return True
-                if folder_has_entries(child_path):
+                if folder_has_entries(child_path, depth + 1):
                     return True
     except OSError as exc:
         print("folder_has_entries failed for {}: {}".format(path, exc))

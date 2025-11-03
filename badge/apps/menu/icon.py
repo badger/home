@@ -45,7 +45,10 @@ def sprite_for(entry):
     try:
         return Image.load(path)
     except OSError:
-        return Image.load(ICON_SPRITES["app"])
+        try:
+            return Image.load(ICON_SPRITES["app"])
+        except OSError:
+            return Image(24, 24)
 
 
 class Icon:
