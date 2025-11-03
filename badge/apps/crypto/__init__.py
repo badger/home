@@ -1,6 +1,4 @@
 import sys
-import sys
-
 if "/system" not in sys.path:
     sys.path.insert(0, "/system")
 
