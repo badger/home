@@ -74,7 +74,7 @@ def load_wifi_credentials():
 
 def check_connection_status():
     """Check if currently connected to WiFi and manage connection attempts"""
-    global wlan, channel, channel, connection_status, connecting, connection_start_time, ip_address, last_attempt_time, security
+    global wlan, channel, connection_status, connecting, connection_start_time, ip_address, last_attempt_time, security
     
     if wlan is None:
         wlan = network.WLAN(network.STA_IF)
