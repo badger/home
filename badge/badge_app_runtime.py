@@ -92,6 +92,8 @@ def ensure_app_path(module_globals, fallback=None):
         try:
             os.chdir(app_dir)
         except OSError:
+            # It is safe to ignore errors when changing directory; app_dir may not exist or be accessible,
+            # but we still want to proceed with app path setup for compatibility.
             pass
 
     module_globals[_CACHE_KEY] = app_dir
