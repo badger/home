@@ -10,7 +10,7 @@ except ImportError:
 
 APP_DIR = ensure_app_path(globals(), "/system/apps/copilot-loop")
 
-from badgeware import io, run, screen, Image, PixelFont, SpriteSheet
+from badgeware import io, run, screen, Image
 
 
 frame_index = 1
