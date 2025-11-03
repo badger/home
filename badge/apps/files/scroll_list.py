@@ -12,6 +12,7 @@ CHAR_COUNT_WIDTH = SCREEN_WIDTH // small_char_width
 ROW_HEIGHT = 10
 
 HOLD_DELAY = 10
+DEBOUNCE_MS = 150  # Debounce delay in milliseconds
 
 
 class ScrollList:
@@ -25,6 +26,7 @@ class ScrollList:
         self.wrap_around = True
 
         self._held_cache = {}
+        self._debounce_cache = {}
         self._current_render_y = 0
 
     def update(self):
@@ -42,11 +44,22 @@ class ScrollList:
              self.on_button_select()
 
     def connect_input(self, button, action):
+        # Check if enough time has passed since last action for this button
+        now = io.ticks
+        last_action_time = self._debounce_cache.get(button, 0)
+        
         if button in io.pressed:
-            action()
-        if button in io.held:
-            if self._held_cache.get(button, 0) + 1 >= HOLD_DELAY:
+            # Only trigger if debounce period has elapsed
+            if now - last_action_time >= DEBOUNCE_MS:
                 action()
+                self._debounce_cache[button] = now
+        elif button in io.held:
+            # For held buttons, use the existing hold delay mechanism
+            if self._held_cache.get(button, 0) + 1 >= HOLD_DELAY:
+                # Check debounce for held actions too
+                if now - last_action_time >= DEBOUNCE_MS:
+                    action()
+                    self._debounce_cache[button] = now
             else:
                 self._held_cache[button] = self._held_cache.get(button, 0) + 1
         else:
