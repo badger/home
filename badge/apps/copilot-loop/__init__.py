@@ -1,8 +1,14 @@
 import sys
-import sys
-from badge_app_runtime import prepare_app_path, active_path
 
-APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/copilot-loop")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
+
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/copilot-loop")
 
 from badgeware import io, run, screen, Image, PixelFont, SpriteSheet
 

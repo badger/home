@@ -1,8 +1,15 @@
 import sys
 import random
-from badge_app_runtime import prepare_app_path, active_path
 
-APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/invaders")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
+
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/invaders")
 
 from badgeware import screen, PixelFont, io, brushes, shapes, run
 
