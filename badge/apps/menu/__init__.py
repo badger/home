@@ -22,6 +22,22 @@ icons = []
 active = 0
 
 
+def folder_has_entries(path):
+    try:
+        for name in os.listdir(path):
+            if name.startswith("."):
+                continue
+            child_path = "{}/{}".format(path, name)
+            if is_dir(child_path):
+                if file_exists("{}/__init__.py".format(child_path)):
+                    return True
+                if folder_has_entries(child_path):
+                    return True
+    except OSError as exc:
+        print("folder_has_entries failed for {}: {}".format(path, exc))
+    return False
+
+
 def scan_entries(root):
     entries = []
     try:
@@ -31,13 +47,14 @@ def scan_entries(root):
             full_path = "{}/{}".format(root, name)
             if is_dir(full_path):
                 has_module = file_exists("{}/__init__.py".format(full_path))
-                kind = "app" if has_module else "folder"
-                entry = {"name": name, "path": full_path, "kind": kind}
-                if kind == "app":
+                if has_module:
+                    entry = {"name": name, "path": full_path, "kind": "app"}
                     icon_path = "{}/icon.png".format(full_path)
                     if file_exists(icon_path):
                         entry["icon"] = icon_path
-                entries.append(entry)
+                    entries.append(entry)
+                elif folder_has_entries(full_path):
+                    entries.append({"name": name, "path": full_path, "kind": "folder"})
     except OSError as exc:
         print("scan_entries failed for {}: {}".format(root, exc))
     folders = [item for item in entries if item["kind"] == "folder"]
