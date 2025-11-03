@@ -196,7 +196,6 @@ def update():
             
         if io.BUTTON_DOWN in io.pressed:
             scroll_target = min(max_scroll, scroll_target + SCROLL_STEP)  # Scroll down
-            print(f"Scroll Down - target: {scroll_target}, max_scroll: {max_scroll}")
         
         # Ensure scroll target stays within bounds
         scroll_target = max(0, min(max_scroll, scroll_target))
