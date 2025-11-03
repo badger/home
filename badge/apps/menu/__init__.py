@@ -13,20 +13,35 @@ mona = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 11, 1)
 screen.font = PixelFont.load("/system/assets/fonts/ark.ppf")
 # screen.antialias = Image.X2
 
+ROOT = "/system/apps"
+
+
+def scan_entries(root):
+    entries = []
+    try:
+        for name in os.listdir(root):
+            if name.startswith("."):
+                continue
+            full_path = "{}/{}".format(root, name)
+            if is_dir(full_path):
+                has_module = file_exists("{}/__init__.py".format(full_path))
+                kind = "app" if has_module else "folder"
+                entries.append({"name": name, "path": full_path, "kind": kind})
+    except OSError as exc:
+        print("scan_entries failed for {}: {}".format(root, exc))
+    folders = [item for item in entries if item["kind"] == "folder"]
+    apps_only = [item for item in entries if item["kind"] == "app"]
+    folders.sort(key=lambda item: item["name"])
+    apps_only.sort(key=lambda item: item["name"])
+    return folders + apps_only
+
+
 # Auto-discover apps with __init__.py
-apps = []
-try:
-    for entry in os.listdir("/system/apps"):
-        app_path = f"/system/apps/{entry}"
-        if is_dir(app_path):
-            has_init = file_exists(f"{app_path}/__init__.py")
-            if has_init:
-                # Skip menu and startup apps
-                if entry not in ("menu", "startup"):
-                    # Use directory name as display name
-                    apps.append((entry, entry))
-except Exception as e:
-    print(f"Error discovering apps: {e}")
+apps = [
+    (entry["name"], entry["name"])
+    for entry in scan_entries(ROOT)
+    if entry["kind"] == "app" and entry["name"] not in ("menu", "startup")
+]
 
 # Pagination constants
 APPS_PER_PAGE = 6
@@ -43,14 +58,15 @@ def load_page_icons(page):
         app = apps[i]
         name, path = app[0], app[1]
         
-        if is_dir(f"/system/apps/{path}"):
+        app_path = "{}/{}".format(ROOT, path)
+        if is_dir(app_path):
             icon_idx = i - start_idx
             x = icon_idx % 3
             y = math.floor(icon_idx / 3)
             pos = (x * 48 + 33, y * 48 + 42)
             try:
                 # Try to load app-specific icon, fall back to default
-                icon_path = f"/system/apps/{path}/icon.png"
+                icon_path = "{}/icon.png".format(app_path)
                 if not file_exists(icon_path):
                     icon_path = "/system/apps/menu/default_icon.png"
                 sprite = Image.load(icon_path)
@@ -104,7 +120,7 @@ def update():
     if io.BUTTON_B in io.pressed:
         app_idx = current_page * APPS_PER_PAGE + active
         if app_idx < len(apps):
-            app_path = f"/system/apps/{apps[app_idx][1]}"
+            app_path = "{}/{}".format(ROOT, apps[app_idx][1])
             try:
                 # Verify the app still exists before launching
                 if is_dir(app_path) and file_exists(f"{app_path}/__init__.py"):
