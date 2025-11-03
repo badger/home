@@ -193,7 +193,6 @@ def update():
         # Handle scrolling with button press
         if io.BUTTON_UP in io.pressed:
             scroll_target = max(0, scroll_target - SCROLL_STEP)  # Scroll up
-            print(f"Scroll Up - target: {scroll_target}, content_height: {content_height}")
             
         if io.BUTTON_DOWN in io.pressed:
             scroll_target = min(max_scroll, scroll_target + SCROLL_STEP)  # Scroll down
