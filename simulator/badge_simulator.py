@@ -1366,9 +1366,29 @@ def load_game_module(module_path: str) -> ModuleType:
     game_dir = os.path.dirname(game_abs)
     sim_root = SIM_ROOT if SIM_ROOT is not None else _find_sim_root(game_dir)
     simulator_dir = os.path.dirname(os.path.abspath(__file__))
-    for p in (game_dir, os.path.join(sim_root, "apps"), simulator_dir):
-        if p not in sys.path:
+    search_paths = [game_dir, simulator_dir]
+    if sim_root:
+        search_paths.extend([
+            os.path.join(sim_root, "apps"),
+            sim_root,
+        ])
+    for p in search_paths:
+        if p and p not in sys.path:
             sys.path.insert(0, p)
+
+    # Ensure badge_app_runtime helper is available to imported apps
+    runtime_module = sys.modules.get("badge_app_runtime")
+    if runtime_module is None and sim_root:
+        runtime_path = os.path.join(sim_root, "badge_app_runtime.py")
+        if os.path.isfile(runtime_path):
+            runtime_spec = importlib.util.spec_from_file_location("badge_app_runtime", runtime_path)
+            if runtime_spec and runtime_spec.loader:
+                runtime_module = importlib.util.module_from_spec(runtime_spec)
+                runtime_spec.loader.exec_module(runtime_module)  # type: ignore
+                sys.modules["badge_app_runtime"] = runtime_module
+
+    if runtime_module is not None:
+        runtime_module.active_path = os.path.abspath(game_dir)
 
     # Provide `badgeware`
     badgeware = ModuleType("badgeware")
