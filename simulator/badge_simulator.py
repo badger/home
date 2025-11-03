@@ -626,6 +626,11 @@ class PixelFont:
                 font = None
         if font is None:
             font = pygame.font.Font(None, size)
+        
+        # Track font loading for performance monitoring
+        if _perf_monitor and _perf_monitor.enabled:
+            _perf_monitor.asset_tracker.register_font(resolved)
+        
         return PixelFont._Wrapper(font, name)
 
 
@@ -686,6 +691,12 @@ class Image(_SurfaceTarget):
         else:
             source = pygame.image.load(normalised).convert_alpha()
             Image._cache[normalised] = source
+            
+            # Track asset loading for performance monitoring
+            if _perf_monitor and _perf_monitor.enabled:
+                width, height = source.get_size()
+                _perf_monitor.asset_tracker.register_image(normalised, width, height)
+        
         return Image(_surface=source.copy())
 
 
@@ -1324,14 +1335,29 @@ def run(update_func, fps: int = 60, init=None, on_exit=None):
                 on_exit = getattr(module_obj, "on_exit", None)
     clock = pygame.time.Clock()
     result = None
+    
+    # Get performance monitor from global if available
+    perf_monitor = globals().get('_perf_monitor', None)
+    
     try:
         if callable(init):
             init()
         while True:
             io.update()
+            
+            # Check for Home button press to return to menu
+            if IO.BUTTON_HOME in io.pressed:
+                result = "__RETURN_TO_MENU__"
+                break
+            
             result = update_func()
             screen.present()
             clock.tick(fps)
+            
+            # Update performance metrics if enabled
+            if perf_monitor:
+                perf_monitor.update(clock)
+            
             if result is not None:
                 break
     finally:
@@ -1366,6 +1392,8 @@ def load_game_module(module_path: str) -> ModuleType:
     game_dir = os.path.dirname(game_abs)
     sim_root = SIM_ROOT if SIM_ROOT is not None else _find_sim_root(game_dir)
     simulator_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Add paths only if not already present to avoid accumulation
     for p in (game_dir, os.path.join(sim_root, "apps"), simulator_dir):
         if p not in sys.path:
             sys.path.insert(0, p)
@@ -1455,10 +1483,279 @@ def load_game_module(module_path: str) -> ModuleType:
     urandom_module.random = _urandom_random
     urandom_module.uniform = _urandom_uniform
     sys.modules["urandom"] = urandom_module
+    
+    # Provide mock `aye_arr` module for IR receiver/transmitter functionality
+    # This is hardware-specific and won't work in the simulator, but we can mock it
+    # to allow apps to load without errors
+    
+    # Base RemoteDescriptor class
+    class _MockRemoteDescriptor:
+        """Mock base class for IR remote descriptors."""
+        NAME = "Mock Remote"
+        ADDRESS = 0x00
+        BUTTON_CODES = {}
+        
+        def __init__(self):
+            self._on_known = None
+            self._on_unknown = None
+        
+        @property
+        def on_known(self):
+            return self._on_known
+        
+        @on_known.setter
+        def on_known(self, callback):
+            self._on_known = callback
+        
+        @property
+        def on_unknown(self):
+            return self._on_unknown
+        
+        @on_unknown.setter
+        def on_unknown(self, callback):
+            self._on_unknown = callback
+    
+    # Mock NECReceiver class
+    class _MockNECReceiver:
+        """Mock IR receiver that simulates receiving codes."""
+        
+        def __init__(self, pin, pio=0, sm=0):
+            self.pin = pin
+            self.pio = pio
+            self.sm = sm
+            self._descriptor = None
+            self._running = False
+            self._simulate_code = None
+            self._last_simulate_time = 0
+        
+        def bind(self, descriptor):
+            """Bind a remote descriptor to this receiver."""
+            self._descriptor = descriptor
+        
+        def start(self):
+            """Start the receiver."""
+            self._running = True
+            print(f"[Simulator] IR Receiver started (mocked) - press 1-9 to simulate beacon codes")
+        
+        def stop(self):
+            """Stop the receiver."""
+            self._running = False
+        
+        def decode(self):
+            """Decode received IR signals (simulated via keyboard)."""
+            if not self._running or not self._descriptor:
+                return
+            
+            # Simulate IR codes with number keys (1-9)
+            # Check for number key presses to simulate beacon detection
+            import pygame
+            keys = pygame.key.get_pressed()
+            
+            # Rate limit simulation to once per second
+            current_time = pygame.time.get_ticks()
+            if current_time - self._last_simulate_time < 1000:
+                return
+            
+            # Check for number keys 1-9
+            for key_num in range(1, 10):
+                key_code = getattr(pygame, f'K_{key_num}', None)
+                if key_code and keys[key_code]:
+                    self._last_simulate_time = current_time
+                    button_code = self._descriptor.BUTTON_CODES.get(key_num)
+                    if button_code and self._descriptor.on_known:
+                        print(f"[Simulator] IR beacon {key_num} detected (simulated)")
+                        self._descriptor.on_known(key_num)
+                    break
+    
+    # Create aye_arr module structure
+    aye_arr_module = ModuleType("aye_arr")
+    
+    # Create aye_arr.nec submodule
+    aye_arr_nec_module = ModuleType("aye_arr.nec")
+    aye_arr_nec_module.NECReceiver = _MockNECReceiver
+    
+    # Create aye_arr.nec.remotes submodule
+    aye_arr_nec_remotes_module = ModuleType("aye_arr.nec.remotes")
+    
+    # Create aye_arr.nec.remotes.descriptor submodule
+    aye_arr_nec_remotes_descriptor_module = ModuleType("aye_arr.nec.remotes.descriptor")
+    aye_arr_nec_remotes_descriptor_module.RemoteDescriptor = _MockRemoteDescriptor
+    
+    # Link everything together
+    aye_arr_nec_remotes_module.descriptor = aye_arr_nec_remotes_descriptor_module
+    aye_arr_nec_module.remotes = aye_arr_nec_remotes_module
+    aye_arr_module.nec = aye_arr_nec_module
+    
+    # Register all modules
+    sys.modules["aye_arr"] = aye_arr_module
+    sys.modules["aye_arr.nec"] = aye_arr_nec_module
+    sys.modules["aye_arr.nec.remotes"] = aye_arr_nec_remotes_module
+    sys.modules["aye_arr.nec.remotes.descriptor"] = aye_arr_nec_remotes_descriptor_module
 
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore
     return mod
+
+# -----------------------------------------------------------------------------
+# Performance monitoring
+# -----------------------------------------------------------------------------
+
+class AssetTracker:
+    """Track loaded assets to estimate MicroPython memory usage on the badge."""
+    
+    def __init__(self):
+        self.images = {}  # path -> (width, height, bytes)
+        self.fonts = set()
+        self.peak_images = 0
+        
+    def register_image(self, path, width, height):
+        """Register an image and estimate its memory footprint."""
+        if path not in self.images:
+            # MicroPython images: 2 bytes per pixel (RGB565) is typical
+            # Full RGBA would be 4 bytes/pixel, paletted can be 1-2 bytes
+            # Use 2 bytes as a reasonable average
+            estimated_bytes = width * height * 2
+            self.images[path] = (width, height, estimated_bytes)
+            if len(self.images) > self.peak_images:
+                self.peak_images = len(self.images)
+    
+    def unregister_image(self, path):
+        """Remove an image from tracking (when unloaded)."""
+        if path in self.images:
+            del self.images[path]
+    
+    def register_font(self, path):
+        """Track a loaded font."""
+        self.fonts.add(path)
+    
+    def get_total_kb(self):
+        """Get total estimated memory for all tracked assets."""
+        total_bytes = sum(img[2] for img in self.images.values())
+        # Fonts are typically 10-50KB each, use 20KB average
+        total_bytes += len(self.fonts) * 20 * 1024
+        return total_bytes / 1024
+    
+    def get_largest_image_kb(self):
+        """Get size of the largest loaded image."""
+        if not self.images:
+            return 0
+        return max(img[2] for img in self.images.values()) / 1024
+    
+    def reset(self):
+        """Clear all tracked assets."""
+        self.images.clear()
+        self.fonts.clear()
+
+
+class PerformanceMonitor:
+    """Track and display CPU, memory usage, and badge asset estimates."""
+    
+    def __init__(self, enabled=False):
+        self.enabled = enabled
+        if enabled:
+            import psutil
+            self.psutil = psutil
+            self.process = psutil.Process(os.getpid())
+            self.last_time = None
+            self.frame_count = 0
+            self.fps_sum = 0
+            self.update_interval = 0.5  # Update metrics every 0.5 seconds
+            self.last_update = 0
+            self.baseline_memory = None  # Track baseline after first app loads
+            self.initial_memory = None   # Track memory at first measurement
+            self.peak_memory = 0         # Track peak memory growth
+            self.asset_tracker = AssetTracker()  # Track loaded assets
+    
+    def set_baseline(self):
+        """Set the baseline memory after app loads and first frame renders."""
+        if self.enabled and self.baseline_memory is None:
+            mem_info = self.process.memory_info()
+            self.baseline_memory = mem_info.rss / 1024 / 1024  # MB
+            self.initial_memory = self.baseline_memory
+            self.peak_memory = 0
+    
+    def update(self, clock):
+        """Update and display performance metrics."""
+        if not self.enabled:
+            return
+        
+        import time
+        current_time = time.time()
+        
+        # Only update display at specified interval
+        if current_time - self.last_update < self.update_interval:
+            return
+        
+        self.last_update = current_time
+        
+        # Set baseline on first update (after app has loaded)
+        if self.baseline_memory is None:
+            self.set_baseline()
+            return
+        
+        # Get FPS from pygame clock
+        fps = clock.get_fps()
+        
+        # Calculate frame time in milliseconds (more meaningful than CPU%)
+        # Badge target is 60 FPS = 16.67ms per frame
+        # If frame time > 16.67ms, badge will drop frames
+        frame_time_ms = (1000.0 / fps) if fps > 0 else 0
+        
+        # Estimate badge CPU usage based on frame time
+        # Badge has ~16.67ms budget at 60 FPS
+        # If we're taking longer, we're "over budget"
+        badge_frame_budget_ms = 16.67
+        frame_budget_percent = (frame_time_ms / badge_frame_budget_ms) * 100
+        
+        # Get CPU usage (percentage for this process)
+        cpu_percent = self.process.cpu_percent(interval=0.1)
+        
+        # Get memory usage
+        mem_info = self.process.memory_info()
+        mem_mb = mem_info.rss / 1024 / 1024  # Convert to MB
+        
+        # Calculate memory growth since baseline (what the app is using/leaking)
+        memory_growth_mb = mem_mb - self.baseline_memory
+        memory_growth_kb = memory_growth_mb * 1024
+        
+        # Track peak growth
+        if memory_growth_kb > self.peak_memory:
+            self.peak_memory = memory_growth_kb
+        
+        # Get estimated badge memory from asset tracking
+        estimated_badge_kb = self.asset_tracker.get_total_kb()
+        largest_image_kb = self.asset_tracker.get_largest_image_kb()
+        image_count = len(self.asset_tracker.images)
+        font_count = len(self.asset_tracker.fonts)
+        
+        # Badge has 512KB SRAM total, but realistically apps have ~300-400KB available
+        # (system uses some for badgeware, drivers, etc.)
+        badge_available_kb = 400
+        
+        # Status based on estimated badge memory
+        if estimated_badge_kb > badge_available_kb:
+            warning = " ⚠️  OVER LIMIT!"
+        elif estimated_badge_kb > badge_available_kb * 0.75:
+            warning = " ⚡ High"
+        elif estimated_badge_kb > badge_available_kb * 0.50:
+            warning = " ⚡ Med"
+        else:
+            warning = " ✓"
+        
+        # CPU status based on frame budget (more meaningful than CPU%)
+        # Badge needs to complete each frame in 16.67ms to maintain 60 FPS
+        if frame_time_ms > badge_frame_budget_ms * 1.5:
+            cpu_status = " ⚠️  Slow!"
+        elif frame_time_ms > badge_frame_budget_ms:
+            cpu_status = " ⚡"
+        else:
+            cpu_status = " ✓"
+        
+        # Display with both Python memory and badge estimates
+        print(f"\r[Perf] FPS:{fps:5.1f} Frame:{frame_time_ms:5.1f}ms{cpu_status} | "
+              f"Badge~{estimated_badge_kb:5.1f}KB{warning} | "
+              f"Imgs:{image_count}({largest_image_kb:5.1f}KB) Fonts:{font_count}", 
+              end='', flush=True)
 
 # -----------------------------------------------------------------------------
 # Entry point
@@ -1486,6 +1783,11 @@ def main() -> None:
         action="store_true",
         help="Clean temporary files (cached downloads, state) before starting.",
     )
+    parser.add_argument(
+        "--perf",
+        action="store_true",
+        help="Show live performance metrics (CPU and memory usage) in terminal.",
+    )
     args = parser.parse_args()
     
     # Clean temporary files if requested
@@ -1499,6 +1801,20 @@ def main() -> None:
                 print(f"Cleaned temporary files: {root_dir}")
             except Exception as e:
                 print(f"Warning: Could not clean temporary files: {e}")
+    
+    # Initialize performance monitoring
+    global _perf_monitor
+    if args.perf:
+        try:
+            import psutil  # type: ignore
+            _perf_monitor = PerformanceMonitor(enabled=True)
+            print("[Simulator] Performance monitoring enabled")
+        except ImportError:
+            print("[Simulator] Warning: psutil not installed. Install with 'pip install psutil' to enable --perf")
+            print("[Simulator] Continuing without performance monitoring...")
+            _perf_monitor = None
+    else:
+        _perf_monitor = None
 
     pygame.init()
 
@@ -1523,60 +1839,189 @@ def main() -> None:
         else:
             SIM_ROOT = _find_sim_root(os.getcwd())
     
-    # If game argument is a directory, append __init__.py
-    game_path = args.game
-    game_dir = None
-    app_name = "Badge App"
-    if os.path.isdir(game_path):
-        game_dir = game_path
-        app_name = os.path.basename(os.path.abspath(game_path))
-        init_path = os.path.join(game_path, "__init__.py")
-        if os.path.isfile(init_path):
-            game_path = init_path
+    # Performance monitor will set baseline automatically after first app loads
+    if _perf_monitor:
+        print("[Simulator] Memory profiler enabled - tracking memory growth (baseline set after app loads)")
+    
+    # Main app loop - allows apps to launch other apps
+    current_app = args.game
+    
+    while True:
+        # If current_app is a directory, append __init__.py
+        game_path = current_app
+        game_dir = None
+        app_name = "Badge App"
+        if os.path.isdir(game_path):
+            game_dir = game_path
+            app_name = os.path.basename(os.path.abspath(game_path))
+            init_path = os.path.join(game_path, "__init__.py")
+            if os.path.isfile(init_path):
+                game_path = init_path
+            else:
+                print(f"Directory '{game_path}' does not contain __init__.py", file=sys.stderr)
+                pygame.quit()
+                sys.exit(1)
         else:
-            print(f"Directory '{game_path}' does not contain __init__.py", file=sys.stderr)
+            # If it's a file, use its directory
+            game_dir = os.path.dirname(os.path.abspath(game_path))
+            app_name = os.path.basename(game_dir)
+        
+        # Set window title with app name
+        pygame.display.set_caption(f"Badge Simulator - {app_name}")
+        
+        # Try to set app icon from the game's directory
+        if game_dir:
+            icon_path = os.path.join(game_dir, "icon.png")
+            if os.path.isfile(icon_path):
+                screen.set_icon(icon_path)
+
+        try:
+            module = load_game_module(game_path)
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"[Simulator Error] Failed to load game module: {e}", file=sys.stderr)
+            traceback.print_exc()
             pygame.quit()
             sys.exit(1)
-    else:
-        # If it's a file, use its directory
-        game_dir = os.path.dirname(os.path.abspath(game_path))
-        app_name = os.path.basename(game_dir)
+
+        if not hasattr(module, "update"):
+            print("Loaded module has no 'update' function", file=sys.stderr)
+            pygame.quit()
+            sys.exit(1)
+
+        try:
+            init_func = getattr(module, "init", None)
+            exit_func = getattr(module, "on_exit", None)
+            result = run(module.update, init=init_func, on_exit=exit_func)
+            
+            # Check if user pressed Home button to return to menu
+            if result == "__RETURN_TO_MENU__":
+                menu_path = os.path.join(SIM_ROOT, "apps", "menu")
+                if os.path.isdir(menu_path) and os.path.isfile(os.path.join(menu_path, "__init__.py")):
+                    print(f"\n[Simulator] Returning to menu")
+                    current_app = menu_path
+                    
+                    # Clean up sys.path entries added by the previous app
+                    if game_dir:
+                        game_dir_abs = os.path.abspath(game_dir)
+                        paths_to_remove = [p for p in sys.path if os.path.abspath(p).startswith(game_dir_abs)]
+                        for p in paths_to_remove:
+                            while p in sys.path:
+                                sys.path.remove(p)
+                    
+                    # Clean up module cache for clean reload
+                    modules_to_remove = []
+                    for mod_name, mod in sys.modules.items():
+                        if mod and hasattr(mod, "__file__") and mod.__file__:
+                            mod_file = os.path.abspath(mod.__file__)
+                            if game_dir and mod_file.startswith(game_dir):
+                                modules_to_remove.append(mod_name)
+                    
+                    for mod_name in modules_to_remove:
+                        del sys.modules[mod_name]
+                    
+                    # Also remove the main module loaded as "badge_game"
+                    if "badge_game" in sys.modules:
+                        del sys.modules["badge_game"]
+                    
+                    # Also remove common app modules that can conflict (like ui, icon)
+                    # These will be re-imported fresh when the menu loads
+                    for common_mod in ["ui", "icon", "beacon", "mona"]:
+                        if common_mod in sys.modules:
+                            del sys.modules[common_mod]
+                    
+                    # Clear image cache to simulate badge behavior (old app's images are freed)
+                    Image._cache.clear()
+                    
+                    # Reset asset tracker when returning to menu
+                    if _perf_monitor and _perf_monitor.enabled:
+                        _perf_monitor.asset_tracker.reset()
+                    
+                    # Force garbage collection to free memory
+                    import gc
+                    collected = gc.collect()
+                    if collected > 0:
+                        print(f"[Simulator] Garbage collected {collected} objects")
+                    
+                    # Continue to next iteration to load the menu
+                    continue
+                else:
+                    print(f"\n[Simulator] Menu app not found, exiting")
+                    break
+            
+            # If the app returned a path to another app, load it
+            elif result and isinstance(result, str):
+                # Check if it's a valid app path
+                result_path = map_system_path(result)
+                if os.path.isdir(result_path) and os.path.isfile(os.path.join(result_path, "__init__.py")):
+                    print(f"\n[Simulator] Launching app: {result}")
+                    current_app = result_path
+                    
+                    # Clean up sys.path entries added by the previous app
+                    if game_dir:
+                        game_dir_abs = os.path.abspath(game_dir)
+                        paths_to_remove = [p for p in sys.path if os.path.abspath(p).startswith(game_dir_abs)]
+                        for p in paths_to_remove:
+                            while p in sys.path:
+                                sys.path.remove(p)
+                    
+                    # Clean up module cache for clean reload
+                    # Remove all modules that were loaded from the previous app
+                    modules_to_remove = []
+                    for mod_name, mod in sys.modules.items():
+                        if mod and hasattr(mod, "__file__") and mod.__file__:
+                            mod_file = os.path.abspath(mod.__file__)
+                            if game_dir and mod_file.startswith(game_dir):
+                                modules_to_remove.append(mod_name)
+                    
+                    for mod_name in modules_to_remove:
+                        del sys.modules[mod_name]
+                    
+                    # Also remove the main module loaded as "badge_game"
+                    if "badge_game" in sys.modules:
+                        del sys.modules["badge_game"]
+                    
+                    # Also remove common app modules that can conflict (like ui, icon)
+                    for common_mod in ["ui", "icon", "beacon", "mona"]:
+                        if common_mod in sys.modules:
+                            del sys.modules[common_mod]
+                    
+                    # Clear image cache to simulate badge behavior (old app's images are freed)
+                    Image._cache.clear()
+                    
+                    # Reset asset tracker when switching apps
+                    if _perf_monitor and _perf_monitor.enabled:
+                        _perf_monitor.asset_tracker.reset()
+                    
+                    # Force garbage collection to free memory
+                    import gc
+                    collected = gc.collect()
+                    if collected > 0:
+                        print(f"[Simulator] Garbage collected {collected} objects")
+                    
+                    # Continue to next iteration to load the new app
+                    continue
+                else:
+                    print(f"\n[Simulator] Invalid app path returned: {result}")
+                    break
+            else:
+                # App exited normally without launching another app
+                break
+                
+        except SystemExit:
+            # Allow clean exit (e.g., user requested quit); suppress traceback and exit quietly.
+            break
+        except Exception:
+            traceback.print_exc()
+            pygame.quit()
+            sys.exit(1)
     
-    # Set window title with app name
-    pygame.display.set_caption(f"Badge Simulator - {app_name}")
-    
-    # Try to set app icon from the game's directory
-    if game_dir:
-        icon_path = os.path.join(game_dir, "icon.png")
-        if os.path.isfile(icon_path):
-            screen.set_icon(icon_path)
+    # Clean up and exit
+    if _perf_monitor and _perf_monitor.enabled:
+        print()  # Newline after performance metrics
+    pygame.quit()
 
-    try:
-        module = load_game_module(game_path)
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(f"[Simulator Error] Failed to load game module: {e}", file=sys.stderr)
-        traceback.print_exc()
-        pygame.quit()
-        sys.exit(1)
-
-    if not hasattr(module, "update"):
-        print("Loaded module has no 'update' function", file=sys.stderr)
-        pygame.quit()
-        sys.exit(1)
-
-    try:
-        init_func = getattr(module, "init", None)
-        exit_func = getattr(module, "on_exit", None)
-        run(module.update, init=init_func, on_exit=exit_func)
-    except SystemExit:
-        # Allow clean exit (e.g., user requested quit); suppress traceback and exit quietly.
-        pass
-    except Exception:
-        traceback.print_exc()
-        pygame.quit()
-        sys.exit(1)
 
 
 if __name__ == "__main__":
