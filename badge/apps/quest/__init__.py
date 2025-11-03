@@ -1,11 +1,10 @@
 import sys
-import os
+import sys
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/quest")
-os.chdir("/system/apps/quest")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/quest")
 
-import math
-import random
+from badgeware import io, run, shapes, screen, PixelFont, SpriteSheet, Image, brushes
 from badgeware import State, PixelFont, Image, brushes, screen, io, shapes, run
 from beacon import GithubUniverseBeacon
 from aye_arr.nec import NECReceiver

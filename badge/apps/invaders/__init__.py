@@ -1,9 +1,8 @@
 import sys
-import os
 import random
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/invaders")
-os.chdir("/system/apps/invaders")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/invaders")
 
 from badgeware import screen, PixelFont, io, brushes, shapes, run
 

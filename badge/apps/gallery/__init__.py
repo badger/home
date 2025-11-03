@@ -1,8 +1,8 @@
 import sys
 import os
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/gallery")
-os.chdir("/system/apps/gallery")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/gallery")
 
 from badgeware import PixelFont, Image, screen, run, io, brushes, shapes
 

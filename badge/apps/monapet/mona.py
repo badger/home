@@ -1,11 +1,10 @@
 import sys
-import os
+import sys
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/monapet")
-os.chdir("/system/apps/monapet")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/monapet")
 
-from badgeware import screen, brushes, SpriteSheet, shapes, clamp, io
-import random
+from badgeware import Image, SpriteSheet, brushes, screen
 import math
 
 # this class defines our little friend, modify it to change their behaviour!

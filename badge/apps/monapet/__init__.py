@@ -1,11 +1,10 @@
 import sys
-import os
+import sys
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/monapet")
-os.chdir("/system/apps/monapet")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/monapet")
 
-
-import ui
+from badgeware import io, brushes, Image, Matrix, PixelFont, screen, SpriteSheet, run
 from mona import Mona
 from badgeware import io, run, State
 

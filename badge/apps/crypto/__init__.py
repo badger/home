@@ -1,11 +1,10 @@
 import sys
-import os
+import sys
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/crypto")
-os.chdir("/system/apps/crypto")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/crypto")
 
-from badgeware import io, brushes, shapes, screen, PixelFont, run
-import network
+from badgeware import io, brushes, shapes, screen, PixelFont, Image, run
 from urllib.urequest import urlopen
 import json
 import gc

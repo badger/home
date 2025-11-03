@@ -1,8 +1,7 @@
 import sys
-import os
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/flappy")
-os.chdir("/system/apps/flappy")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/flappy")
 
 from badgeware import screen, Image, PixelFont, SpriteSheet, io, brushes, shapes, run, State
 from mona import Mona

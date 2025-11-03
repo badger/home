@@ -1,11 +1,10 @@
 import sys
-import os
+import sys
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/copilot-loop")
-os.chdir("/system/apps/copilot-loop")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/copilot-loop")
 
-from badgeware import Image, screen, run, io
-
+from badgeware import io, run, screen, Image, PixelFont, SpriteSheet
 
 
 frame_index = 1

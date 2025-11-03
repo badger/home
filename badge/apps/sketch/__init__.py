@@ -1,11 +1,10 @@
 import sys
-import os
+import sys
+from badge_app_runtime import prepare_app_path, active_path
 
-sys.path.insert(0, "/system/apps/sketch")
-os.chdir("/system/apps/sketch")
+APP_DIR = prepare_app_path(globals(), active_path or "/system/apps/sketch")
 
-from badgeware import Image, brushes, shapes, screen, io, run
-import ui
+from badgeware import io, brushes, shapes, Image, run, PixelFont, screen
 
 
 canvas = Image(0, 0, ui.canvas_area[2], ui.canvas_area[3])
