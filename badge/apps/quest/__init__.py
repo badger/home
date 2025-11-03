@@ -10,8 +10,7 @@ except ImportError:
 
 APP_DIR = ensure_app_path(globals(), "/system/apps/quest")
 
-from badgeware import io, run, shapes, screen, PixelFont, SpriteSheet, Image, brushes
-from badgeware import State, PixelFont, Image, brushes, screen, io, shapes, run
+from badgeware import io, run, shapes, screen, PixelFont, SpriteSheet, Image, brushes, State
 from beacon import GithubUniverseBeacon
 from aye_arr.nec import NECReceiver
 import ui
