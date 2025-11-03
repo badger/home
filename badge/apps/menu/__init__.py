@@ -88,7 +88,9 @@ def update():
             icons = load_page_icons(current_page)
             active = 0
         else:
-            # Wrap to beginning
+            # Wrap to beginning (first page, first icon)
+            current_page = 0
+            icons = load_page_icons(current_page)
             active = 0
     elif active < 0:
         if current_page > 0:
@@ -97,7 +99,9 @@ def update():
             icons = load_page_icons(current_page)
             active = len(icons) - 1
         else:
-            # Wrap to end
+            # Wrap to last page, last icon
+            current_page = total_pages - 1
+            icons = load_page_icons(current_page)
             active = len(icons) - 1
     
     # Launch app with error handling
