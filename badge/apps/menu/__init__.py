@@ -6,7 +6,7 @@ os.chdir("/system/apps/menu")
 
 import math
 from badgeware import screen, PixelFont, Image, SpriteSheet, is_dir, file_exists, shapes, brushes, io, run
-from icon import Icon
+from icon import Icon, sprite_for
 import ui
 
 mona = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 11, 1)
@@ -14,6 +14,8 @@ screen.font = PixelFont.load("/system/assets/fonts/ark.ppf")
 # screen.antialias = Image.X2
 
 ROOT = "/system/apps"
+current_path = ROOT
+current_depth = 0
 
 
 def scan_entries(root):
@@ -26,7 +28,12 @@ def scan_entries(root):
             if is_dir(full_path):
                 has_module = file_exists("{}/__init__.py".format(full_path))
                 kind = "app" if has_module else "folder"
-                entries.append({"name": name, "path": full_path, "kind": kind})
+                entry = {"name": name, "path": full_path, "kind": kind}
+                if kind == "app":
+                    icon_path = "{}/icon.png".format(full_path)
+                    if file_exists(icon_path):
+                        entry["icon"] = icon_path
+                entries.append(entry)
     except OSError as exc:
         print("scan_entries failed for {}: {}".format(root, exc))
     folders = [item for item in entries if item["kind"] == "folder"]
@@ -49,33 +56,44 @@ current_page = 0
 total_pages = max(1, math.ceil(len(apps) / APPS_PER_PAGE))
 
 # find installed apps and create icons for current page
-def load_page_icons(page):
+def load_page_icons(page, depth=0, active_path=ROOT):
     icons = []
-    start_idx = page * APPS_PER_PAGE
-    end_idx = min(start_idx + APPS_PER_PAGE, len(apps))
-    
+    page_size = APPS_PER_PAGE - 1 if depth > 0 else APPS_PER_PAGE
+    if page_size <= 0:
+        page_size = 1
+
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, len(apps))
+
+    entries = []
+
+    if depth > 0:
+        entries.append({"name": "..", "path": active_path, "kind": "back"})
+
     for i in range(start_idx, end_idx):
         app = apps[i]
-        name, path = app[0], app[1]
-        
-        app_path = "{}/{}".format(ROOT, path)
-        if is_dir(app_path):
-            icon_idx = i - start_idx
-            x = icon_idx % 3
-            y = math.floor(icon_idx / 3)
-            pos = (x * 48 + 33, y * 48 + 42)
-            try:
-                # Try to load app-specific icon, fall back to default
-                icon_path = "{}/icon.png".format(app_path)
-                if not file_exists(icon_path):
-                    icon_path = "/system/apps/menu/default_icon.png"
-                sprite = Image.load(icon_path)
-                icons.append(Icon(pos, name, icon_idx % APPS_PER_PAGE, sprite))
-            except Exception as e:
-                print(f"Error loading icon for {path}: {e}")
+        entry = {
+            "name": app[0],
+            "path": "{}/{}".format(ROOT, app[1]),
+            "kind": "app",
+        }
+        icon_path = "{}/icon.png".format(entry["path"])
+        if file_exists(icon_path):
+            entry["icon"] = icon_path
+        entries.append(entry)
+
+    for slot, entry in enumerate(entries):
+        x = slot % 3
+        y = slot // 3
+        pos = (x * 48 + 33, y * 48 + 42)
+        try:
+            sprite = sprite_for(entry)
+            icons.append(Icon(pos, entry["name"], slot % APPS_PER_PAGE, sprite))
+        except Exception as e:
+            print("Error loading icon for {}: {}".format(entry["path"], e))
     return icons
 
-icons = load_page_icons(current_page)
+icons = load_page_icons(current_page, current_depth, current_path)
 
 active = 0
 
@@ -101,7 +119,7 @@ def update():
         if current_page < total_pages - 1:
             # Move to next page
             current_page += 1
-            icons = load_page_icons(current_page)
+            icons = load_page_icons(current_page, current_depth, current_path)
             active = 0
         else:
             # Wrap to beginning
@@ -110,7 +128,7 @@ def update():
         if current_page > 0:
             # Move to previous page
             current_page -= 1
-            icons = load_page_icons(current_page)
+            icons = load_page_icons(current_page, current_depth, current_path)
             active = len(icons) - 1
         else:
             # Wrap to end
