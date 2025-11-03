@@ -637,7 +637,9 @@ def update():
                     state["divider_active"] = False
             
             # Calculate claimed area percentage
-            calculate_claimed_area()    # Draw play area background (claimed by default)
+            calculate_claimed_area()
+
+    # Draw play area background (claimed by default)
     screen.brush = CLAIMED_COLOR
     screen.draw(shapes.rectangle(PLAY_AREA_X, PLAY_AREA_Y, PLAY_AREA_WIDTH, PLAY_AREA_HEIGHT))
     
