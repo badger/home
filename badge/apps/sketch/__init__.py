@@ -1,11 +1,17 @@
 import sys
-import os
 
-sys.path.insert(0, "/system/apps/sketch")
-os.chdir("/system/apps/sketch")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
 
-from badgeware import Image, brushes, shapes, screen, io, run
-import ui
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/sketch")
+
+from . import ui
+from badgeware import io, brushes, shapes, Image, run, PixelFont, screen
 
 
 canvas = Image(0, 0, ui.canvas_area[2], ui.canvas_area[3])

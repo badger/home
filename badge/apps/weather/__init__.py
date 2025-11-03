@@ -1,8 +1,14 @@
 import sys
-import os
 
-sys.path.insert(0, "/system/apps/weather")
-os.chdir("/system/apps/weather")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
+
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/weather")
 
 from badgeware import io, brushes, shapes, screen, PixelFont, run
 import network

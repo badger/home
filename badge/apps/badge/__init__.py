@@ -1,8 +1,15 @@
 import sys
 import os
 
-sys.path.insert(0, "/system/apps/badge")
-os.chdir("/system/apps/badge")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
+
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/badge")
 
 
 from badgeware import io, brushes, shapes, Image, run, PixelFont, screen, Matrix, file_exists
@@ -11,7 +18,6 @@ import math
 import network
 from urllib.urequest import urlopen
 import gc
-import sys
 import json
 
 
@@ -51,21 +57,27 @@ def get_connection_details(user):
         # `secrets.py` can be imported on the device. Clean up sys.path afterwards.
         sys.path.insert(0, "/")
         try:
-            from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME, GITHUB_TOKEN
+            secrets = __import__("secrets")
         finally:
             # ensure we remove the path we inserted even if import fails
             try:
                 sys.path.pop(0)
             except Exception:
                 pass
-    except ImportError as e:
+
+        WIFI_PASSWORD = getattr(secrets, "WIFI_PASSWORD", None)
+        WIFI_SSID = getattr(secrets, "WIFI_SSID", None)
+        GITHUB_USERNAME = getattr(secrets, "GITHUB_USERNAME", None)
+        # Allow the token to be omitted entirely – treat missing as None/empty string
+        GITHUB_TOKEN = getattr(secrets, "GITHUB_TOKEN", None)
+    except ImportError:
         # If the user hasn't created a secrets.py file, fall back to None so
         # the rest of the app can detect missing credentials and show helpful UI.
         WIFI_PASSWORD = None
         WIFI_SSID = None
         GITHUB_USERNAME = None
         GITHUB_TOKEN = None
-    except Exception as e:
+    except Exception:
         WIFI_PASSWORD = None
         WIFI_SSID = None
         GITHUB_USERNAME = None

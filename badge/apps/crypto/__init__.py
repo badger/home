@@ -1,11 +1,15 @@
 import sys
-import os
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
 
-sys.path.insert(0, "/system/apps/crypto")
-os.chdir("/system/apps/crypto")
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
 
-from badgeware import io, brushes, shapes, screen, PixelFont, run
-import network
+APP_DIR = ensure_app_path(globals(), "/system/apps/crypto")
+
+from badgeware import io, brushes, shapes, screen, PixelFont, Image, run
 from urllib.urequest import urlopen
 import json
 import gc

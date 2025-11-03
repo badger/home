@@ -1,12 +1,16 @@
 import sys
-import os
 
-sys.path.insert(0, "/system/apps/quest")
-os.chdir("/system/apps/quest")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
 
-import math
-import random
-from badgeware import State, PixelFont, Image, brushes, screen, io, shapes, run
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/quest")
+
+from badgeware import io, run, shapes, screen, PixelFont, SpriteSheet, Image, brushes, State
 from beacon import GithubUniverseBeacon
 from aye_arr.nec import NECReceiver
 import ui

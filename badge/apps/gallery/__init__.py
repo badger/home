@@ -1,8 +1,15 @@
 import sys
 import os
 
-sys.path.insert(0, "/system/apps/gallery")
-os.chdir("/system/apps/gallery")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
+
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/gallery")
 
 from badgeware import PixelFont, Image, screen, run, io, brushes, shapes
 

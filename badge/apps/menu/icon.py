@@ -1,5 +1,5 @@
 import math
-from badgeware import brushes, shapes, io, Matrix, screen
+from badgeware import brushes, shapes, io, Matrix, screen, Image
 
 # bright icon colours
 bold = [
@@ -25,6 +25,30 @@ faded = [
 # icon shape
 squircle = shapes.squircle(0, 0, 20, 4)
 shade_brush = brushes.color(0, 0, 0, 30)
+
+ICON_SPRITES = {
+    "app": "/system/apps/menu/default_icon.png",
+    "folder": "/system/apps/menu/folder_icon.png",
+    "back": "/system/apps/menu/folder_up_icon.png",
+}
+
+
+def sprite_for(entry):
+    custom_path = entry.get("icon")
+    if custom_path:
+        try:
+            return Image.load(custom_path)
+        except OSError:
+            pass
+
+    path = ICON_SPRITES.get(entry.get("kind"), ICON_SPRITES["app"])
+    try:
+        return Image.load(path)
+    except OSError:
+        try:
+            return Image.load(ICON_SPRITES["app"])
+        except OSError:
+            return Image(24, 24)
 
 
 class Icon:

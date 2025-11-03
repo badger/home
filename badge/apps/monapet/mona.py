@@ -1,8 +1,14 @@
 import sys
-import os
 
-sys.path.insert(0, "/system/apps/monapet")
-os.chdir("/system/apps/monapet")
+if "/system" not in sys.path:
+    sys.path.insert(0, "/system")
+
+try:
+    from badge_app_runtime import ensure_app_path
+except ImportError:
+    from badge_app_runtime import prepare_app_path as ensure_app_path
+
+APP_DIR = ensure_app_path(globals(), "/system/apps/monapet")
 
 from badgeware import screen, brushes, SpriteSheet, shapes, clamp, io
 import random
