@@ -54,13 +54,13 @@ class _HTTPResponse:
 
 class rq:  # Mimic minimal urequests-like interface used by this app
     @staticmethod
-    def get(url, timeout=2):  # timeout retained for signature compatibility
-        # MicroPython's urlopen may ignore timeout; acceptable for short badge calls.
+    def get(url):
+        # MicroPython's urlopen does not support reliable timeout; requests may block.
         raw = urlopen(url)
         return _HTTPResponse(raw)
 
     @staticmethod
-    def post(url, data=None, headers=None, timeout=2):
+    def post(url, data=None, headers=None):
         # Encode string payload to bytes when needed.
         if isinstance(data, str):
             data_bytes = data.encode()
