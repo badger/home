@@ -467,6 +467,7 @@ def fetch_wled_json(timeout=2, max_bytes=8192):
                 if s:
                     s.close()
             except Exception:
+                # Ignore errors during socket close; cleanup failures are non-critical
                 pass
     except OSError as e:
         try:
