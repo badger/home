@@ -54,6 +54,7 @@ class _HTTPResponse:
             if hasattr(self._raw, "close"):
                 self._raw.close()
         except Exception:
+            # Ignore errors during cleanup; resource may already be closed or not closable.
             pass
 
 
