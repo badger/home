@@ -92,6 +92,7 @@ def truncate_message(msg, max_len=16):
         if msg and len(msg) > max_len:
             return msg[:max_len] + "..."
     except Exception:
+        # Ignore errors: fallback to original message if msg is not a string or has no length.
         pass
     return msg
 
