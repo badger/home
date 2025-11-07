@@ -15,10 +15,7 @@ import gc
 # A tiny wrapper (`rq`) mimics the minimal subset of the urequests interface
 # used here (get/post + status_code/text/close) while keeping memory usage low.
 
-try:  # MicroPython-provided lightweight HTTP client
-    from urllib.urequest import urlopen  # type: ignore
-except ImportError:  # Extremely unlikely on badge firmware; handled gracefully
-    urlopen = None  # type: ignore
+from urllib.urequest import urlopen  # type: ignore  # Built-in on badge firmware; direct import keeps code simple.
 
 
 class _HTTPResponse:
@@ -58,16 +55,12 @@ class _HTTPResponse:
 class rq:  # Mimic minimal urequests-like interface used by this app
     @staticmethod
     def get(url, timeout=2):  # timeout retained for signature compatibility
-        if urlopen is None:
-            raise ImportError("urllib.urequest unavailable")
         # MicroPython's urlopen may ignore timeout; acceptable for short badge calls.
         raw = urlopen(url)
         return _HTTPResponse(raw)
 
     @staticmethod
     def post(url, data=None, headers=None, timeout=2):
-        if urlopen is None:
-            raise ImportError("urllib.urequest unavailable")
         # Encode string payload to bytes when needed.
         if isinstance(data, str):
             data_bytes = data.encode()
@@ -241,10 +234,7 @@ def connect_wifi():
         for s in scans:
             ss = s[0]
             if isinstance(ss, (bytes, bytearray)):
-                try:
-                    ss = ss.decode("utf-8", "ignore")
-                except Exception:
-                    ss = str(ss)
+                ss = ss.decode("utf-8", "ignore")
             if ss == WIFI_SSID:
                 found = True
                 break
@@ -406,9 +396,7 @@ def fetch_wled_json(timeout=2, max_bytes=8192):
                 header_end = raw.find(b"\r\n\r\n")
                 if header_end != -1 or len(raw) > max_bytes:
                     break
-            if header_end == -1:
-                # couldn't find header terminator yet, continue a bit more
-                pass
+            # If header_end remains -1 we treat entire raw buffer as body below; additional reads occur in body loop.
             body = raw[header_end+4:] if header_end != -1 else raw
             # Continue reading body
             while len(body) < max_bytes:
