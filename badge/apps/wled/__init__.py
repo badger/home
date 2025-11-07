@@ -174,6 +174,7 @@ def connect_wifi():
                 wlan.connect(WIFI_SSID, WIFI_PASSWORD)
                 status_message = "Connecting WiFi..."
             except Exception:
+                # Ignore connection errors; will retry in next loop iteration
                 pass
 
     # Periodic reconnect attempts every 1.5s if not yet connected (after first scan cycle)
