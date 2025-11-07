@@ -39,10 +39,7 @@ class _HTTPResponse:
                 # Some MicroPython builds return bytes; decode defensively.
                 data = self._raw.read()
                 if isinstance(data, bytes):
-                    try:
-                        self._text = data.decode()
-                    except Exception:
-                        self._text = data.decode("utf-8", "ignore")
+                    self._text = data.decode("utf-8", "ignore")
                 else:  # already str
                     self._text = data
             except Exception:
