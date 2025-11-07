@@ -112,6 +112,7 @@ last_errno = None        # Last numeric errno captured (e.g. 110)
 ticks_start = None
 WIFI_TIMEOUT = 60  # seconds before we give up attempting initial WiFi connect
 last_scan_tick = 0
+last_connect_attempt = 0  # Timestamp (io.ticks) of last explicit wlan.connect() attempt (post-scan)
 
 # WLED state
 wled_power = False
@@ -194,7 +195,7 @@ def load_config():
 
 def connect_wifi():
     """Attempt non-blocking WiFi connect with SSID presence scan."""
-    global wlan, ticks_start, wifi_connected, status_message, last_scan_tick
+    global wlan, ticks_start, wifi_connected, status_message, last_scan_tick, last_connect_attempt
 
     if wifi_connected and wlan and wlan.isconnected():
         return True
@@ -249,12 +250,16 @@ def connect_wifi():
                 pass
 
     # Periodic reconnect attempts every 1.5s if not yet connected (after first scan cycle)
-    if not wifi_connected and ((io.ticks - ticks_start) % 1500) < 50 and (io.ticks - ticks_start < WIFI_TIMEOUT * 1000):
+    if (not wifi_connected \
+        and (now - ticks_start < WIFI_TIMEOUT * 1000) \
+        and (now - last_connect_attempt >= 1500)):
         try:
             wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+            last_connect_attempt = now
             status_message = "Connecting WiFi..."
         except Exception:
-            # Ignore connection errors; will retry periodically until timeout
+            # Ignore connection errors; will retry after throttle interval until timeout
+            last_connect_attempt = now  # still advance to avoid tight loop on immediate failures
             pass
 
     wifi_connected = wlan.isconnected()
@@ -306,7 +311,7 @@ def send_wled_command(data, timeout=2):
         return success
     except Exception as e:
         last_error = str(e)
-        status_message = f"Cmd err: {str(e)[:10]}"
+        status_message = f"Cmd err: {truncate_message(str(e), max_len=10)}"
         return False
     finally:
         in_flight = False
@@ -337,7 +342,7 @@ def http_request(path, timeout=1):
             except Exception as e:
                 resp.close()
                 wled_connected = False
-                status_message = f"JSON parse: {str(e)[:10]}"
+                status_message = f"JSON parse: {truncate_message(str(e), max_len=10)}"
                 return None
         resp.close()
         wled_connected = False
@@ -542,7 +547,7 @@ def get_wled_state():
         gc.collect()
         return True
     except Exception as e:
-        status_message = f"Parse: {str(e)[:10]}"
+        status_message = f"Parse: {truncate_message(str(e), max_len=10)}"
         return False
 
 
