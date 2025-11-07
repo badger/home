@@ -286,7 +286,7 @@ curl -X POST http://192.168.1.100/json/state -d '{"on":true,"seg":[{"col":[[255,
 curl -X POST http://192.168.1.100/json/state -d '{"on":true,"seg":[{"fx":9}]}'
 
 # Set brightness to 50%
-curl -X POST http://192.168.1.100/json/state -d '{"on":true,"bri":128,"seg":[{"bri":128}]}'
+curl -X POST http://192.168.1.100/json/state -d '{"on":true,"seg":[{"bri":128}]}'
 ```
 
 ## Credits
