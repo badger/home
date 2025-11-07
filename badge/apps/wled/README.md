@@ -293,7 +293,7 @@ curl -X POST http://192.168.1.100/json/state -d '{"on":true,"bri":128,"seg":[{"b
 
 Created for the GitHub Universe 2025 hackable badge to control the Octolamp LED device assembled at the conference.
 
-Built with ❤️ using GitHub Copilot and:
+Built with <3 using GitHub Copilot and:
 - **WLED**: Open-source LED control firmware
 - **Badgeware**: Badge firmware and display library
 - **MicroPython**: Python for microcontrollers
