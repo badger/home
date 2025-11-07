@@ -298,13 +298,14 @@ def send_wled_command(data, timeout=2):
     global wled_connected, status_message, last_error, last_errno, in_flight
     if in_flight:
         return False
-    in_flight = True
     if not wifi_connected or not wlan or not wlan.isconnected():
-        in_flight = False
         return False
     if not WLED_HOST:
-        in_flight = False
         return False
+    # Set in_flight only after passing all early-return preconditions.
+    # This keeps the flag logic simple (no need to reset it in those paths)
+    # and ensures that once marked, it is always cleared by the finally block.
+    in_flight = True
     try:
         import json
         url = f"http://{WLED_HOST}/json/state"
@@ -314,14 +315,14 @@ def send_wled_command(data, timeout=2):
         success = resp.status_code in (200, 201)
         # Ensure we release underlying resources early.
         resp.close()
-        in_flight = False
         status_message = "Command sent" if success else f"HTTP {resp.status_code}"
         return success
     except Exception as e:
-        in_flight = False
         last_error = str(e)
         status_message = f"Cmd err: {str(e)[:10]}"
         return False
+    finally:
+        in_flight = False
 
 
 def http_request(path, timeout=1):
@@ -329,14 +330,12 @@ def http_request(path, timeout=1):
     global wled_connected, wifi_connected, status_message, last_error, last_errno, in_flight
     if in_flight:
         return None
-    in_flight = True
     if not wifi_connected or not wlan or not wlan.isconnected():
         wifi_connected = False
-        in_flight = False
         return None
     if not WLED_HOST:  # no IP configured
-        in_flight = False
         return None
+    in_flight = True
     try:
         url = f"http://{WLED_HOST}{path}"
         resp = rq.get(url, timeout=timeout)
@@ -347,13 +346,11 @@ def http_request(path, timeout=1):
                 import json
                 data = json.loads(raw_text)
                 wled_connected = True
-                in_flight = False
                 return data
             except Exception as e:
                 resp.close()
                 wled_connected = False
                 status_message = f"JSON parse: {str(e)[:10]}"
-                in_flight = False
                 return None
         resp.close()
         wled_connected = False
@@ -374,7 +371,8 @@ def http_request(path, timeout=1):
         last_error = str(e)
         last_errno = None
         status_message = f"Err {truncate_message(last_error)}"
-    in_flight = False
+    finally:
+        in_flight = False
     return None
 
 
