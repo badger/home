@@ -198,7 +198,7 @@ def load_config():
         WIFI_SSID = WIFI_PASSWORD = WLED_HOST = None
         status_message = "No secrets.py"
     except Exception:
-        WIFI_SSID = WIFI_PASSWORD = None
+        WIFI_SSID = WIFI_PASSWORD = WLED_HOST = None
         status_message = "Config error"
 
 
