@@ -4,6 +4,7 @@
 WIFI_SSID = "u25-badger-party"
 WIFI_PASSWORD = "h4ck4w4y"
 
+# ----------------------- GitHub Settings ----------------------
 # Update with your GitHub username
 GITHUB_USERNAME = ""
 
@@ -13,6 +14,7 @@ GITHUB_USERNAME = ""
 # Docs here https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
 GITHUB_TOKEN = ""
 
+# ----------------------- Weather Settings ----------------------
 # Optional: Override weather location (by default it's auto-detected from IP)
 # You can specify location in several ways:
 #
@@ -27,3 +29,7 @@ GITHUB_TOKEN = ""
 #
 # Leave unset or set to None to use auto-detection (default):
 # WEATHER_LOCATION = None
+
+# ------------------------ WLED Settings -----------------------
+# Optional: WLED device configuration (for WLED controller app)
+# WLED_IP = "192.168.1.100"
