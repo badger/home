@@ -412,7 +412,7 @@ def fetch_wled_json(timeout=2, max_bytes=8192):
             if header_end == -1:
                 # couldn't find header terminator yet, continue a bit more
                 pass
-            body = raw[header_end+4:] if header_end != -1 else b""
+            body = raw[header_end+4:] if header_end != -1 else raw
             # Continue reading body
             while len(body) < max_bytes:
                 try:
