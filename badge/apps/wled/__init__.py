@@ -355,11 +355,12 @@ def http_request(path, timeout=1):
     except OSError as e:  # Capture errno for network errors
         wled_connected = False
         last_error = str(e)
+        last_error_lower = last_error.lower()
         try:
             last_errno = e.errno
         except Exception:
             last_errno = None
-        if last_errno == 110 or ("ETIMEDOUT" in last_error) or ("ETIMEOUT" in last_error) or ("timed out" in last_error.lower()):
+        if last_errno == 110 or ("etimedout" in last_error_lower) or ("etimeout" in last_error_lower) or ("timed out" in last_error_lower):
             status_message = "Timeout (WLED)"
         else:
             status_message = f"Err {truncate_message(last_error)}"
