@@ -774,6 +774,7 @@ def update():
     global control_mode, control_selection, color_picker_active, color_index
     global effect_picker_active, effect_index, wled_power, wled_color, wled_brightness
     global brightness_picker_active, brightness_value
+    global ticks_start, WIFI_SSID, WIFI_PASSWORD, WLED_HOST
 
     # Clear background
     screen.brush = background
