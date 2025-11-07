@@ -814,8 +814,8 @@ def update():
     if brightness_picker_active:
         # Brightness picker mode
         if io.BUTTON_A in io.pressed:
-            # Apply brightness - set segment-level brightness only (per WLED docs)
-            if send_wled_command({"on": True, "seg": [{"bri": brightness_value}]}):
+            # Apply brightness - use top-level 'bri' (segment 'bri' does not persist global brightness)
+            if send_wled_command({"on": True, "bri": brightness_value}):
                 wled_brightness = brightness_value
                 wled_power = True
                 state_checked = False  # Refresh state
