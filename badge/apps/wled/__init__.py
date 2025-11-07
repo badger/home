@@ -5,7 +5,7 @@ import os
 sys.path.insert(0, "/system/apps/wled")
 os.chdir("/system/apps/wled")
 
-from badgeware import io, brushes, shapes, screen, PixelFont, run
+from badgeware import io, brushes, shapes, screen, PixelFont, run, State
 import network
 import gc
 
@@ -82,6 +82,18 @@ class rq:  # Mimic minimal urequests-like interface used by this app
 
 # Load fonts - use smaller, more compact fonts
 small_font = PixelFont.load("/system/assets/fonts/ark.ppf")
+
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+def truncate_message(msg, max_len=16):
+    """Truncate a message safely for status output with ellipsis."""
+    try:
+        if msg and len(msg) > max_len:
+            return msg[:max_len] + "..."
+    except Exception:
+        pass
+    return msg
 
 # Colors
 white = brushes.color(235, 245, 255)
@@ -355,18 +367,12 @@ def http_request(path, timeout=1):
         if last_errno == 110 or ("ETIMEDOUT" in last_error) or ("ETIMEOUT" in last_error) or ("timed out" in last_error.lower()):
             status_message = "Timeout (WLED)"
         else:
-            msg = last_error
-            if len(msg) > 16:
-                msg = msg[:16] + "..."
-            status_message = f"Err {msg}"
+            status_message = f"Err {truncate_message(last_error)}"
     except Exception as e:
         wled_connected = False
         last_error = str(e)
         last_errno = None
-        msg = last_error
-        if len(msg) > 16:
-            msg = msg[:16] + "..."
-        status_message = f"Err {msg}"
+        status_message = f"Err {truncate_message(last_error)}"
     in_flight = False
     return None
 
@@ -376,83 +382,91 @@ def fetch_wled_json(timeout=2, max_bytes=8192):
     """Stream /json manually to avoid urequests full-buffer allocation.
     Returns a dict or None. Extracts only the 'state' object for parsing.
     """
-    global last_error, last_errno, wled_connected, status_message
+    global last_error, last_errno, wled_connected, status_message, in_flight
+    if in_flight:
+        return None
     if not wifi_connected or not WLED_HOST:
         return None
+    in_flight = True
+    s = None
     try:
         import socket
         s = socket.socket()
         s.settimeout(timeout)
         s.connect((WLED_HOST, 80))
-        # Minimal GET
-        req = b"GET /json HTTP/1.0\r\nHost: " + WLED_HOST.encode() + b"\r\nConnection: close\r\n\r\n"
-        s.send(req)
-        # Read headers first
-        raw = b""
-        header_end = -1
-        while True:
-            chunk = s.recv(256)
-            if not chunk:
-                break
-            raw += chunk
-            header_end = raw.find(b"\r\n\r\n")
-            if header_end != -1 or len(raw) > max_bytes:
-                break
-        if header_end == -1:
-            # couldn't find header terminator yet, continue a bit more
-            pass
-        body = raw[header_end+4:] if header_end != -1 else b""
-        # Continue reading body
-        while len(body) < max_bytes:
-            try:
-                chunk = s.recv(512)
-            except Exception:
-                break
-            if not chunk:
-                break
-            body += chunk
-        s.close()
-        wled_connected = True
-        # Find '"state":' token and attempt to isolate braces
-        state_idx = body.find(b'"state"')
-        if state_idx == -1:
-            # Try full JSON parse as fallback (may be big)
+        try:
+            # Minimal GET
+            req = b"GET /json HTTP/1.0\r\nHost: " + WLED_HOST.encode() + b"\r\nConnection: close\r\n\r\n"
+            s.send(req)
+            # Read headers first
+            raw = b""
+            header_end = -1
+            while True:
+                chunk = s.recv(256)
+                if not chunk:
+                    break
+                raw += chunk
+                header_end = raw.find(b"\r\n\r\n")
+                if header_end != -1 or len(raw) > max_bytes:
+                    break
+            if header_end == -1:
+                # couldn't find header terminator yet, continue a bit more
+                pass
+            body = raw[header_end+4:] if header_end != -1 else b""
+            # Continue reading body
+            while len(body) < max_bytes:
+                try:
+                    chunk = s.recv(512)
+                except Exception:
+                    break
+                if not chunk:
+                    break
+                body += chunk
+            wled_connected = True
+            # Find '"state":' token and attempt to isolate braces
+            state_idx = body.find(b'"state"')
+            if state_idx == -1:
+                # Try full JSON parse as fallback (may be big)
+                import json
+                try:
+                    return json.loads(body.decode('utf-8', 'ignore'))
+                except Exception as e:
+                    last_error = str(e)
+                    status_message = "JSON full fail"
+                    return None
+            brace_start = body.find(b'{', state_idx)
+            if brace_start == -1:
+                status_message = "No state brace"
+                return None
+            depth = 0
+            end_pos = -1
+            for i in range(brace_start, len(body)):
+                b = body[i:i+1]
+                if b == b'{':
+                    depth += 1
+                elif b == b'}':
+                    depth -= 1
+                    if depth == 0:
+                        end_pos = i
+                        break
+            if end_pos == -1:
+                status_message = "State brace unterminated"
+                return None
+            state_slice = body[brace_start:end_pos+1]
             import json
             try:
-                return json.loads(body.decode('utf-8', 'ignore'))
+                state_obj = json.loads(state_slice.decode('utf-8','ignore'))
             except Exception as e:
                 last_error = str(e)
-                status_message = "JSON full fail"
+                status_message = "State parse err"
                 return None
-        # From the first '{' after "state":
-        brace_start = body.find(b'{', state_idx)
-        if brace_start == -1:
-            status_message = "No state brace"
-            return None
-        # Brace matching
-        depth = 0
-        end_pos = -1
-        for i in range(brace_start, len(body)):
-            b = body[i:i+1]
-            if b == b'{':
-                depth += 1
-            elif b == b'}':
-                depth -= 1
-                if depth == 0:
-                    end_pos = i
-                    break
-        if end_pos == -1:
-            status_message = "State brace unterminated"
-            return None
-        state_slice = body[brace_start:end_pos+1]
-        import json
-        try:
-            state_obj = json.loads(state_slice.decode('utf-8','ignore'))
-        except Exception as e:
-            last_error = str(e)
-            status_message = "State parse err"
-            return None
-        return {"state": state_obj}
+            return {"state": state_obj}
+        finally:
+            try:
+                if s:
+                    s.close()
+            except Exception:
+                pass
     except OSError as e:
         try:
             last_errno = e.errno
@@ -463,6 +477,8 @@ def fetch_wled_json(timeout=2, max_bytes=8192):
     except Exception as e:
         last_error = str(e)
         status_message = "Stream fail"
+    finally:
+        in_flight = False
     return None
 
 
@@ -713,9 +729,7 @@ def draw_ui():
                 if wled_effect_name and wled_effect_name != status_message:
                     center_text(wled_effect_name, 53)
                 elif not wled_effect_name and "Effect" in status_message:
-                    # If we only have generic 'Effect 101' and haven't shown it yet at top (unlikely), show it
-                    if status_message != wled_effect_name:
-                        center_text(status_message, 53)
+                    center_text(status_message, 53)
                 # Brightness line
                 pct = int((wled_brightness / 255) * 100)
                 screen.brush = white
@@ -897,5 +911,32 @@ def update():
     draw_ui()
 
 
+def init():
+    """Load persisted UI selection and control values."""
+    global color_index, effect_index, brightness_value, control_selection
+    state = {
+        "color_index": color_index,
+        "effect_index": effect_index,
+        "brightness_value": brightness_value,
+        "control_selection": control_selection,
+    }
+    if State.load("wled", state):
+        color_index = state.get("color_index", color_index)
+        effect_index = state.get("effect_index", effect_index)
+        brightness_value = state.get("brightness_value", brightness_value)
+        control_selection = state.get("control_selection", control_selection)
+    del state
+
+
+def on_exit():
+    """Persist relevant UI/control selections for next launch."""
+    State.save("wled", {
+        "color_index": color_index,
+        "effect_index": effect_index,
+        "brightness_value": brightness_value,
+        "control_selection": control_selection,
+    })
+
+
 if __name__ == "__main__":
-    run(update)
+    run(update, init=init, on_exit=on_exit)
