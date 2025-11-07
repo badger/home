@@ -517,6 +517,8 @@ def get_wled_state():
             # Check if using an effect (fx > 0 means effect is active)
             fx = first.get("fx", 0)
 
+            # Note: WLED effect ID 0 is "Solid", which is technically an effect per the API.
+            # This code intentionally treats only fx > 0 as effects, showing color info for fx == 0 ("Solid").
             if fx > 0:
                 # Effect is active - don't show col, show effect info instead
                 wled_color = None  # Signal effect mode
