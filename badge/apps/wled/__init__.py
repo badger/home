@@ -534,7 +534,7 @@ def get_wled_state():
                     wled_effect_name = name
                     status_message = name
                 else:
-                    status_message = f"Effect {fx}" if fx else "State OK"
+                    status_message = f"Effect {fx}"
             else:
                 # Solid color mode - extract color
                 col = first.get("col") or []
