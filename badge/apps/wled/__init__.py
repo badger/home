@@ -9,6 +9,76 @@ from badgeware import io, brushes, shapes, screen, PixelFont, run
 import network
 import gc
 
+# ---------------------------------------------------------------------------
+# Standardized HTTP helper
+# ---------------------------------------------------------------------------
+# A tiny wrapper (`rq`) mimics the minimal subset of the urequests interface
+# used here (get/post + status_code/text/close) while keeping memory usage low.
+
+try:  # MicroPython-provided lightweight HTTP client
+    from urllib.urequest import urlopen  # type: ignore
+except ImportError:  # Extremely unlikely on badge firmware; handled gracefully
+    urlopen = None  # type: ignore
+
+
+class _HTTPResponse:
+    """Minimal response object exposing .status_code, .text, .close().
+
+    Text is lazily decoded to avoid allocating unless needed. If decoding fails,
+    raw bytes are returned (repr-safe for small payloads)."""
+
+    def __init__(self, raw, status=200):
+        self._raw = raw
+        self.status_code = getattr(raw, "status", status)
+        self._text = None
+
+    @property
+    def text(self):
+        if self._text is None:
+            try:
+                # Some MicroPython builds return bytes; decode defensively.
+                data = self._raw.read()
+                if isinstance(data, bytes):
+                    try:
+                        self._text = data.decode()
+                    except Exception:
+                        self._text = data.decode("utf-8", "ignore")
+                else:  # already str
+                    self._text = data
+            except Exception:
+                self._text = ""
+        return self._text
+
+    def close(self):
+        try:
+            if hasattr(self._raw, "close"):
+                self._raw.close()
+        except Exception:
+            pass
+
+
+class rq:  # Mimic minimal urequests-like interface used by this app
+    @staticmethod
+    def get(url, timeout=2):  # timeout retained for signature compatibility
+        if urlopen is None:
+            raise ImportError("urllib.urequest unavailable")
+        # MicroPython's urlopen may ignore timeout; acceptable for short badge calls.
+        raw = urlopen(url)
+        return _HTTPResponse(raw)
+
+    @staticmethod
+    def post(url, data=None, headers=None, timeout=2):
+        if urlopen is None:
+            raise ImportError("urllib.urequest unavailable")
+        # Encode string payload to bytes when needed.
+        if isinstance(data, str):
+            data_bytes = data.encode()
+        else:
+            data_bytes = data
+        # MicroPython's urlopen accepts headers as dict (not list of tuples)
+        raw = urlopen(url, data=data_bytes, headers=headers)
+        return _HTTPResponse(raw)
+
 # Load fonts - use smaller, more compact fonts
 small_font = PixelFont.load("/system/assets/fonts/ark.ppf")
 
@@ -224,20 +294,14 @@ def send_wled_command(data, timeout=2):
     try:
         import json
         url = f"http://{WLED_HOST}/json/state"
-        try:
-            import urequests as rq
-        except ImportError:
-            from urllib import urequest as rq  # type: ignore
         payload = json.dumps(data)
         headers = {"Content-Type": "application/json"}
         resp = rq.post(url, data=payload, headers=headers, timeout=timeout)
         success = resp.status_code in (200, 201)
+        # Ensure we release underlying resources early.
         resp.close()
         in_flight = False
-        if success:
-            status_message = "Command sent"
-        else:
-            status_message = f"HTTP {resp.status_code}"
+        status_message = "Command sent" if success else f"HTTP {resp.status_code}"
         return success
     except Exception as e:
         in_flight = False
@@ -261,18 +325,11 @@ def http_request(path, timeout=1):
         return None
     try:
         url = f"http://{WLED_HOST}{path}"
-        try:
-            import urequests as rq
-        except ImportError:
-            from urllib import urequest as rq  # type: ignore
-        # Use a short timeout so we don't freeze the render loop for long
         resp = rq.get(url, timeout=timeout)
         if resp.status_code == 200:
             try:
-                # Try to read raw text first to see what we got
-                raw_text = resp.text
+                raw_text = resp.text  # Lazily decoded
                 resp.close()
-                # Now try to parse it
                 import json
                 data = json.loads(raw_text)
                 wled_connected = True
