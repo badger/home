@@ -140,7 +140,7 @@ def update():
         page_label = f"{current_page + 1}/{total_pages}"
         w, _ = screen.measure_text(page_label)
         screen.brush = brushes.color(211, 250, 55, 150)
-        screen.text(page_label, 160 - w - 5, 112)
+        screen.text(page_label, 160 - w - 5, 108)
 
     if alpha <= MAX_ALPHA:
         screen.brush = brushes.color(0, 0, 0, 255 - alpha)
