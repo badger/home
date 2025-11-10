@@ -1261,6 +1261,7 @@ class _MockUrequestResponse:
     
     def __init__(self, real_response):
         self._response = real_response
+        self.status_code = real_response.status
     
     def read(self, size=-1):
         """Read response data."""
