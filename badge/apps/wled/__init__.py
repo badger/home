@@ -260,7 +260,6 @@ def connect_wifi():
         except Exception:
             # Ignore connection errors; will retry after throttle interval until timeout
             last_connect_attempt = now  # still advance to avoid tight loop on immediate failures
-            pass
 
     wifi_connected = wlan.isconnected()
 
