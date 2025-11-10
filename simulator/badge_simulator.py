@@ -1260,7 +1260,8 @@ class _MockUrequestResponse:
     """Mock response object for urlopen that uses Python's urllib."""
     
     def __init__(self, real_response):
-        self._response = real_response
+        self._response = 
+        self.status_code = real_response.status
     
     def read(self, size=-1):
         """Read response data."""
