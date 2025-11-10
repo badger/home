@@ -284,7 +284,7 @@ def connect_wifi():
     return True
 
 
-def send_wled_command(data, timeout=2):
+def send_wled_command(data):
     """Send POST command to WLED API."""
     global wled_connected, status_message, last_error, last_errno, in_flight
     if in_flight:
@@ -302,7 +302,7 @@ def send_wled_command(data, timeout=2):
         url = f"http://{WLED_HOST}/json/state"
         payload = json.dumps(data)
         headers = {"Content-Type": "application/json"}
-        resp = rq.post(url, data=payload, headers=headers, timeout=timeout)
+        resp = rq.post(url, data=payload, headers=headers)
         success = resp.status_code in (200, 201)
         # Ensure we release underlying resources early.
         resp.close()
@@ -316,8 +316,8 @@ def send_wled_command(data, timeout=2):
         in_flight = False
 
 
-def http_request(path, timeout=1):
-    """Minimal GET helper with adjustable timeout. Returns JSON or None."""
+def http_request(path):
+    """Minimal GET helper. Returns JSON or None."""
     global wled_connected, wifi_connected, status_message, last_error, last_errno, in_flight
     if in_flight:
         return None
@@ -329,7 +329,7 @@ def http_request(path, timeout=1):
     in_flight = True
     try:
         url = f"http://{WLED_HOST}{path}"
-        resp = rq.get(url, timeout=timeout)
+        resp = rq.get(url)
         if resp.status_code == 200:
             try:
                 raw_text = resp.text  # Lazily decoded
@@ -446,7 +446,7 @@ def fetch_wled_json(timeout=2, max_bytes=8192):
             try:
                 state_obj = json.loads(state_slice.decode('utf-8','ignore'))
             except Exception as e:
-                last_error = str(e)
+                last_error = truncate_message(str(e), max_len=10)
                 status_message = "State parse err"
                 return None
             return {"state": state_obj}
