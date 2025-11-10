@@ -298,4 +298,4 @@ Built with <3 using GitHub Copilot and:
 - **Badgeware**: Badge firmware and display library
 - **MicroPython**: Python for microcontrollers
 
-Enjoy testing your LED control! 💡✨
+Enjoy controlling your LED! 💡✨
