@@ -341,7 +341,7 @@ def set_time_words(hour, minute):
         if next_hour > 12:
             next_hour = 1
         set_hour(next_hour)
-     # Add more time ranges as needed...
+    # Add more time ranges as needed...
 
 def update():
     # global hourTest, minuteTest
