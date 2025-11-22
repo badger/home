@@ -403,7 +403,7 @@ def update():
     screen.font = font
     
     now = time.localtime()
-    set_time_words(now[3]+UTC_OFFSET, now[4])
+    set_time_words((now[3]+UTC_OFFSET)%24, now[4])
 
     # Load a cool font
     font = PixelFont.load("/system/assets/fonts/awesome.ppf")
