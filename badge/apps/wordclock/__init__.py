@@ -93,7 +93,7 @@ def init_wifi():
 
 # the Github Universe 2025 badge is 39 characters wide
 # or 20 characters with a single space between each character and no space on the end
-# thre screen is 160 pixels wide and 120 pixels tall
+# the screen is 160 pixels wide and 120 pixels tall
 
 # Variables for each spaced string (variable name = string with spaces removed)
 M = "M G K "
