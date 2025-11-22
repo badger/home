@@ -614,26 +614,3 @@ def update():
 
 
 
-    # Get current time and set word booleans (commented out for testing)
-    # now = time.localtime()
-    # set_time_words(now[3], now[4])
-    #print(hourTest , minuteTest)
-    #set_time_words(hourTest, minuteTest)
-    #minuteTest +=1
-    #if (minuteTest >= 60):
-    #    minuteTest = 0
-    #    hourTest +=1
-    #    if (hourTest >12):
-    #        hourTest =1 
-    #time.sleep(.5)
-    
-
-    # Load a cool font
-    # font = PixelFont.load("/system/assets/fonts/awesome.ppf")
-    
-    # Set up very dim gray text by default (will override per-segment)
-    # screen.brush = brushes.color(64, 64, 64)
-    # screen.font = font
-    
-    # Build segments for the first line (text, boolean_flag)
-
