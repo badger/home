@@ -483,7 +483,6 @@ def update():
     force_update = False
 
     if io.BUTTON_A in io.held and io.BUTTON_C in io.held:
-        connected = False
         user.update(True)
 
     if get_connection_details(user):
