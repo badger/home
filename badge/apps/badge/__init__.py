@@ -282,6 +282,17 @@ def fake_number():
     return random.randint(10000, 99999)
 
 
+def has_unsupported_chars(text):
+    """Check if text contains characters outside the ASCII/Latin-1 range (>255)"""
+    if not text:
+        return False
+    try:
+        return any(ord(char) > 255 for char in text)
+    except (TypeError, AttributeError):
+        # Handle cases where text is not iterable or contains invalid characters
+        return True
+
+
 def placeholder_if_none(text):
     if text:
         return text
@@ -391,6 +402,9 @@ class User:
         screen.font = small_font
         screen.brush = phosphor
         name = placeholder_if_none(self.name)
+        # Use handle as fallback if name contains unsupported characters (e.g., Chinese)
+        if self.name and has_unsupported_chars(self.name):
+            name = self.handle if self.handle else name
         w, _ = screen.measure_text(name)
         screen.text(name, 80 - (w / 2), 16)
 
