@@ -11,6 +11,7 @@ import importlib.util
 import json
 import math
 import os
+import struct
 import sys
 import traceback
 from types import ModuleType
@@ -587,6 +588,64 @@ class brushes:
         return brushes.color(r, g, b, a)
 
 
+class _PPFFont:
+    """Native PPF pixel font renderer."""
+    def __init__(self, path):
+        with open(path, "rb") as f:
+            self._data = f.read()
+        self._glyph_count = struct.unpack_from(">I", self._data, 6)[0]
+        self._bbox_w = struct.unpack_from(">H", self._data, 10)[0]
+        self._bbox_h = struct.unpack_from(">H", self._data, 12)[0]
+        self._row_bytes = (self._bbox_w + 7) // 8
+        self._glyph_data_size = self._row_bytes * self._bbox_h
+        self._table_start = 46
+        self._bitmap_start = self._table_start + self._glyph_count * 6
+        self._glyphs = {}
+        for i in range(self._glyph_count):
+            off = self._table_start + i * 6
+            cp = struct.unpack_from(">I", self._data, off)[0]
+            w = struct.unpack_from(">H", self._data, off + 4)[0]
+            self._glyphs[cp] = (i, w)
+
+    def get_height(self):
+        return self._bbox_h
+
+    def size(self, text):
+        text = str(text)
+        w = 0
+        space_w = self._bbox_w // 3
+        for ch in text:
+            cp = ord(ch)
+            if cp == 32:
+                w += space_w + 1
+            elif cp in self._glyphs:
+                w += self._glyphs[cp][1] + 1
+        return (max(0, w - 1), self._bbox_h)
+
+    def render(self, text, antialias, color, *args, **kwargs):
+        text = str(text)
+        tw, th = self.size(text)
+        surf = pygame.Surface((max(1, tw), th), pygame.SRCALPHA)
+        space_w = self._bbox_w // 3
+        x = 0
+        for ch in text:
+            cp = ord(ch)
+            if cp == 32:
+                x += space_w + 1
+                continue
+            if cp not in self._glyphs:
+                continue
+            idx, gw = self._glyphs[cp]
+            bmp_off = self._bitmap_start + idx * self._glyph_data_size
+            for row in range(self._bbox_h):
+                for col in range(gw):
+                    byte_idx = bmp_off + row * self._row_bytes + (col >> 3)
+                    if self._data[byte_idx] & (1 << (7 - (col & 7))):
+                        surf.set_at((x + col, row), color)
+            x += gw + 1
+        return surf
+
+
 class PixelFont:
     class _Wrapper:
         __slots__ = ("_font", "name", "height")
@@ -615,15 +674,17 @@ class PixelFont:
         font = None
         if os.path.exists(resolved):
             ext = os.path.splitext(resolved)[1].lower()
-            if ext in {".ttf", ".otf", ".ttc"}:
+            if ext == ".ppf":
+                try:
+                    font = _PPFFont(resolved)
+                except Exception as e:
+                    print(f"PPF load failed for {resolved}: {e}")
+                    font = None
+            elif ext in {".ttf", ".otf", ".ttc"}:
                 try:
                     font = pygame.font.Font(resolved, size)
                 except Exception:
                     font = None
-            else:
-                # Pico pixel fonts (`.ppf`) aren't true TTF files; using the
-                # default pygame font keeps the simulator stable.
-                font = None
         if font is None:
             font = pygame.font.Font(None, size)
         
