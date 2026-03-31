@@ -806,14 +806,50 @@ class Matrix:
 
 
 class Screen(_SurfaceTarget):
-    def __init__(self, width: int = 160, height: int = 120, scale: int = 4, screenshot_dir: str = None) -> None:
+    # Badge frame LCD coordinates (in badge_frame.png at 856x1280)
+    _FRAME_LCD_X = 130
+    _FRAME_LCD_Y = 715
+    _FRAME_LCD_W = 560
+    _FRAME_LCD_H = 430
+    _FRAME_BUTTONS = [
+        (240, 1145, 62, 55, "A"),
+        (384, 1145, 62, 55, "B"),
+        (528, 1145, 62, 55, "C"),
+        (688, 858, 44, 54, "^"),
+        (688, 1002, 44, 54, "v"),
+    ]
+
+    def __init__(self, width: int = 160, height: int = 120, scale: int = 4, screenshot_dir: str = None, frame: bool = False) -> None:
         self.width = width
         self.height = height
         self.scale = scale
         self.screenshot_dir = screenshot_dir
         self._screenshot_counter = 0
-        # Add space below for keyboard hints (30 pixels)
-        self._window = pygame.display.set_mode((width * scale, height * scale + 30))
+        self._badge_frame = None
+
+        if frame:
+            frame_path = os.path.join(os.path.dirname(__file__), "badge_frame.png")
+            if os.path.exists(frame_path):
+                try:
+                    raw = pygame.image.load(frame_path)
+                    max_h = 800
+                    frame_scale = max_h / 1280
+                    fw = int(856 * frame_scale)
+                    fh = int(1280 * frame_scale)
+                    self._badge_frame = pygame.transform.smoothscale(raw, (fw, fh))
+                    self._frame_lcd_x = int(self._FRAME_LCD_X * frame_scale)
+                    self._frame_lcd_y = int(self._FRAME_LCD_Y * frame_scale)
+                    self._frame_lcd_w = int(self._FRAME_LCD_W * frame_scale)
+                    self._frame_lcd_h = int(self._FRAME_LCD_H * frame_scale)
+                    self._frame_scale = frame_scale
+                    self._window = pygame.display.set_mode((fw, fh))
+                except Exception as e:
+                    print(f"Failed to load badge frame: {e}")
+                    self._badge_frame = None
+
+        if self._badge_frame is None:
+            self._window = pygame.display.set_mode((width * scale, height * scale + 30))
+
         pygame.display.set_caption("Badge Local Simulator")
         surface = pygame.Surface((width, height), pygame.SRCALPHA)
         super().__init__(surface)
@@ -862,36 +898,47 @@ class Screen(_SurfaceTarget):
         print(f"Screenshot saved: {filepath}")
 
     def present(self) -> None:
-        # Scale and blit the game screen to a temporary surface
-        scaled_game = pygame.transform.scale(
-            self._surface, (self.width * self.scale, self.height * self.scale)
-        )
-        
-        # Blit the scaled game to the window
-        self._window.blit(scaled_game, (0, 0))
-        
-        # Draw keyboard hints below the screen
-        y_offset = self.height * self.scale
-        hint_bg = (40, 40, 40)
-        hint_text = (200, 200, 200)
-        
-        # Fill the hint area with dark background
-        hint_rect = pygame.Rect(0, y_offset, self.width * self.scale, 30)
-        pygame.draw.rect(self._window, hint_bg, hint_rect)
-        
-        # Draw the hint text
-        hints = [
-            ("Z/A: A", 10),
-            ("X/B: B", 100),
-            ("Space/C: C", 180),
-            ("Arrows: D-pad", 300),
-            ("H/Esc: Home", 450)
-        ]
-        
-        for hint, x_pos in hints:
-            text_surf = self._hint_font.render(hint, True, hint_text)
-            self._window.blit(text_surf, (x_pos, y_offset + 8))
-        
+        if self._badge_frame is not None:
+            # Badge frame mode: render LCD content inside the frame
+            self._window.blit(self._badge_frame, (0, 0))
+            pygame.draw.rect(self._window, (0, 0, 0),
+                (self._frame_lcd_x, self._frame_lcd_y,
+                 self._frame_lcd_w, self._frame_lcd_h))
+            scaled_game = pygame.transform.scale(
+                self._surface, (self._frame_lcd_w, self._frame_lcd_h))
+            self._window.blit(scaled_game,
+                (self._frame_lcd_x, self._frame_lcd_y))
+            # Draw button labels over white button squares
+            btn_font = pygame.font.Font(None, int(24 * self._frame_scale))
+            for bx, by, bw, bh, label in self._FRAME_BUTTONS:
+                sx = int(bx * self._frame_scale)
+                sy = int(by * self._frame_scale)
+                sw = int(bw * self._frame_scale)
+                sh = int(bh * self._frame_scale)
+                pygame.draw.rect(self._window, (50, 50, 50), (sx, sy, sw, sh))
+                pygame.draw.rect(self._window, (80, 80, 80), (sx, sy, sw, sh), 1)
+                text = btn_font.render(label, True, (180, 180, 180))
+                tx = sx + (sw - text.get_width()) // 2
+                ty = sy + (sh - text.get_height()) // 2
+                self._window.blit(text, (tx, ty))
+        else:
+            # Default mode: scaled screen with keyboard hints
+            scaled_game = pygame.transform.scale(
+                self._surface, (self.width * self.scale, self.height * self.scale))
+            self._window.blit(scaled_game, (0, 0))
+            y_offset = self.height * self.scale
+            hint_bg = (40, 40, 40)
+            hint_text = (200, 200, 200)
+            hint_rect = pygame.Rect(0, y_offset, self.width * self.scale, 30)
+            pygame.draw.rect(self._window, hint_bg, hint_rect)
+            hints = [
+                ("Z/A: A", 10), ("X/B: B", 100), ("Space/C: C", 180),
+                ("Arrows: D-pad", 300), ("H/Esc: Home", 450)
+            ]
+            for hint, x_pos in hints:
+                text_surf = self._hint_font.render(hint, True, hint_text)
+                self._window.blit(text_surf, (x_pos, y_offset + 8))
+
         pygame.display.flip()
 
 
@@ -1789,6 +1836,11 @@ def main() -> None:
         action="store_true",
         help="Show live performance metrics (CPU and memory usage) in terminal.",
     )
+    parser.add_argument(
+        "--frame",
+        action="store_true",
+        help="Show badge hardware frame around the screen.",
+    )
     args = parser.parse_args()
     
     # Clean temporary files if requested
@@ -1820,7 +1872,7 @@ def main() -> None:
     pygame.init()
 
     global screen, io, SIM_ROOT
-    screen = Screen(scale=args.scale, screenshot_dir=args.screenshot_dir)
+    screen = Screen(scale=args.scale, screenshot_dir=args.screenshot_dir, frame=args.frame)
     io = IO()
     
     # Set system root with default to ./badge relative to simulator
