@@ -41,4 +41,4 @@ The repository targets the **GitHub Universe 2026 badge** by default.
 
 When porting a 2025 app, preserve behavior and assets but explicitly translate
 the graphics, input, timing, orientation, lifecycle, and state APIs. Use
-`badge/apps/input_test/` and `badge/apps/plucky_cluck/` as primary references.
+`badge/apps/input_test/`, `badge/apps/demos/` and `badge/apps/plucky_cluck/` as primary references.
