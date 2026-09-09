@@ -1,128 +1,154 @@
-import sys
 import os
+import sys
 
-sys.path.insert(0, "/system/apps/quest")
-os.chdir("/system/apps/quest")
+APP_DIRS = ("/remote/apps/quest", "/system/apps/quest", "/apps/quest", "/quest")
+APP_DIR = next(path for path in APP_DIRS if is_dir(path))
+os.chdir(APP_DIR)
+sys.path.insert(0, APP_DIR)
 
-import math
-import random
-from badgeware import State, PixelFont, Image, brushes, screen, io, shapes, run
-from beacon import GithubUniverseBeacon
 from aye_arr.nec import NECReceiver
+from badgeware import State
+from beacon import GithubUniverseBeacon
 import ui
 
+screen.antialias = image.X2
 
+small_font = font.ark
+large_font = font.absolute
+splash = image.load("assets/splash.png")
 
-small_font = PixelFont.load("/system/assets/fonts/ark.ppf")
-large_font = PixelFont.load("/system/assets/fonts/absolute.ppf")
-splash = Image.load("assets/splash.png")
 
 class Quest:
-  def __init__(self, id, code, name):
-    self.id = id
-    self.name = name
-    self.code = code
+    def __init__(self, quest_id, code, name):
+        self.id = quest_id
+        self.name = name
+        self.code = code
 
-quests = [
-  Quest(1, 0x11, "Hack Your Badge"),
-  Quest(2, 0x22, "Whats up Docs"),
-  Quest(3, 0x33, "Stars Lounge"),
-  Quest(4, 0x44, "GitHub Next"),
-  Quest(5, 0x55, "Open Source Zone"),
-  Quest(6, 0x66, "Demos & Donuts"),
-  Quest(7, 0x77, "GitHub Learn"),
-  Quest(8, 0x88, "Octocat Generator"),
-  Quest(9, 0x99, "Makerspace")
-]
 
-# setup handled ir button codes
+quests = (
+    Quest(1, 0x11, "Hack Your Badge"),
+    Quest(2, 0x22, "Whats up Docs"),
+    Quest(3, 0x33, "Stars Lounge"),
+    Quest(4, 0x44, "GitHub Next"),
+    Quest(5, 0x55, "Open Source Zone"),
+    Quest(6, 0x66, "Demos & Donuts"),
+    Quest(7, 0x77, "GitHub Learn"),
+    Quest(8, 0x88, "Octocat Generator"),
+    Quest(9, 0x99, "Makerspace"),
+)
+
 for quest in quests:
-  GithubUniverseBeacon.BUTTON_CODES[quest.id] = quest.code
+    GithubUniverseBeacon.BUTTON_CODES[quest.id] = quest.code
 
-
-state = {
-  "completed": []
-}
-
-# load state here
+state = {"completed": []}
 State.load("quest", state)
 
-_last_task_completed = None
-_last_task_completed_at = None
-def complete_quest(id):
-  global _last_task_completed_at, _last_task_completed
-  if id not in state["completed"] and id <= len(quests):
-    _last_task_completed_at = io.ticks
-    _last_task_completed = quests[id - 1]
-    state["completed"].append(id)
-    State.save("quest", state)
+last_task_completed = None
+last_task_completed_at = None
 
-# setup the ir receiver to callback to our complete quest method when a code
-# is received...
+
+def complete_quest(quest_id):
+    global last_task_completed, last_task_completed_at
+
+    if 1 <= quest_id <= len(quests) and quest_id not in state["completed"]:
+        last_task_completed = quests[quest_id - 1]
+        last_task_completed_at = badge.ticks
+        state["completed"].append(quest_id)
+        State.save("quest", state)
+
+
 ir = GithubUniverseBeacon()
 ir.on_known = complete_quest
-receiver = NECReceiver(21, 0, 0)    # Pin, PIO, SM
+
+# The Universe 2026 schematic routes the VSOP38338 IR receiver to GPIO17.
+receiver = NECReceiver(17, 0, 0)
 receiver.bind(ir)
 receiver.start()
 
+
+def draw_completion():
+    elapsed = badge.ticks - last_task_completed_at
+    zoom_duration = 250
+
+    if elapsed < zoom_duration:
+        progress = elapsed / zoom_duration
+        width = screen.width * progress
+        height = screen.height * progress
+        splash.alpha = int(progress * 255)
+        screen.blit(
+            splash,
+            rect(
+                (screen.width - width) / 2,
+                (screen.height - height) / 2,
+                width,
+                height,
+            ),
+        )
+        return
+
+    splash.alpha = 255
+    screen.blit(splash, vec2(0, 0))
+
+    label = last_task_completed.name
+    message = (
+        "Side Quest Complete!"
+        if len(state["completed"]) == len(quests)
+        else "Location Unlocked!"
+    )
+
+    screen.font = large_font
+    label_width, _ = screen.measure_text(label)
+    screen.font = small_font
+    message_width, _ = screen.measure_text(message)
+
+    screen.pen = color.rgb(46, 160, 67, 220)
+    label_corners = (4, 4, 0, 0) if label_width < message_width else (4, 4, 4, 4)
+    message_corners = (4, 4, 4, 4) if label_width < message_width else (0, 0, 4, 4)
+    screen.shape(
+        shape.rounded_rectangle(
+            (screen.width - label_width) / 2 - 4,
+            2,
+            label_width + 8,
+            18,
+            *label_corners,
+        )
+    )
+    screen.shape(
+        shape.rounded_rectangle(
+            (screen.width - message_width) / 2 - 4,
+            20,
+            message_width + 8,
+            12,
+            *message_corners,
+        )
+    )
+
+    screen.pen = color.white
+    screen.font = large_font
+    screen.text(label, (screen.width - label_width) / 2, 2)
+    screen.font = small_font
+    screen.text(message, (screen.width - message_width) / 2, 19)
+
+
 def update():
-  global _last_task_completed_at
+    global last_task_completed_at
 
-  # decode any ir events that have occurred
-  receiver.decode()
+    receiver.decode()
 
-  # clear the screen
-  screen.brush = brushes.color(35, 41, 37)
-  screen.draw(shapes.rectangle(0, 0, 160, 120))
+    screen.pen = color.rgb(35, 41, 37)
+    screen.clear()
+    ui.draw_status(state["completed"])
+    ui.draw_tiles(state["completed"])
 
-  # draw the quest tile grid
-  ui.draw_status(state["completed"])
-  ui.draw_tiles(state["completed"])
+    if last_task_completed_at is not None and badge.pressed():
+        last_task_completed_at = None
 
-  # if button pressed and we're showing a quest completed screen then dismiss it
-  if io.pressed and _last_task_completed_at:
-    _last_task_completed_at = None
-
-  if _last_task_completed_at:
-    # if you find a new location then show well done screen
-    width, height = 160, 120
-    zoom_speed = 250
-    if io.ticks - _last_task_completed_at < zoom_speed:
-      # for first 250ms of well done screen animate it zooming in
-      alpha = ((io.ticks - _last_task_completed_at) / zoom_speed)
-      zoom = ((io.ticks - _last_task_completed_at) / zoom_speed) * 10
-      width *= (zoom / 10)
-      height *= (zoom / 10)
-      splash.alpha = int(alpha * 255)
-      screen.scale_blit(splash, 80 - width / 2, 60 - height / 2, width, height)
-    else:
-      splash.alpha = 255
-      screen.blit(splash, 0, 0)
-
-      label = _last_task_completed.name
-      message = "Location Unlocked!"
-      if len(state["completed"]) == len(quests):
-        message = "Side Quest Complete!"
-
-      screen.font = large_font
-      lw, _ = screen.measure_text(label)
-      screen.font = small_font
-      mw, _ = screen.measure_text(message)
-
-      # draw message bubble
-      screen.brush = brushes.color(46, 160, 67, 200)
-      lw_corners = (4, 4, 0, 0) if lw < mw else (4, 4, 4, 4)
-      mw_corners = (4, 4, 4, 4) if lw < mw else (0, 0, 4, 4)
-      screen.draw(shapes.rounded_rectangle(80 - (lw / 2) - 4, 2, lw + 8, 18, *lw_corners))
-      screen.draw(shapes.rounded_rectangle(80 - (mw / 2) - 4, 20 , mw + 8, 12, *mw_corners))
-
-      # draw task label and message
-      screen.brush = brushes.color(255, 255, 255, 255)
-      screen.font = large_font
-      screen.text(label, 80 - (lw / 2), 2)
-      screen.font = small_font
-      screen.text(message, 80 - (mw / 2), 19)
+    if last_task_completed_at is not None:
+        draw_completion()
 
 
-if __name__ == "__main__":
-    run(update)
+def on_exit():
+    receiver.stop()
+
+
+run(update)
