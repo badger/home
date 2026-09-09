@@ -141,6 +141,15 @@ def center_text(text, y):
     screen.text(text, (screen.width - width) / 2, y)
 
 
+def has_unsupported_chars(text):
+    if not text:
+        return False
+    try:
+        return any(ord(char) > 255 for char in text)
+    except (TypeError, AttributeError):
+        return True
+
+
 def draw():
     screen.pen = BACKGROUND
     screen.clear()
@@ -161,7 +170,10 @@ def draw():
 
     screen.font = large_font
     screen.pen = FOREGROUND
-    screen.text(profile.get("name") or profile.get("login") or USERNAME, 62, 9)
+    name = profile.get("name") or profile.get("login") or USERNAME
+    if has_unsupported_chars(name):
+        name = profile.get("login") or USERNAME
+    screen.text(name, 62, 9)
     screen.font = small_font
     screen.pen = BLUE
     screen.text("@" + profile.get("login", USERNAME), 62, 27)

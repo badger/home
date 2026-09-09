@@ -282,6 +282,15 @@ def fake_number():
     return random.randint(10000, 99999)
 
 
+def has_unsupported_chars(text):
+    if not text:
+        return False
+    try:
+        return any(ord(char) > 255 for char in text)
+    except (TypeError, AttributeError):
+        return True
+
+
 def placeholder_if_none(text):
     if text:
         return text
@@ -391,6 +400,8 @@ class User:
         screen.font = small_font
         screen.brush = phosphor
         name = placeholder_if_none(self.name)
+        if self.name and has_unsupported_chars(self.name):
+            name = self.handle if self.handle else name
         w, _ = screen.measure_text(name)
         screen.text(name, 80 - (w / 2), 16)
 
