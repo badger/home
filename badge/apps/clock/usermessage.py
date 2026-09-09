@@ -33,8 +33,10 @@ def stretch_text(text, x, y, distance, current_brush):
 
     # Calculate how much space should go between each letter
     totalspace = distance - width
+    if len(text) <= 1:
+        screen.text(text, x, y)
+        return height
     spacing = totalspace / (len(text) - 1)
-
     # Draw each character leaving that space between each one
     for i in text:
         screen.text(i, x, y)
