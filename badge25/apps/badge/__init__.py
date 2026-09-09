@@ -126,7 +126,7 @@ def async_fetch_to_disk(url, file, force_update=False, timeout_ms=25000):
     try:
         # Prepare headers with authentication if token is available
         headers = {"User-Agent": "GitHub Universe Badge 2025"}
-        if GITHUB_TOKEN and url.startswith("https://api.github.com"):
+        if GITHUB_TOKEN and url.startswith("https://api.github.com/"):
             headers["Authorization"] = f"token {GITHUB_TOKEN}"
 
         # Grab the data
