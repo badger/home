@@ -11,6 +11,8 @@ elif wake_reason != powman.WAKE_WATCHDOG:
 
 # Eat the wakeup button press to prevent it leaking into the menu
 badge.poll()
+while badge.pressed() or badge.held() or badge.released():
+    badge.poll()
 
 # We expect a launcher menu to be at /system/apps/menu
 # (temporarily auto-launching the world app for rasteriser testing)
