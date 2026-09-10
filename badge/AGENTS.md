@@ -1,617 +1,315 @@
-# AGENTS.md - Badge App Development Guide for LLMs
+# Universe 2026 badge app development
 
-This document provides comprehensive context for developing applications for the GitHub Universe 2025 Tufty Badge.
+This directory is the deployable `/system` tree for the GitHub Universe 2026
+badge. New apps and ports must target the 2026 firmware API. Do not copy 2025
+Badgeware patterns from `badge25/` without translating them.
 
-## Hardware Overview
+Read [`../hardware/README.md`](../hardware/README.md) before accessing raw GPIO,
+I2C, ADC, IR, display, power, wireless, or interrupt hardware.
+Read [`../hardware/USB_SERIAL.md`](../hardware/USB_SERIAL.md) before connecting
+to a physical badge or copying files over USB.
 
-The GitHub Universe 2025 badge is a custom Pimoroni Tufty 2350 device with the following specifications:
+## Directory and app structure
 
-- **Processor**: RP2350 Dual-core ARM Cortex-M33 @ 200MHz
-- **Memory**: 512kB SRAM, 16MB QSPI XiP flash
-- **Display**: 320x240 full colour IPS (pixel-doubled to 160x120 logical pixels for performance)
-- **Screen Dimensions**: WIDTH=160, HEIGHT=120 (all app coordinates use these logical pixels)
-- **Runtime**: MicroPython v1.14-5485 with custom badgeware library
-- **Connectivity**: 2.4GHz WiFi and Bluetooth 5
-- **Battery**: 1000mAh rechargeable lithium polymer (up to 8 hours runtime)
-- **Buttons**: 
-  - **Front**: UP, DOWN, A, B, C
-  - **Back**: HOME (returns to launcher menu)
-  - **Hardware**: RESET, BOOTSEL
-- **IR**: Receiver (pin 21) and transmitter for beacon hunting and remote control
-- **LEDs**: 4-zone backlight (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT)
-- **Ports**: USB-C (charging/programming), Qw/ST connector, SWD debug
-- **GPIO**: 4 additional GPIO pins + power available through solder pads
-
-## App Structure and Lifecycle
-
-### Directory Layout
-```
-/system/apps/<app_name>/
-    __init__.py         # Required - contains init(), update(), on_exit()
-    icon.png            # Required - 24x24 PNG icon for launcher
-    assets/             # Optional - images, fonts, data files
-        *.png           # Images (PNG format, true color or paletted)
-        *.ppf           # Pixel fonts (if not using system fonts)
-        *.json          # Data files
+```text
+badge/
+├── main.py
+├── secrets.py
+├── assets/
+└── apps/
+    └── my_app/
+        ├── __init__.py
+        ├── icon.png
+        └── assets/
 ```
 
-### Required Functions
+An app directory is discovered when it contains `__init__.py` or
+`__init__.mpy`. Include a 24x24 `icon.png`; the menu falls back to its default
+icon when one is absent, but new apps should provide one.
 
-#### `update()` - Main Loop (REQUIRED)
-Called every frame by the main loop. This is where all app logic, input handling, and rendering happens.
+Use an explicit application directory so local modules and relative assets
+resolve correctly:
+
+```python
+import os
+import sys
+
+APP_DIR = "/system/apps/my_app"
+os.chdir(APP_DIR)
+sys.path.insert(0, APP_DIR)
+```
+
+## Runtime-provided globals
+
+The launcher/runtime provides the common badge and graphics API as globals.
+Existing apps rely on:
+
+- `badge`: input, timing, orientation, IMU, battery, mode, and status APIs.
+- `screen`: drawing surface.
+- `image`: image constants and `image.load()`.
+- `font`: built-in font namespace.
+- `color`: colors and `color.rgb()`.
+- `shape`: vector shape constructors.
+- `brush`: gradients, patterns, and other brushes.
+- `vec2`, `rect`, `mat3`: geometry and transforms.
+- `run`: frame-loop runner.
+- `file_exists`, `is_dir`, `launch`, `reset`: filesystem and lifecycle helpers.
+- `BUTTON_*`, `HIRES`, `VSYNC`: input and display-mode constants.
+
+Import standard MicroPython modules normally. `State` is currently imported
+from `badgeware`:
+
+```python
+from badgeware import State
+```
+
+Follow current apps rather than the legacy `from badgeware import screen,
+Image, PixelFont, io, brushes, shapes` API used in `badge25/`.
+
+## Lifecycle
+
+Define an `update()` function and pass it to `run()`:
 
 ```python
 def update():
-    # 1. Handle input
-    if io.BUTTON_A in io.pressed:
-        # Button A was just pressed
-        pass
-    
-    if io.BUTTON_B in io.held:
-        # Button B is being held down
-        pass
-    
-    # 2. Update game state/logic
-    # Use io.ticks for milliseconds since boot
-    # Use io.ticks_delta for frame delta time
-    
-    # 3. Clear screen
-    screen.brush = brushes.color(0, 0, 0)
-    screen.clear()
-    
-    # 4. Draw everything
-    screen.brush = brushes.color(255, 255, 255)
-    screen.text("Hello", 10, 10)
-    
-    # No explicit display update needed - handled automatically
-```
+    draw()
 
-#### `init()` - Initialization (OPTIONAL)
-Called once when the app starts. Use for loading resources, setting up state, etc.
-
-```python
-def init():
-    global game_state, sprite_sheet, font
-    
-    # Load resources
-    sprite_sheet = SpriteSheet("/system/apps/myapp/assets/sprites.png", 4, 2)
-    font = PixelFont.load("/system/assets/fonts/nope.ppf")
-    
-    # Initialize state
-    game_state = {
-        "score": 0,
-        "level": 1,
-        "player_x": 80,
-        "player_y": 60
-    }
-    
-    # Set up screen
-    screen.font = font
-    screen.antialias = Image.X2
-```
-
-#### `on_exit()` - Cleanup (OPTIONAL)
-Called when the user presses HOME or the app terminates. Use for saving state, cleanup, etc.
-
-```python
-def on_exit():
-    # Save state to file
-    try:
-        with open("/myapp_save.json", "w") as f:
-            json.dump(game_state, f)
-    except:
-        pass  # Handle gracefully
-```
-
-### Starting the App
-At the bottom of `__init__.py`, call `run()` with your update function:
-
-```python
-run(update)
-```
-
-## badgeware API Reference
-
-### Core Modules
-
-#### `screen` - Main Display (160x120 Image object)
-The primary drawing surface. All rendering happens on this object.
-
-**Properties:**
-- `screen.width` - Always 160
-- `screen.height` - Always 120
-- `screen.brush` - Current brush (color) for drawing
-- `screen.font` - Current font for text rendering
-- `screen.antialias` - Antialiasing mode (Image.OFF, Image.X2, Image.X4)
-- `screen.alpha` - Global alpha transparency (0-255)
-
-**Methods:**
-```python
-# Clear screen with current brush color (fastest)
-screen.clear()
-
-# Draw shapes (requires screen.brush to be set)
-screen.draw(shape)  # shape from shapes module
-
-# Draw text at position
-screen.text("Hello", x, y)
-
-# Measure text size
-width = screen.measure_text("Hello")
-
-# Blit (copy) image at position
-screen.blit(image, x, y)
-
-# Scale blit (resize while blitting, negative dims flip)
-screen.scale_blit(image, x, y, width, height)
-```
-
-#### `io` - Input and Timing
-Handles button state and timing.
-
-**Button Constants:**
-- `io.BUTTON_A`, `io.BUTTON_B`, `io.BUTTON_C`
-- `io.BUTTON_UP`, `io.BUTTON_DOWN`
-- `io.BUTTON_HOME`
-
-**Button State Sets:**
-```python
-# Buttons just pressed this frame (single fire)
-if io.BUTTON_A in io.pressed:
-    # Triggered once per press
-    
-# Buttons currently held down
-if io.BUTTON_B in io.held:
-    # Triggered every frame while held
-    
-# Buttons just released this frame
-if io.BUTTON_C in io.released:
-    # Triggered once on release
-    
-# Buttons that changed state this frame
-if io.BUTTON_UP in io.changed:
-    # Triggered on press or release
-```
-
-**Timing:**
-```python
-# Milliseconds since boot
-current_time = io.ticks
-
-# Milliseconds since last frame
-delta = io.ticks_delta
-
-# Frame-independent movement example
-speed = 50  # pixels per second
-x += speed * (io.ticks_delta / 1000)
-
-# Animation timing
-angle = (io.ticks / 1000) * 360  # Full rotation per second
-```
-
-**LED Control:**
-```python
-# LED position constants
-io.LED_TOP_LEFT, io.LED_TOP_RIGHT
-io.LED_BOTTOM_LEFT, io.LED_BOTTOM_RIGHT
-
-# Set LED brightness (0-255)
-io.led[io.LED_TOP_LEFT] = 128
-```
-
-#### `brushes` - Color Creation
-Create color brushes for drawing.
-
-```python
-# Create color (RGB)
-red = brushes.color(255, 0, 0)
-
-# With alpha transparency (0=transparent, 255=opaque)
-semi_transparent = brushes.color(255, 0, 0, 128)
-
-# Set as current brush
-screen.brush = brushes.color(100, 200, 50)
-```
-
-#### `shapes` - Drawing Primitives
-All shapes return shape objects that can be drawn with `screen.draw()`.
-
-```python
-# Rectangle (x, y, width, height)
-rect = shapes.rectangle(10, 10, 50, 30)
-
-# Rounded rectangle (x, y, width, height, corner_radius)
-rounded = shapes.rounded_rectangle(10, 10, 50, 30, 5)
-
-# Circle (x, y, radius)
-circle = shapes.circle(80, 60, 20)
-
-# Arc (x, y, radius, from_degrees, to_degrees)
-arc = shapes.arc(80, 60, 30, 0, 180)
-
-# Pie slice (x, y, radius, from_degrees, to_degrees)
-pie = shapes.pie(80, 60, 30, 45, 135)
-
-# Line (x1, y1, x2, y2, thickness)
-line = shapes.line(10, 10, 150, 110, 3)
-
-# Regular polygon (x, y, radius, sides)
-hexagon = shapes.regular_polygon(80, 60, 30, 6)
-
-# Squircle (x, y, radius, n=4)
-squircle = shapes.squircle(80, 60, 30, 4)
-
-# Stroke (outline) a shape
-outline = shapes.circle(80, 60, 30).stroke(3)  # 3px outline width
-```
-
-**Drawing:**
-```python
-screen.brush = brushes.color(255, 0, 0)
-screen.draw(shapes.circle(80, 60, 20))
-```
-
-#### `Matrix` - Transformations
-Transform shapes with translation, rotation, and scaling.
-
-```python
-from badgeware import Matrix
-
-# Create transformation
-transform = Matrix()
-
-# Translate (move)
-transform = transform.translate(x, y)
-
-# Scale (resize, can be negative to flip)
-transform = transform.scale(x_scale, y_scale)
-
-# Rotate (degrees)
-transform = transform.rotate(degrees)
-
-# Rotate (radians)
-transform = transform.rotate_radians(radians)
-
-# Combine transformations (chaining)
-transform = Matrix().translate(80, 60).scale(2, 2).rotate(45)
-
-# Apply to shape
-rect = shapes.rectangle(-10, -10, 20, 20)
-rect.transform = Matrix().translate(80, 60).rotate(io.ticks / 10)
-screen.draw(rect)
-```
-
-#### `Image` - Image Loading and Manipulation
-Load and work with PNG images.
-
-```python
-# Load PNG image (supports true color RGBA and paletted)
-image = Image.load("/system/apps/myapp/assets/sprite.png")
-
-# Properties
-width = image.width
-height = image.height
-
-# Set transparency for entire image
-image.alpha = 128  # 0-255
-
-# Set antialiasing
-image.antialias = Image.X2  # Image.OFF, Image.X2, Image.X4
-
-# Set current brush/font for drawing ON the image
-image.brush = brushes.color(255, 0, 0)
-image.font = my_font
-
-# Draw on image (same methods as screen)
-image.draw(shapes.circle(10, 10, 5))
-image.text("Hi", 0, 0)
-
-# Create window (clipped subsection)
-sub_image = image.window(x, y, width, height)
-
-# Display on screen
-screen.blit(image, x, y)
-screen.scale_blit(image, x, y, new_width, new_height)
-```
-
-#### `PixelFont` - Font Loading and Text
-Load pixel fonts for text rendering.
-
-```python
-# Load font from system or app assets
-font = PixelFont.load("/system/assets/fonts/nope.ppf")
-screen.font = font
-
-# Properties
-height = font.height
-name = font.name
-
-# Measure text
-width = screen.measure_text("Hello Badge!")
-
-# Draw text
-screen.brush = brushes.color(255, 255, 255)
-screen.text("Hello Badge!", x, y)
-```
-
-**Available System Fonts** (in `/system/assets/fonts/`):
-- `nope.ppf` - Clean, readable default
-- `ark.ppf` - Pixel art style
-- `compass.ppf` - Bold and chunky
-- `kobold.ppf` - Fantasy themed
-- `troll.ppf` - Large and bold
-- Plus 30+ more - see PixelFont.md for full list
-
-#### `SpriteSheet` - Sprite Animation
-Load and animate sprite sheets.
-
-```python
-# Load sprite sheet (image_path, columns, rows)
-sprite_sheet = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 7, 1)
-
-# Get single sprite
-sprite = sprite_sheet.sprite(column, row)
-screen.blit(sprite, x, y)
-
-# Create animation
-animation = sprite_sheet.animation()
-
-# Get frame based on time (auto-loops)
-frame = animation.frame(io.ticks / 100)  # Adjust divisor for speed
-screen.blit(frame, x, y)
-
-# Scale blit (can flip with negative dims)
-screen.scale_blit(frame, x, y, 32, 32)
-```
-
-#### `run()` - Main Loop
-Starts the main loop that calls your update function every frame.
-
-```python
-# At end of __init__.py
-run(update)
-```
-
-### Built-in Modules ###
-The following built in modules are available to the MicroPython code running on the device:
-
-array, binascii, builtins, cmath, collections, errno, gc, hashlib, heapq, io, json, machine, math, micropython, network, os, platform, random, re,select, socket, ssl, struct, sys,time, uctypes, rp2, bluetooth, cryptolib, deflate, framebuf, vfs, lwip, ntptime, mip, badgeware,picovector, pimoroni, pimoroni_i2c, qrcode, st7789, powman, board, boot, datetime, ezwifi, pcf85063a, qwstpad, cppmem, adcfft, aioble, asyncio, uasyncio, requests, urequests, urllib, webrepl, websocket, umqtt, ulab, aye_arr, breakout_as7262, breakout_as7343, breakout_bh1745, breakout_bme280, breakout_bme68x, breakout_bme69x, breakout_bmp280, breakout_dotmatrix, breakout_encoder, breakout_encoder_wheel, breakout_icp10125, breakout_ioexpander, breakout_ltr559, breakout_matrix11x7, breakout_mics6814, breakout_msa301, breakout_paa5100, breakout_pmw3901, breakout_potentiometer, breakout_rgbmatrix5x5, breakout_rtc, breakout_scd41, breakout_sgp30, breakout_trackball, breakout_vl53l5cx
-
-### File System Helpers
-
-```python
-from badgeware import file_exists, is_dir
-
-# Check if file exists
-if file_exists("/myapp_save.json"):
-    # Load save file
-
-# Check if directory
-if is_dir("/system/apps/myapp/assets"):
-    # List assets
-```
-
-### Battery Status
-
-```python
-from badgeware import get_battery_level, is_charging
-
-# Get battery percentage (0-100)
-level = get_battery_level()
-
-# Check if charging
-charging = is_charging()
-```
-
-## Common Patterns and Examples
-
-### Basic App Template
-```python
-from badgeware import screen, io, brushes, shapes, run, PixelFont
-
-# Global state
-game_state = {"score": 0}
-
-def init():
-    global game_state
-    screen.font = PixelFont.load("/system/assets/fonts/nope.ppf")
-    screen.antialias = Image.X2
-    game_state = {"score": 0}
-
-def update():
-    # Input
-    if io.BUTTON_A in io.pressed:
-        game_state["score"] += 1
-    
-    # Clear
-    screen.brush = brushes.color(0, 0, 0)
-    screen.clear()
-    
-    # Draw
-    screen.brush = brushes.color(255, 255, 255)
-    screen.text(f"Score: {game_state['score']}", 10, 10)
-
-def on_exit():
-    # Save state if needed
-    pass
 
 run(update)
 ```
 
-### Button Navigation
-```python
-menu_items = ["Play", "Settings", "Quit"]
-selected = 0
+An update callback may return a path when it acts as a launcher. The menu uses
+`on_exit = run(update).result` so `main.py` can launch the selected app.
+Ordinary apps normally call `run(update)` directly.
 
-def update():
-    global selected
-    
-    # Navigation with wrapping
-    if io.BUTTON_UP in io.pressed:
-        selected = (selected - 1) % len(menu_items)
-    if io.BUTTON_DOWN in io.pressed:
-        selected = (selected + 1) % len(menu_items)
-    
-    # Selection
-    if io.BUTTON_A in io.pressed:
-        handle_selection(menu_items[selected])
-    
-    # Draw menu
-    for i, item in enumerate(menu_items):
-        color = (255, 255, 0) if i == selected else (255, 255, 255)
-        screen.brush = brushes.color(*color)
-        screen.text(item, 10, 10 + i * 15)
+Avoid doing expensive work or allocating large objects every frame. Load
+images, sprite sheets, fonts, brushes, and static shapes at module scope or in
+one-time setup.
+
+## Input and automatic orientation
+
+Use logical actions, not physical GPIO names:
+
+```python
+if badge.pressed(BUTTON_SELECT):
+    confirm()
+
+if badge.held(BUTTON_LEFT):
+    x -= speed * (badge.ticks_delta / 1000)
+
+if badge.released(BUTTON_BACK):
+    cancel()
+
+if badge.touched(BUTTON_MENU):
+    highlight_menu()
 ```
 
-### Sprite Animation
-```python
-from badgeware import SpriteSheet
+Available logical actions include:
 
-sprite_sheet = None
-animation = None
-
-def init():
-    global sprite_sheet, animation
-    sprite_sheet = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 7, 1)
-    animation = sprite_sheet.animation()
-
-def update():
-    # Get frame based on time (100ms per frame)
-    frame = animation.frame(io.ticks / 100)
-    
-    # Draw at position
-    screen.blit(frame, 64, 44)
+```text
+BUTTON_UP
+BUTTON_DOWN
+BUTTON_LEFT
+BUTTON_RIGHT
+BUTTON_SELECT
+BUTTON_BACK
+BUTTON_MENU
+BUTTON_HOME
 ```
 
-### Collision Detection
-```python
-def rect_collision(x1, y1, w1, h1, x2, y2, w2, h2):
-    return (x1 < x2 + w2 and
-            x1 + w1 > x2 and
-            y1 < y2 + h2 and
-            y1 + h1 > y2)
+The firmware uses the IMU and touch controller to keep the display and logical
+controls consistent when the badge is inverted. Do not swap controls based on
+physical A/B/C placement. Use `badge.upside_down()` only when the app genuinely
+needs to know the physical orientation.
 
-def circle_collision(x1, y1, r1, x2, y2, r2):
-    dx = x2 - x1
-    dy = y2 - y1
-    distance = (dx * dx + dy * dy) ** 0.5
-    return distance < (r1 + r2)
+Additional input APIs demonstrated by `apps/input_test/`:
+
+```python
+pressed_now = badge.pressed()       # set of actions
+held_now = badge.held()             # set of actions
+released_now = badge.released()     # set of actions
+move = badge.direction()            # normalized vec2-like direction
+touching = badge.touched(action)
+ax, ay, az, gx, gy, gz = badge.imu()
 ```
 
-### Persistent State
+Use the per-action form (`badge.pressed(BUTTON_SELECT)`) for normal app logic.
+Use set-returning forms for diagnostics or multi-action processing.
+
+## Timing
+
+- `badge.ticks`: milliseconds since boot.
+- `badge.ticks_delta`: milliseconds since the previous frame.
+
+Movement and animation must be frame-rate independent:
+
 ```python
-import json
-from badgeware import file_exists
-
-save_file = "/myapp_save.json"
-
-def init():
-    global game_state
-    if file_exists(save_file):
-        try:
-            with open(save_file, "r") as f:
-                game_state = json.load(f)
-        except:
-            game_state = {"high_score": 0}
-    else:
-        game_state = {"high_score": 0}
-
-def on_exit():
-    try:
-        with open(save_file, "w") as f:
-            json.dump(game_state, f)
-    except:
-        pass  # Fail gracefully
+position += pixels_per_second * (badge.ticks_delta / 1000)
 ```
 
-### Smooth Movement
-```python
-# Frame-rate independent movement
-player_x = 80
-player_y = 60
-speed = 50  # pixels per second
+Do not move by a fixed number of pixels per update. Display modes and firmware
+changes can alter frame rate.
 
-def update():
-    global player_x, player_y
-    
-    # Movement based on frame delta
-    if io.BUTTON_UP in io.held:
-        player_y -= speed * (io.ticks_delta / 1000)
-    if io.BUTTON_DOWN in io.held:
-        player_y += speed * (io.ticks_delta / 1000)
-    
-    # Clamp to screen bounds
-    player_y = max(0, min(player_y, 120))
+## Display and graphics
+
+Most apps use a 160x120 logical drawing surface. Apps can request full
+resolution:
+
+```python
+badge.mode(HIRES | VSYNC)
 ```
 
-### Rotating Shape
+HIRES provides 320x240. Always prefer `screen.width`, `screen.height`, and
+`screen.clip` over fixed dimensions.
+
+### Drawing
+
 ```python
-def update():
-    # Clear
-    screen.brush = brushes.color(0, 0, 0)
-    screen.clear()
-    
-    # Create shape centered at origin
-    rect = shapes.rectangle(-20, -10, 40, 20)
-    
-    # Transform: move to screen center, rotate based on time
-    rect.transform = Matrix().translate(80, 60).rotate(io.ticks / 10)
-    
-    # Draw
-    screen.brush = brushes.color(255, 0, 0)
-    screen.draw(rect)
+screen.pen = color.rgb(20, 24, 28)
+screen.rectangle(screen.clip)
+
+screen.pen = color.rgb(255, 255, 255)
+screen.shape(shape.rounded_rectangle(8, 8, 80, 24, 4))
+screen.line(0, 0, screen.width - 1, screen.height - 1)
+screen.text("Hello", 12, 12)
 ```
 
-## Performance Best Practices
+Set `screen.pen` before drawing. `badge.default_clear` can set the automatic
+frame clear color.
 
-1. **Pre-create Objects** - Create brushes, shapes, fonts in `init()`, not in `update()`
-2. **Minimize Allocations** - Avoid creating new objects every frame
-3. **Use Paletted Images** - Smaller file size and memory usage
-4. **Call gc.collect()** - Before loading large resources or major state changes
-5. **Profile Critical Paths** - Use `io.ticks_delta` to measure frame time
-6. **Batch Drawing** - Group similar drawing operations together
-7. **Optimize Loops** - Unroll small loops, use list comprehensions wisely
-8. **Cache Calculations** - Don't recalculate static values every frame
+### Fonts
 
-## Common Pitfalls
+Use built-in fonts through the `font` namespace:
 
-1. **Not Setting screen.font** - Always set font before calling `screen.text()`
-2. **Not Setting screen.brush** - Always set brush before drawing shapes/clearing
-3. **Forgetting to Clear** - Call `screen.clear()` every frame or redraw everything
-4. **Using Desktop Python Features** - MicroPython subset (no `random.choices()`, limited stdlib)
-5. **Absolute Paths** - Use `/system/` prefix or relative paths from app directory
-6. **Not Handling Errors** - Wrap file operations in try/except
-7. **Memory Leaks** - Don't create new objects in tight loops
-8. **Coordinate System** - Remember screen is 160x120 logical pixels, not 320x240
+```python
+screen.font = font.nope
+screen.font = font.sins
+screen.font = font.ark
+screen.font = font.ziplock
+```
 
-## Reference Apps in This Project
+Use `width, height = screen.measure_text(text)` for alignment.
 
-Study these apps for working examples:
+### Images and sprites
 
-- **`/badge/apps/snake/`** - Classic Snake game with score tracking
-- **`/badge/apps/life/`** - Conway's Game of Life with pattern injection
-- **`/badge/apps/flappy/`** - Flappy Bird clone with sprite animation
-- **`/badge/apps/monapet/`** - Virtual pet with state management
-- **`/badge/apps/sketch/`** - Drawing app with button controls
-- **`/badge/apps/quest/`** - IR beacon hunting game
-- **`/badge/apps/menu/`** - Launcher menu with icon grid
+```python
+picture = image.load("assets/picture.png")
+sheet = image.load("assets/characters.png").spritesheet(7, 2)
 
-## Additional Resources
+screen.blit(picture, vec2(10, 10))
+screen.blit(sheet.sprite(column, row), rect(x, y, width, height))
+```
 
-- **README.md** - Comprehensive badge documentation and examples
-- **badgeware/*.md** - Detailed API documentation for each module
+A negative `rect` width or height flips a blit. Use paletted or otherwise
+optimized PNGs where practical because RAM remains constrained.
 
-## Development Workflow
+### Transforms and antialiasing
 
-1. **Create App Directory** - `./apps/<name>/`
-2. **Create icon.png** - 24x24 PNG icon
-3. **Create __init__.py** - With `init()`, `update()`, `on_exit()`, `run(update)`
-4. **Add Assets** - Images, fonts, data in `assets/` subdirectory
-5. **Test on Hardware** - MicroPython differs from desktop Python
-6. **Handle Errors** - Wrap I/O operations, handle missing files gracefully
-7. **Optimize** - Profile with `io.ticks_delta`, reduce allocations
-8. **Document** - Add comments for complex logic
+```python
+screen.antialias = image.X2
+tile.transform = mat3().translate(x, y).scale(scale_x, scale_y)
+```
 
----
+Available antialiasing modes demonstrated in the tree include `image.OFF`,
+`image.X2`, and `image.X4`.
 
-This document should provide you with everything needed to create badge apps. When in doubt, check the badgeware documentation in this repository or examine existing apps for patterns.
+## State and files
+
+```python
+from badgeware import State
+
+state = {"score": 0}
+State.load("my_app", state)
+State.save("my_app", state)
+```
+
+Use a unique state key. Save only after meaningful changes, not every frame.
+Wrap direct file operations in `try`/`except OSError` when absence is expected.
+Do not commit generated state or real values in `secrets.py`.
+
+## Hardware rules
+
+The complete physical map is in [`../hardware/README.md`](../hardware/README.md).
+Important application-facing facts:
+
+- GPIO4/5 are the Qw/ST expansion I2C bus.
+- GPIO18/19 are the internal I2C bus shared by the IMU and CAP1208.
+- GPIO16/17 are IR transmit/receive.
+- GPIO40/ADC0 measures battery voltage through a 4:1 divider.
+- GPIO43/ADC3 measures ambient light.
+- GPIO41 controls switchable 3.3 V and is not a general-purpose ADC input.
+- GPIO0..3 drive case LEDs.
+- LCD, PSRAM, flash, wireless, switch, and interrupt GPIOs are committed.
+
+Prefer firmware APIs and `machine.Pin.board` aliases. Never use numeric GPIOs
+without checking the hardware reference and existing firmware behavior.
+
+## Working with a connected badge
+
+The badge exposes a MicroPython USB serial interface. Use `mpremote` and follow
+[`../hardware/USB_SERIAL.md`](../hardware/USB_SERIAL.md).
+
+Discover the port instead of hard-coding it:
+
+```bash
+mpremote devs
+PORT=/dev/cu.usbmodem2101  # example only
+```
+
+The tested device identifies as USB `2e8a:1101`, product
+`Pimoroni Tufty 2350 MicroPython`.
+
+Common commands:
+
+```bash
+mpremote connect "$PORT" fs ls :/system/apps
+mpremote connect "$PORT" exec "import os; print(os.listdir('/state'))"
+mpremote connect "$PORT" reset
+```
+
+Only one process can own the port. Never run serial operations in parallel.
+Close Thonny, Web Serial pages, `screen`, and other `mpremote` processes first.
+Connecting can interrupt the running app and `mpremote` normally soft-resets
+when entering raw REPL, so reset and test the normal startup path after
+deploying.
+
+Remote filesystem paths use a leading `:` in `mpremote fs` commands. The normal
+REPL runtime mounts `/system` read-only on the tested firmware, so `mpremote fs
+cp ... :/system/...` fails with `EROFS`. Use `mpremote mount badge` for a quick
+hardware render test, or put the badge into USB mass-storage mode before
+replacing files in `/system`. App state belongs under `/state`, which remains
+writable. See the USB serial guide for the tested details.
+
+## Reference apps
+
+Use these current 2026 examples:
+
+| App | Pattern |
+| --- | --- |
+| `apps/input_test/` | Capacitive input, physical input, direction, IMU, HIRES |
+| `apps/menu/` | Launcher return values, pagination, transforms |
+| `apps/plucky_cluck/` | Frame-rate-independent game loop and sprites |
+| `apps/flappy/` | Ported 2025 game using the 2026 API |
+| `apps/gallery/` | Image loading and navigation |
+| `apps/sense/` | External Qw/ST I2C sensor use |
+| `apps/demos/` | Graphics, brush, text, and transform techniques |
+
+## Porting from Universe 2025
+
+Translate these common API changes:
+
+| Universe 2025 | Universe 2026 |
+| --- | --- |
+| `io.BUTTON_A in io.pressed` | `badge.pressed(BUTTON_SELECT)` or another logical action |
+| `io.ticks` | `badge.ticks` |
+| `io.ticks_delta` | `badge.ticks_delta` |
+| `screen.brush = brushes.color(...)` | `screen.pen = color.rgb(...)` |
+| `screen.draw(shapes.rectangle(...))` | `screen.shape(shape.rectangle(...))` |
+| `Image.load(...)` | `image.load(...)` |
+| `SpriteSheet(path, columns, rows)` | `image.load(path).spritesheet(columns, rows)` |
+| `PixelFont.load(...)` | `font.<name>` |
+| `screen.blit(sprite, x, y)` | `screen.blit(sprite, vec2(x, y))` |
+| `screen.scale_blit(...)` | `screen.blit(sprite, rect(x, y, width, height))` |
+
+Also replace per-frame movement with `badge.ticks_delta`-based movement, use
+logical orientation-aware controls, and verify layout in both orientations.
