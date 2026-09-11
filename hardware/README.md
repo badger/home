@@ -4,6 +4,31 @@ This document is a human- and agent-readable transcription of the five-page
 Pimoroni schematic generated on 3 September 2026. The original source is
 retained as [`github_badge_2026_schematic.pdf`](./github_badge_2026_schematic.pdf).
 
+## Board lineage
+
+The GitHub Universe 2026 badge is a custom derivative of Pimoroni's
+[Tufty 2350](https://shop.pimoroni.com/products/tufty-2350), the colour-screen
+member of Pimoroni's
+[Badger, Tufty, and Blinky digital badge crew](https://badgewa.re/). The
+shared platform includes the RP2350B, 320x240 IPS display, external flash and
+PSRAM, RM2 wireless module, rechargeable battery, USB-C, case lighting,
+ambient-light sensing, Qw/ST expansion, and SWD debugging.
+
+The Universe 2026 design is not electrically identical to a stock Tufty 2350.
+Its custom additions include:
+
+- An onboard LSM6DS3TR-C accelerometer and gyroscope for motion and automatic
+  orientation.
+- A two-LED IR transmitter and demodulating IR receiver.
+- Eight CAP1208 capacitive touch channels arranged as a gaming directional
+  pad plus Select, Back, Menu, and Home controls.
+
+Use this document and the GitHub schematic for pin assignments and electrical
+details; do not assume stock Tufty wiring. For the upstream platform, see the
+[Tufty 2350 specifications](https://shop.pimoroni.com/products/tufty-2350),
+[`pimoroni/tufty2350`](https://github.com/pimoroni/tufty2350), and
+[`pimoroni/badgeware-docs`](https://github.com/pimoroni/badgeware-docs).
+
 Net names and component references below match the schematic. Treat the
 firmware's board definitions and high-level `badge` API as authoritative when
 they intentionally abstract or remap these physical signals.
@@ -414,6 +439,7 @@ GPIO4/5 I2C bus.
 ## Safe low-level development
 
 - Prefer the `badge` API and `machine.Pin.board` aliases when available.
+- Do not use a stock Tufty 2350 pin map for the custom Universe 2026 board.
 - Do not reconfigure LCD, flash, PSRAM, wireless, internal I2C, power-control,
   or interrupt GPIOs from an app.
 - Qw/ST GPIO4/5 are the intended user expansion bus.

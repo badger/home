@@ -47,6 +47,16 @@ The simulator under `badge25/simulator/` models the Universe 2025 runtime and
 is not a reliable validator for 2026 apps. Test on Universe 2026 hardware,
 including both physical orientations and the capacitive controls.
 
+Pimoroni also publishes a
+[desktop Badgeware Simulator](https://github.com/pimoroni/badgeware-simulator)
+and a
+[web Badgeware Simulator](https://github.com/pimoroni/badgeware-web-simulator).
+They are useful references for the upstream Tufty 2350 and Badgeware platform,
+but may not reproduce the Universe 2026 derivative's onboard accelerometer,
+IR transmitter/receiver, capacitive gaming controls, or custom firmware APIs.
+See [`pimoroni/badgeware-docs`](https://github.com/pimoroni/badgeware-docs) for
+upstream Badgeware documentation and examples.
+
 ### 3. Include a Screenshot
 
 **All new apps must include a screenshot showing the app in action.**

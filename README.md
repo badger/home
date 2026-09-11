@@ -5,8 +5,7 @@ badge filesystem lives in [`badge/`](./badge/) and is intended to be copied to
 the badge's `/system` partition.
 
 The Universe 2025 sources remain available in [`badge25/`](./badge25/) for
-people using the previous Tufty 2350 badge. The original 2025 documentation is
-preserved at [`badge25/README.md`](./badge25/README.md).
+people using the previous badge.
 
 ## Repository layout
 
@@ -21,12 +20,40 @@ preserved at [`badge25/README.md`](./badge25/README.md).
 The legacy simulator and Badgeware API documentation are under `badge25/`.
 They do not model the 2026 graphics and input APIs.
 
+## Pimoroni and Badgeware resources
+
+- [Tufty 2350 product page and specifications](https://shop.pimoroni.com/products/tufty-2350)
+- [`pimoroni/tufty2350`](https://github.com/pimoroni/tufty2350) firmware,
+  board definitions, modules, and examples
+- [`pimoroni/badgeware-docs`](https://github.com/pimoroni/badgeware-docs)
+  Badgeware documentation and examples
+- [`pimoroni/badgeware-simulator`](https://github.com/pimoroni/badgeware-simulator)
+  desktop Badgeware Simulator
+- [`pimoroni/badgeware-web-simulator`](https://github.com/pimoroni/badgeware-web-simulator)
+  browser-based Badgeware Simulator
+
+These upstream simulators and documents are useful references for the Tufty
+and Badgeware ecosystem, but they do not model GitHub's custom 2026
+accelerometer, IR, capacitive controls, or firmware APIs exactly. Test those
+features on a Universe 2026 badge.
+
 ## Universe 2026 badge
 
-The 2026 badge uses an RP2350B, a 320x240 LCD, an 8 MB PSRAM, a 16 MB flash
-device, a wireless module, an LSM6DS3TR-C IMU, a CAP1208 capacitive touch
-controller, IR transmit and receive hardware, a light sensor, four case LEDs,
-and a Qw/ST I2C connector.
+The 2026 badge is a custom derivative of Pimoroni's
+[Tufty 2350](https://shop.pimoroni.com/products/tufty-2350), part of the
+[Badger, Tufty, and Blinky digital badge crew](https://badgewa.re/). It
+retains Tufty's RP2350B, 320x240 colour LCD, 8 MB PSRAM, 16 MB flash, wireless
+module, battery, case lighting, light sensor, and Qw/ST expansion connector.
+
+The GitHub Universe version extends that platform with hardware designed for
+interactive games and badge-to-badge experiences:
+
+- An onboard LSM6DS3TR-C accelerometer and gyroscope.
+- IR transmit and receive hardware.
+- Eight capacitive touch controls: a directional pad plus Select, Back, Menu,
+  and Home pads.
+- Five physical front controls that work with the touch controls through the
+  firmware's orientation-aware logical input API.
 
 The firmware automatically handles screen orientation and exposes logical
 input actions. Apps should use `BUTTON_UP`, `BUTTON_DOWN`, `BUTTON_LEFT`,
