@@ -18,6 +18,10 @@ On macOS, `mpremote devs` reported:
 The serial path is assigned by the host and may change after reconnecting.
 Select the entry with USB vendor/product ID `2e8a:1101` and product name
 `Pimoroni Tufty 2350 MicroPython`, not a Bluetooth or debug-console port.
+The product string reflects the upstream Tufty 2350 firmware lineage; the
+Universe 2026 badge itself is a custom derivative with additional IMU, IR, and
+capacitive-control hardware. See [`README.md`](./README.md) for its pin map and
+electrical differences.
 
 Typical port names are:
 

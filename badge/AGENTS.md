@@ -4,6 +4,19 @@ This directory is the deployable `/system` tree for the GitHub Universe 2026
 badge. New apps and ports must target the 2026 firmware API. Do not copy 2025
 Badgeware patterns from `badge25/` without translating them.
 
+The hardware is a custom derivative of Pimoroni's
+[Tufty 2350](https://shop.pimoroni.com/products/tufty-2350), with an onboard
+accelerometer/gyroscope, IR transmitter and receiver, and eight capacitive
+gaming controls arranged as a directional pad plus Select, Back, Menu, and
+Home. Upstream references include
+[`pimoroni/tufty2350`](https://github.com/pimoroni/tufty2350),
+[`pimoroni/badgeware-docs`](https://github.com/pimoroni/badgeware-docs),
+[`pimoroni/badgeware-simulator`](https://github.com/pimoroni/badgeware-simulator),
+and the
+[`pimoroni/badgeware-web-simulator`](https://github.com/pimoroni/badgeware-web-simulator).
+Do not assume those upstream projects model the custom 2026 wiring or firmware
+APIs.
+
 Read [`../hardware/README.md`](../hardware/README.md) before accessing raw GPIO,
 I2C, ADC, IR, display, power, wireless, or interrupt hardware.
 Read [`../hardware/USB_SERIAL.md`](../hardware/USB_SERIAL.md) before connecting
