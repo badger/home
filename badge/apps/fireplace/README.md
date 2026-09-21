@@ -28,7 +28,6 @@ fireplace/
 ├── __init__.py       # App code
 ├── icon.png          # Menu icon (24x24)
 ├── assets/           # Source images
-│   ├── fireplace.gif         # Original source GIF
 │   ├── fireplace_badge.jpg   # Badge photo
 │   └── lenny_fireplace.jpg   # Lenny photo
 └── frames/           # Extracted PNG frames (frame_0000.png … frame_0019.png)
@@ -42,6 +41,6 @@ python simulator/badge_simulator.py badge/apps/fireplace -C badge --scale 4
 
 ## Animation Details
 
-- **Source**: [Tenor GIF](https://tenor.com/en-CA/view/seninle-a%C5%9Fkom-yalanmo%C5%9F-gif-27389050)
-- **Frames**: 20 PNGs at 160×120 pixels
+- **Source**: [Pexels video](https://www.pexels.com/video/close-up-on-fire-in-fireplace-11543712/), free to use under the [Pexels License](https://www.pexels.com/license/)
+- **Frames**: 20 PNGs at 160×120 pixels, center-cropped to 4:3 and evenly sampled across the clip
 - **Default speed**: 100ms per frame (10 fps)
