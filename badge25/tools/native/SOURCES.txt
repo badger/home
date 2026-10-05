@@ -1,0 +1,15 @@
+Sensirion Gas Index Algorithm, fixed-point implementation 3.2.0
+Upstream: https://github.com/Sensirion/gas-index-algorithm
+Commit: 2ef9f13d225e8a0dedd3ff42dd229af4dbb1aae4
+License: BSD-3-Clause, retained in vendor/LICENSE and source headers
+Files: sensirion_gas_index_algorithm_fixpoint/sensirion_gas_index_algorithm.c
+       sensirion_gas_index_algorithm_fixpoint/sensirion_gas_index_algorithm.h
+
+MicroPython native module build headers and linker
+Upstream: https://github.com/micropython/micropython
+Tag: v1.26.0
+Commit: 4ce2dd2cdab6e57f3982fc899f15a2103d71b0be
+License: MIT, retained in build/vendor/micropython/LICENSE
+
+Build architecture: armv6m, supported by RP2350 Thumb native module loaders
+Sampling interval: 1 second, official algorithm defaults unmodified
