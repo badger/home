@@ -53,17 +53,34 @@ not arbitrary raw-signal thresholds.
 These are **relative indexes, not ppm, CO2, regulatory AQI or a safety alarm**.
 They cannot establish that air is safe to breathe.
 
-Startup conditions the sensor for approximately nine seconds, within the
-manufacturer's maximum ten seconds. Its indexes then remain in the algorithm's
-approximately 45-second blackout; the screen shows **Warming up**.
+In normal operation, startup conditions the sensor for approximately nine
+seconds, below the manufacturer's maximum ten seconds. Its indexes then remain
+in the algorithm's approximately 45-second blackout; the screen shows **Warming up**.
 The default learning constants are 12 hours, so the baseline continues adapting.
 Reopening the app starts fresh. Failed measurements or substantial sampling
 gaps reset the index state. Nothing is written to flash for learned-state
 persistence.
 
+The nine-second conditioning deadline takes priority over normal sampling,
+including pending conversions and sensor-error states. Conditioning is marked
+complete only after the normal measurement command receives a full I2C
+acknowledgement. A failed transition also attempts heater shutdown. If both
+commands fail, the original timer and expired-window latch remain active so
+subsequent updates retry without waiting for the one-second sampling cycle
+or restarting conditioning after tick wrap.
+If compensation is unavailable and shutdown fails, SHT41 recovery continues
+without discarding the gas deadline or cancelling its pending conversion.
+
+Failed heater shutdown, including a short acknowledgement, does not clear the
+conditioning state. Recovering SHT41 readings therefore cannot start a fresh
+nine-second window unless shutdown actually succeeded. Errors remain visible
+and are printed to the serial console. If the I2C bus remains unreachable,
+software cannot confirm or guarantee physical heater shutdown.
+
 Temperature/humidity compensation uses the current SHT41 readings. The SHT41
 is sampled in high-precision mode with its heater off. CRC-8 checks protect
-both sensors' replies, and the SGP41 heater is stopped on normal app exit.
+both sensors' replies, and SGP41 heater shutdown is attempted on app exit;
+failed shutdown commands are reported rather than treated as successful.
 Dew point uses the Magnus approximation with constants 17.62 and 243.12.
 
 ## Native module and licensing
@@ -99,6 +116,8 @@ python3 -m unittest discover -s badge25/tests -p 'test_sensor_dashboard.py' -v
 ```
 
 Synthetic tests cover sensor CRCs, compensation, conditioning limits, timing,
+failed transitions and shutdowns, short acknowledgements and recovery across
+tick wrap,
 missing devices, unit controls, clipping, scrolling and font parsing. The
 display and numeric indexes were also checked by the owner on the physical
 2025 badge. The screenshot below is a deterministic rendering of the app with

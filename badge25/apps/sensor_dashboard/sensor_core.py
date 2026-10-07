@@ -64,6 +64,7 @@ class SensorDashboard:
         self.phase = "idle"
         self.condition_started = None
         self.conditioned = False
+        self.conditioning_expired = False
         self.temperature = None
         self.humidity = None
         self.voc = None
@@ -94,6 +95,10 @@ class SensorDashboard:
             self.nox = None
             self.sgp_status = status
 
+    def _write_gas(self, data):
+        if self.bus.writeto(self.SGP_ADDRESS, data) != len(data):
+            raise OSError("Short SGP41 command write")
+
     def _gas_command(self, now):
         if not self.has_sgp:
             self.phase = "idle"
@@ -108,31 +113,37 @@ class SensorDashboard:
         if self.condition_started is None:
             self.condition_started = now
         age = self.diff(now, self.condition_started)
-        conditioning = not self.conditioned and age < self.CONDITION_MS
-        if not conditioning:
-            self.conditioned = True
+        if not self.conditioned and age >= self.CONDITION_MS:
+            self.conditioning_expired = True
+        conditioning = not self.conditioned and not self.conditioning_expired
         command = b"\x26\x12" if conditioning else b"\x26\x19"
         arguments = b"\x80\x00\xa2\x66\x66\x93" if conditioning else compensation(
             self.temperature, self.humidity
         )
         try:
-            self.bus.writeto(self.SGP_ADDRESS, command + arguments)
+            self._write_gas(command + arguments)
         except OSError as error:
             self._error("SGP41", error)
             self.phase = "idle"
+            if not conditioning and not self.conditioned:
+                self.close()
             return
+        if not conditioning:
+            self.conditioned = True
         self.phase = "conditioning" if conditioning else "gas"
         self.sgp_status = "Conditioning" if conditioning else "Measuring"
         self.deadline = self.add(now, 50)
 
     def update(self, now):
-        # Never leave the NOx conditioning hotplate enabled beyond its 10s limit.
-        if not self.conditioned and self.condition_started is not None and self.diff(now, self.condition_started) >= self.CONDITION_MS:
-            if self.phase == "conditioning" or (
-                self.phase == "idle" and self.sgp_status == "Conditioning"
-            ):
-                self._gas_command(now)
-                return
+        # Latch the cutoff across errors and tick wrap until transition or shutdown succeeds.
+        if not self.conditioned and self.condition_started is not None:
+            if self.conditioning_expired or self.diff(now, self.condition_started) >= self.CONDITION_MS:
+                self.conditioning_expired = True
+                if self.temperature is not None:
+                    self._gas_command(now)
+                    return
+                if not self.close() and self.phase == "idle":
+                    self.next_sample = now
         if self.phase == "idle":
             if self.diff(now, self.next_sample) < 0:
                 return
@@ -181,8 +192,11 @@ class SensorDashboard:
     def close(self):
         if self.has_sgp:
             try:
-                self.bus.writeto(self.SGP_ADDRESS, b"\x36\x15")
+                self._write_gas(b"\x36\x15")
             except OSError as error:
                 self._error("SGP41", error)
+                return False
         self.condition_started = None
         self.conditioned = False
+        self.conditioning_expired = False
+        return True
