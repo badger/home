@@ -31,14 +31,26 @@ class FakeBus:
         self.writes = []
         self.responses = []
         self.failure = None
+        self.write_attempts = []
+        self.write_failures = {}
+        self.short_writes = {}
 
     def scan(self):
         return self.addresses
 
     def writeto(self, address, data):
+        self.write_attempts.append((address, data))
         if self.failure:
             raise self.failure
+        command = (address, data[:2])
+        if self.write_failures.get(command, 0):
+            self.write_failures[command] -= 1
+            raise OSError("Injected command failure")
+        if self.short_writes.get(command, 0):
+            self.short_writes[command] -= 1
+            return len(data) - 1
         self.writes.append((address, data))
+        return len(data)
 
     def readfrom(self, address, size):
         if self.failure:
@@ -53,6 +65,14 @@ def sht_response(temperature=25, humidity=50):
 
 
 class SensorTests(unittest.TestCase):
+    def conditioning_dashboard(self, now=0):
+        bus = FakeBus()
+        model = SensorDashboard(bus, now, ticks_diff, ticks_add)
+        model.temperature, model.humidity = 25, 50
+        model.next_sample = ticks_add(now, 20000)
+        model._gas_command(now)
+        return bus, model
+
     def test_crc_and_word_encoding(self):
         self.assertEqual(crc8(b"\xbe\xef"), 0x92)
         self.assertEqual(encode_word(0x8000), b"\x80\x00\xa2")
@@ -178,6 +198,188 @@ class SensorTests(unittest.TestCase):
         self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
         model.close()
         self.assertFalse(model.conditioned)
+
+    def test_failed_transition_and_shutdown_retry_before_next_sample(self):
+        bus, model = self.conditioning_dashboard()
+        bus.write_failures[(0x59, b"\x26\x19")] = 1
+        bus.write_failures[(0x59, b"\x36\x15")] = 1
+        with patch("builtins.print") as logged:
+            model.update(9000)
+        self.assertTrue(logged.called)
+        self.assertFalse(model.conditioned)
+        self.assertEqual(model.condition_started, 0)
+        self.assertEqual(model.phase, "idle")
+        self.assertEqual(
+            [data[:2] for _, data in bus.write_attempts[-2:]],
+            [b"\x26\x19", b"\x36\x15"],
+        )
+        self.assertLess(ticks_diff(9010, model.next_sample), 0)
+        model.update(9010)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
+        self.assertLess(ticks_diff(9010, model.condition_started), 10000)
+
+    def test_failed_transition_can_stop_heater_instead(self):
+        bus, model = self.conditioning_dashboard()
+        bus.write_failures[(0x59, b"\x26\x19")] = 1
+        with patch("builtins.print"):
+            model.update(9000)
+        self.assertEqual(bus.writes[-1], (0x59, b"\x36\x15"))
+        self.assertIsNone(model.condition_started)
+        self.assertFalse(model.conditioned)
+        self.assertEqual(model.sgp_status, "I2C error")
+
+    def test_conditioning_read_error_does_not_disable_deadline(self):
+        bus, model = self.conditioning_dashboard()
+        bus.responses = [b"\x00" * 3]
+        with patch("builtins.print"):
+            model.update(50)
+        self.assertEqual(model.sgp_status, "CRC error")
+        self.assertEqual(model.phase, "idle")
+        model.update(9000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
+
+    def test_conditioning_write_error_keeps_the_original_deadline(self):
+        bus, model = self.conditioning_dashboard()
+        bus.write_failures[(0x59, b"\x26\x12")] = 1
+        with patch("builtins.print"):
+            model._gas_command(8000)
+        self.assertEqual(model.condition_started, 0)
+        self.assertEqual(model.sgp_status, "I2C error")
+        self.assertEqual(model.phase, "idle")
+        model.update(9000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
+
+    def test_failed_shutdown_does_not_restart_window_after_sht_recovery(self):
+        bus, model = self.conditioning_dashboard()
+        bus.responses = [encode_word(22000)]
+        model.update(50)
+        model.next_sample = 3000
+        bus.responses = [b"\x00" * 6]
+        bus.write_failures[(0x59, b"\x36\x15")] = 1
+        model.update(3000)
+        with patch("builtins.print"):
+            model.update(3010)
+        self.assertEqual(model.sht_status, "CRC error")
+        self.assertEqual(model.sgp_status, "I2C error")
+        self.assertEqual(model.condition_started, 0)
+        self.assertFalse(model.conditioned)
+        bus.responses = [sht_response()]
+        model.update(4000)
+        model.update(4010)
+        self.assertEqual(model.condition_started, 0)
+        model.update(9000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
+
+    def test_deadline_shutdown_retries_do_not_starve_sht_recovery(self):
+        bus, model = self.conditioning_dashboard()
+        bus.responses = [encode_word(22000)]
+        model.update(50)
+        model.next_sample = 8000
+        bus.responses = [b"\x00" * 6]
+        bus.write_failures[(0x59, b"\x36\x15")] = 3
+        model.update(8000)
+        with patch("builtins.print"):
+            model.update(8010)
+        self.assertIsNone(model.temperature)
+        self.assertEqual(model.condition_started, 0)
+        model.next_sample = 20000
+        bus.responses = [sht_response()]
+        with patch("builtins.print"):
+            model.update(9000)
+        self.assertEqual(model.phase, "sht")
+        self.assertEqual(bus.writes[-1], (0x44, b"\xfd"))
+        with patch("builtins.print"):
+            model.update(9010)
+        self.assertTrue(model.conditioned)
+        self.assertEqual(model.condition_started, 0)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertLess(ticks_diff(9010, model.condition_started), 10000)
+
+    def test_failed_shutdown_preserves_window_across_tick_wrap(self):
+        start = 65000
+        bus, model = self.conditioning_dashboard(start)
+        bus.write_failures[(0x59, b"\x36\x15")] = 1
+        with patch("builtins.print"):
+            self.assertFalse(model.close())
+        self.assertEqual(model.condition_started, start)
+        model._gas_command(ticks_add(start, 4000))
+        self.assertEqual(model.condition_started, start)
+        model.update(ticks_add(start, 9000))
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
+
+    def test_short_transition_ack_does_not_complete_conditioning(self):
+        bus, model = self.conditioning_dashboard()
+        bus.short_writes[(0x59, b"\x26\x19")] = 1
+        bus.write_failures[(0x59, b"\x36\x15")] = 1
+        with patch("builtins.print"):
+            model.update(9000)
+        self.assertFalse(model.conditioned)
+        self.assertEqual(model.condition_started, 0)
+        self.assertEqual(model.sgp_status, "I2C error")
+        model.update(9010)
+        self.assertTrue(model.conditioned)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+
+    def test_short_shutdown_ack_keeps_conditioning_state(self):
+        bus, model = self.conditioning_dashboard()
+        bus.short_writes[(0x59, b"\x36\x15")] = 1
+        with patch("builtins.print"):
+            self.assertFalse(model.close())
+        self.assertEqual(model.condition_started, 0)
+        self.assertFalse(model.conditioned)
+        self.assertTrue(model.close())
+        self.assertIsNone(model.condition_started)
+
+    def test_failed_shutdown_keeps_completed_latch(self):
+        bus, model = self.conditioning_dashboard()
+        model.update(9000)
+        self.assertTrue(model.conditioned)
+        bus.write_failures[(0x59, b"\x36\x15")] = 1
+        with patch("builtins.print"):
+            self.assertFalse(model.close())
+        self.assertTrue(model.conditioned)
+        self.assertEqual(model.condition_started, 0)
+        model._gas_command(40000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+
+    def test_conditioning_deadline_preempts_pending_sht_conversion(self):
+        bus, model = self.conditioning_dashboard()
+        model.phase = "sht"
+        model.deadline = 9010
+        model.update(9000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
+
+    def test_successful_shutdown_allows_a_new_conditioning_window(self):
+        bus, model = self.conditioning_dashboard()
+        model.update(9000)
+        self.assertTrue(model.conditioning_expired)
+        self.assertTrue(model.close())
+        self.assertIsNone(model.condition_started)
+        self.assertFalse(model.conditioned)
+        self.assertFalse(model.conditioning_expired)
+        model._gas_command(13000)
+        self.assertEqual(model.condition_started, 13000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x12")
+        model.update(22000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+
+    def test_failed_deadline_transition_does_not_restart_after_half_wrap(self):
+        bus, model = self.conditioning_dashboard()
+        bus.write_failures[(0x59, b"\x26\x19")] = 1
+        bus.write_failures[(0x59, b"\x36\x15")] = 1
+        with patch("builtins.print"):
+            model.update(9000)
+        self.assertFalse(model.conditioned)
+        self.assertTrue(model.conditioning_expired)
+        model.update(40000)
+        self.assertEqual(bus.writes[-1][1][:2], b"\x26\x19")
+        self.assertTrue(model.conditioned)
 
 
 class Screen:
