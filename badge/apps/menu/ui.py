@@ -1,113 +1,102 @@
 import math
-import random
 
 
+def shade(rgb, strength):
+    return color.rgb(*(round(channel * strength) for channel in rgb))
+
+
+PALETTE = [
+    (88, 58, 247),
+    (22, 143, 251),
+    (15, 191, 62),
+    (247, 54, 120),
+    (192, 82, 0),
+    (187, 160, 10),
+    (8, 135, 43),
+    (255, 125, 237),
+]
+
+white = color.rgb(255, 255, 255)
 black = color.rgb(0, 0, 0)
-background = color.rgb(60, 15, 10)
-phosphor = color.rgb(246, 135, 4)
-terminal_text = color.rgb(123, 72, 2)
-terminal_fade = color.rgb(60, 15, 10, 150)
+dim_white = color.rgb(255, 255, 255, 140)
+accent = color.rgb(95, 237, 131)
+
+STATUS_HEIGHT = 21
+RIBBON_TOP = 198
+TITLE_X = 8
+TITLE_Y = 202
+OS_NAME = "MonaOS 4.0"
+OS_X = 8
+TITLE_SLIDE_MS = 220
+TITLE_SLIDE_PX = 18
+
+status_font = font.salty
+title_font = font.ignore
 
 
-def draw_background():
-    # draw over the corners in black ready for the rounded rectangle that makes
-    # up most of the background
-    screen.pen = black
-    screen.rectangle(0, 0, 10, 10)
-    screen.rectangle(150, 0, 10, 10)
-    screen.rectangle(0, 110, 10, 10)
-    screen.rectangle(150, 110, 10, 10)
+class Tilt:
+    GRAVITY = 16384.0
+    SMOOTH_MS = 120
+    RECENTRE_MS = 2800
 
-    # draw the faux crt shape background area
-    screen.pen = background
-    screen.shape(shape.rounded_rectangle(0, 0, 160, 120, 8))
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+        self.rest_z = None
+        self.last_ticks = None
 
-    # draw the scrolling terminal effects
-    draw_terminal()
-
-
-class Terminal:
-    lines = []
-    max_lines = 25
-    line_added_at = None
-    lines_added = 0
-    speed = 250
-
-    def update():
-        if badge.ticks - Terminal.line_added_at > Terminal.speed:
-            Terminal.add_line()
-
-    def add_line():
-        Terminal.lines.append(random.randint(20, 140))
-        Terminal.line_added_at = badge.ticks
-        Terminal.lines_added += 1
-        if len(Terminal.lines) > Terminal.max_lines:
-            Terminal.lines = Terminal.lines[len(Terminal.lines) - Terminal.max_lines:]
+    def update(self):
+        ax, _, az = badge.imu()[:3]
+        now = badge.ticks
+        dt = min(now - self.last_ticks, 200) if self.last_ticks is not None else 0
+        self.last_ticks = now
+        smooth = 1 - math.exp(-dt / self.SMOOTH_MS)
+        recentre = 1 - math.exp(-dt / self.RECENTRE_MS)
+        if self.rest_z is None:
+            self.rest_z = az
+        self.rest_z += (az - self.rest_z) * recentre
+        target_x = max(-1.0, min(1.0, -ax / self.GRAVITY * 2))
+        target_y = max(-1.0, min(1.0, (az - self.rest_z) / self.GRAVITY * 2))
+        self.x += (target_x - self.x) * smooth
+        self.y += (target_y - self.y) * smooth
 
 
-# pre populate the terminal
-for _ in range(25):
-    Terminal.add_line()
-
-
-# the terminal effect creates a rolling window of text that is infinitely
-# populated with new lines
-def draw_terminal():
-    screen.pen = terminal_text
-
-    # update the fake terminal
-    Terminal.update()
-
-    for i in range(21):
-        # work out the position of screen that this line will be rendered
-        y = 20 + i * 5
-        yo = ((badge.ticks - Terminal.line_added_at) / Terminal.speed) * 5
-        y = int(y - yo)
-
-        # force the random seed so that word widths will always be consistent for
-        # each line...
-        random.seed(i + Terminal.lines_added)
-        cx = 0
-        while cx < Terminal.lines[i]:
-            # pick a random word width
-            w = random.randint(3, 10)
-            # draw the "greeked" word
-            screen.rectangle(cx + 5, y, w, 2)
-            # rect.transform = mat3().translate(cx + 5, y).scale(w, 2)
-            # screen.shape(rect)
-            # add a space
-            cx += w + 2
-
-    # draw the terminal fade at top
-    screen.pen = terminal_fade
-    screen.rectangle(0, 13, 160, 5)
-    screen.rectangle(0, 13, 160, 3)
-
-
-def draw_header():
-    # create animated header text
-    dots = "." * int(math.sin(badge.ticks / 250) * 2 + 2)
-    label = f"BadgeOS{dots}"
-    pos = (5, 2)
-
-    # draw the OS title
-    screen.pen = phosphor
-    screen.text(label, *pos)
-
-    # draw the battery indicator
+def draw_battery(right, top):
     if badge.is_charging():
-        battery_level = (badge.ticks / 20) % 100
+        level = (badge.ticks / 20) % 100
     else:
-        battery_level = badge.battery_level()
-    pos = (137, 4)
-    size = (16, 8)
-    screen.pen = phosphor
-    screen.shape(shape.rectangle(*pos, *size))
-    screen.shape(shape.rectangle(pos[0] + size[0], pos[1] + 2, 1, 4))
-    screen.pen = background
-    screen.shape(shape.rectangle(pos[0] + 1, pos[1] + 1, size[0] - 2, size[1] - 2))
+        level = badge.battery_level()
+    width, height = 22, 11
+    left = right - width - 2
+    screen.pen = white
+    screen.rectangle(left, top, width, height)
+    screen.rectangle(left + width, top + 4, 2, 3)
+    screen.pen = black
+    screen.rectangle(left + 1, top + 1, width - 2, height - 2)
+    screen.pen = white
+    screen.rectangle(left + 2, top + 2, round((width - 4) * level / 100), height - 4)
+    return left
 
-    # draw the battery fill level
-    width = ((size[0] - 4) / 100) * battery_level
-    screen.pen = phosphor
-    screen.shape(shape.rectangle(pos[0] + 2, pos[1] + 2, width, size[1] - 4))
+
+def draw_status(index, total, hidden=0.0):
+    top = 3 - round(STATUS_HEIGHT * hidden)
+    screen.font = status_font
+    screen.pen = white
+    screen.text(OS_NAME, OS_X, top)
+    count = f"{index + 1:02d} / {total:02d}"
+    width, _ = screen.measure_text(count)
+    screen.pen = dim_white
+    screen.text(count, (320 - width) / 2, top)
+    draw_battery(320 - OS_X, top + 2)
+
+
+def draw_title(name, changed_at, hidden=0.0):
+    progress = min(1.0, (badge.ticks - changed_at) / TITLE_SLIDE_MS)
+    eased = 1 - (1 - progress) ** 3
+    x = TITLE_X + TITLE_SLIDE_PX * (1 - eased)
+
+    screen.font = title_font
+    screen.pen = white
+    screen.alpha = round(255 * eased)
+    screen.text(name.lower(), x, TITLE_Y + round((240 - RIBBON_TOP) * hidden))
+    screen.alpha = 255

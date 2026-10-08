@@ -117,6 +117,41 @@ RP2 firmware build date: 2026-09-08
 Firmware versions and build dates will change, so query the connected badge
 instead of assuming these exact values.
 
+### Later firmware observed on 8 October 2026
+
+A second inspection of a connected badge reported:
+
+```text
+sys.implementation:
+  MicroPython 1.29.0-preview
+  machine: Pimoroni Tufty 2350 with RP2350
+os.uname():
+  release: 1.29.0-preview
+  version: bw-1.28.0-3, on 2026-10-08
+```
+
+The USB vendor/product ID remained `2e8a:1101`. The USB product text is not a
+reliable badge-version identifier; use the runtime query above instead.
+
+That firmware's `/system/apps/` contained these launchable apps:
+`badge`, `brattal`, `contacts`, `flappy_mona`, `iss`, `life`, `mass_storage`,
+`merge_conflict`, `mona_paint`, `mona_pet`, `pong`, `rogue`, `settings`, `show`,
+and `snake`, plus `menu`. All app/menu files were copied into
+[`../badge/apps/`](../badge/apps/), overwriting matching files while retaining
+other repository apps and additional assets.
+The apps use firmware-provided modules such as `badgeware.link`, `hints`,
+`missing_details`, `fetch`, `sparkle`, and `pico3d`; consult
+[`../badge/apps/README.md`](../badge/apps/README.md) for their roles and runtime
+requirements.
+
+The captured menu uses a four-column scrollable grid, prioritizes
+`merge_conflict`, `mona_pet`, `rogue`, `iss`, and `snake`, and draws vector
+icons with optional compiled animations from `menu/anim/`. It shows a battery
+indicator and MonaOS 4.0 label, with a cold-boot opening animation and optional
+3D Mona rendering. This menu and its assets have also been copied into
+`badge/apps/menu/` as the current repository example. The badge itself was
+only inspected; no files were written to it.
+
 `mpremote eval` accepts an expression. Use `mpremote exec` for imports,
 assignments, semicolon-separated statements, or multi-line code.
 
