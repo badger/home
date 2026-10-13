@@ -1,0 +1,4 @@
+.pio/
+local/
+firmware/*.bin
+firmware/manifest.json

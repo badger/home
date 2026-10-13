@@ -7,8 +7,18 @@ available [here](./badgerware/).
 
 These apps are designed to be run on the base MonaOS MicroPython firmware pre-installed on your badge.
 
+## Examples
+
+See the [badge examples](./badgerware/examples/README.md). The
+[2026 camera app](./badge/apps/camera/README.md) adds an ESP32-CAM Wi-Fi viewfinder,
+1600 x 1200 SD photography, rotation, and a last-15 photo gallery. Its companion
+[ESP32-CAM project](./esp32-cam/README.md) includes board purchase links, firmware
+source, build/flash scripts, and installation instructions. This example requires
+the October 2026 firmware, not the 2025 firmware described below.
+
 ## Table of Contents
 - [Universe 2025 (Tufty) Badge](#universe-2025-tufty-badge)
+  - [Examples](#examples)
   - [Table of Contents](#table-of-contents)
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
@@ -344,5 +354,4 @@ array, binascii, builtins, cmath, collections, errno, gc, hashlib, heapq, io, js
 We welcome contributions! If you've created a new app or improved an existing one, please consider submitting a pull request.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute to this project.
-
 
