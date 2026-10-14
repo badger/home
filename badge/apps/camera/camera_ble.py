@@ -44,6 +44,7 @@ class Provisioner:
         self.awaiting = None
         self.next_read = None
         self.tried_original = False
+        self.direct = False
         self.started = time.ticks_ms()
         self.ble = bluetooth.BLE()
         self.owned = False
@@ -53,10 +54,43 @@ class Provisioner:
         self.owned = True
         try:
             self.ble.irq(self.irq)
-            self.ble.gap_scan(5000, 100000, 30000, True)
+            address = config.get("ble_addr")
+            if (isinstance(address, str) and len(address) == 12
+                    and all(c in "0123456789abcdef" for c in address)
+                    and config.get("ble_addr_type") in (0, 1)):
+                self.address = (config["ble_addr_type"], binascii.unhexlify(address))
+                self.state = "DIRECT"
+                self.direct = True
+                self.message = "Reconnecting to paired camera..."
+                try:
+                    self.ble.gap_connect(self.address[0], self.address[1], 3000)
+                except OSError as error:
+                    self.scan_fallback(str(error))
+            else:
+                self.scan()
         except Exception:
             self.close()
             raise
+
+    def scan(self):
+        self.direct = False
+        self.state = "SCANNING"
+        self.message = "Looking for BLE cameras..."
+        self.started = time.ticks_ms()
+        self.ble.gap_scan(5000, 100000, 30000, True)
+
+    def scan_fallback(self, reason):
+        print("Camera: direct BLE connection failed; scanning:", reason)
+        # Stop any outstanding direct connection before starting discovery.
+        self.ble.irq(None)
+        self.ble.active(False)
+        self.events.clear()
+        self.conn = None
+        self.service = None
+        self.rx = self.tx = None
+        self.ble.active(True)
+        self.ble.irq(self.irq)
+        self.scan()
 
     def irq(self, event, data):
         if event == 5:
@@ -232,9 +266,12 @@ class Provisioner:
             event, data = self.events.pop(0)
             if event == 6 and self.state == "SCANNING":
                 known = self.config.get("ble_addr")
-                if known:
+                identity = self.config.get("camera_id")
+                if known or identity:
                     for index, item in enumerate(self.cameras):
-                        if binascii.hexlify(item[1]).decode() == known and item[0] == self.config["ble_addr_type"]:
+                        if ((binascii.hexlify(item[1]).decode() == known
+                             and item[0] == self.config.get("ble_addr_type"))
+                                or (identity and self.names.get(item[:2]) == "BadgeCam-" + identity)):
                             self.choice = index
                             self.state = "CHOOSE"
                             self.choose()
@@ -248,13 +285,25 @@ class Provisioner:
                     raise CameraError("No BLE cameras; power camera")
             elif event == 7:
                 self.conn = data[0]
+                self.state = "WORKING"
+                self.started = time.ticks_ms()
                 self.ble.gattc_discover_services(self.conn, SERVICE)
             elif event == 8 and self.state != "READY":
-                raise CameraError("Camera BLE disconnected")
-            elif event == 9 and data[3] == SERVICE:
-                self.service = data[1:3]
+                if self.direct:
+                    self.scan_fallback("Camera did not accept connection")
+                else:
+                    raise CameraError("Camera BLE disconnected")
+            elif event == 9:
+                if data[3] == SERVICE:
+                    self.service = data[1:3]
+                else:
+                    print("Camera: unexpected BLE service", data[3])
             elif event == 10:
                 if data[1] or self.service is None:
+                    print("Camera: BLE discovery failed; status", data[1], "handles", self.service)
+                    if self.direct:
+                        self.scan_fallback("Camera BLE service unavailable")
+                        continue
                     raise CameraError("Camera BLE service unavailable")
                 self.ble.gattc_discover_characteristics(self.conn, *self.service)
             elif event == 11:
@@ -264,7 +313,11 @@ class Provisioner:
                     self.tx = data[2]
             elif event == 12:
                 if data[1] or self.rx is None or self.tx is None:
+                    if self.direct:
+                        self.scan_fallback("Camera BLE characteristics unavailable")
+                        continue
                     raise CameraError("Camera BLE characteristics unavailable")
+                self.direct = False
                 self.nonce = os.urandom(16)
                 self.send(1, self.nonce)
             elif event == 17:
@@ -286,6 +339,10 @@ class Provisioner:
                 self.response()
         if self.next_read is not None and time.ticks_diff(time.ticks_ms(), self.next_read) >= 0:
             self.read()
+        if self.state == "DIRECT" and time.ticks_diff(time.ticks_ms(), self.started) > 3500:
+            self.scan_fallback("Direct connection timed out")
+        if self.state == "SCANNING" and time.ticks_diff(time.ticks_ms(), self.started) > 7000:
+            raise CameraError("Camera BLE scan timed out")
         if self.state == "WORKING" and time.ticks_diff(time.ticks_ms(), self.started) > 30000:
             raise CameraError("Camera BLE timed out")
         return self.result

@@ -14,6 +14,13 @@ Enter the camera's six-digit code from its SD card `PAIRING.TXT` or USB serial
 output once. The app then maintains its private `/camera_config.json` itself.
 Install all four Python files plus `icon.png`.
 
+Returning from a photo or gallery reuses the verified Wi-Fi connection instead
+of pairing again. App startup tries the saved Wi-Fi credentials first; if they
+are stale, BLE refreshes them by connecting directly to the remembered camera
+address. Discovery is the fallback, not the normal reconnect path. On the
+attached hardware, photo-to-live resume took 262 ms and cached startup about
+3.7 seconds. Select still resumes first; press Select again to take another photo.
+
 Hardware verification covers first-use BLE pairing, incorrect-code rejection,
 automatic reconnection after camera restart, live preview, full-resolution SD
 captures, frozen review, and the badge gallery. Pairing is application-level SRP,
@@ -81,6 +88,7 @@ From the repository root:
 .venv/bin/python -m unittest discover -s esp32-cam/tests -p 'test_*.py'
 mpremote connect <badge-port> run esp32-cam/tests/rotation_hardware_probe.py
 mpremote connect <badge-port> run esp32-cam/tests/real_hardware_probe.py
+mpremote connect <badge-port> run esp32-cam/tests/connection_hardware_probe.py
 ```
 
 The real hardware probe takes two actual SD photos and adds them to the badge
@@ -89,5 +97,8 @@ thumbnail equality, frozen review, idempotent retries, and gallery navigation.
 After testing, hard-reset the badge and confirm USB reappears; leave it in the
 normal launcher, not a stopped development REPL. For native-risk changes use
 the watchdog-protected BLE probes described in the companion README.
+The connection probe also takes two actual photos, times resuming preview,
+and asserts that neither Wi-Fi association nor BLE provisioning is repeated.
+Its reboot and stale-address scenarios are documented in the companion README.
 
 ![Camera example displaying an upright saved photo](screenshot.png)

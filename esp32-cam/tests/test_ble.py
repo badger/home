@@ -42,6 +42,12 @@ class Radio:
     def gattc_write(self, *args):
         self.writes.append(args)
 
+    def gap_connect(self, *args):
+        self.connection = args
+
+    def gattc_discover_services(self, *args):
+        self.discovery = args
+
 
 spec = importlib.util.spec_from_file_location("tested_camera_ble", APP / "camera_ble.py")
 ble = importlib.util.module_from_spec(spec)
@@ -145,3 +151,76 @@ class BLETests(unittest.TestCase):
         self.p.send.assert_called_once_with(4, bytes.fromhex("aa" * 32))
         with self.assertRaises(ble.CameraError):
             self.p.completed(b"\xffUnrecognised badge")
+
+    def paired(self):
+        p = ble.Provisioner({"ble_addr": "001122334455", "ble_addr_type": 0,
+                             "camera_id": "aabbccddeeff"}, self.path)
+        self.addCleanup(p.close)
+        return p
+
+    def test_remembered_camera_skips_scan(self):
+        p = self.paired()
+        self.assertEqual(p.state, "DIRECT")
+        self.assertEqual(p.ble.connection, (0, bytes.fromhex("001122334455"), 3000))
+        self.assertFalse(hasattr(p.ble, "scan"))
+        p.irq(7, (1, 0, bytes.fromhex("001122334455")))
+        p.step()
+        self.assertEqual(p.state, "WORKING")
+        self.assertEqual(p.ble.discovery, (1, ble.SERVICE))
+
+    def test_direct_timeout_scans_once(self):
+        p = self.paired()
+        with patch.object(time, "ticks_ms", return_value=3701):
+            p.step()
+        self.assertEqual(p.state, "SCANNING")
+        self.assertEqual(p.ble.scan[0], 5000)
+
+    def test_direct_connect_oserror_falls_back(self):
+        with patch.object(Radio, "gap_connect", side_effect=OSError("busy")):
+            p = self.paired()
+        self.assertEqual(p.state, "SCANNING")
+        self.assertFalse(p.direct)
+
+    def test_direct_service_failure_falls_back_only_once(self):
+        p = self.paired()
+        p.irq(7, (1, 0, bytes(6)))
+        p.irq(10, (1, 1))
+        p.step()
+        self.assertEqual(p.state, "SCANNING")
+        self.assertIsNone(p.conn)
+        self.assertFalse(p.direct)
+        p.irq(10, (1, 1))
+        with self.assertRaisesRegex(ble.CameraError, "service unavailable"):
+            p.step()
+
+    def test_direct_characteristic_failure_clears_handles(self):
+        p = self.paired()
+        p.service = (10, 14)
+        p.rx = 12
+        p.irq(12, (1, 1))
+        p.step()
+        self.assertEqual(p.state, "SCANNING")
+        self.assertIsNone(p.service)
+        self.assertIsNone(p.rx)
+
+    def test_direct_failure_resolves_changed_address_by_identity(self):
+        p = self.paired()
+        p.irq(8, (0, 0, bytes.fromhex("001122334455")))
+        p.step()
+        self.assertEqual(p.state, "SCANNING")
+        address = bytes.fromhex("112233445566")
+        p.cameras = [(0, address, -30)]
+        p.names[(0, address)] = "BadgeCam-aabbccddeeff"
+        p.irq(6, ())
+        p.step()
+        self.assertEqual(p.address, (0, address))
+        self.assertEqual(p.state, "WORKING")
+
+    def test_scan_does_not_select_unrelated_camera(self):
+        p = self.paired()
+        p.scan_fallback("test")
+        p.cameras = [(0, bytes(6), -20)]
+        p.names[(0, bytes(6))] = "BadgeCam-000000000000"
+        p.irq(6, ())
+        with self.assertRaisesRegex(ble.CameraError, "Paired camera not found"):
+            p.step()

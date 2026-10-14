@@ -176,13 +176,47 @@ Install `mpremote` with `python -m pip install mpremote` if it is not available.
 6. On first use, enter the six-digit code from `/PAIRING.TXT` on the camera SD
    card, or its 115200-baud USB serial startup output. Left/Right chooses a
    digit, Up/Down changes it, and Select submits. Keep the code private.
-   Subsequent starts reconnect automatically and refresh credentials over BLE.
+   Subsequent starts reconnect automatically using saved Wi-Fi credentials,
+   refreshing them over BLE only when necessary.
 
 Photo thumbnails and a recovery record live in `/state/camera/`.
 Live frames stay in RAM: streaming does not continuously write badge flash.
 Wi-Fi requests use a bounded nonblocking socket state machine, allowing
 navigation and exit while connecting/receiving. Captures wait up to 30 seconds;
-other requests wait up to 12 seconds.
+other requests normally wait up to 12 seconds. Fast-path status/first-preview
+checks use a three-second timeout before connection recovery; the capture
+timeout remains 30 seconds even if Select is pressed immediately after resuming.
+
+### Faster reconnection and repeated photos
+
+The app uses three paths, in this order:
+
+1. **Resume the existing connection.** Select from frozen review or the gallery
+   resumes immediately if this app has verified the camera and Wi-Fi remains
+   connected. It requests a new frame without reassociation or BLE. If that
+   first preview fails, it refreshes the connection. Pending captures retain
+   their original ID and reconnect before retrying instead.
+2. **Try cached Wi-Fi first.** Opening/reconnecting attempts the saved SSID and
+   password, allowing four seconds for association and three seconds for
+   `/status`. The camera identity must match before the connection is reused.
+   Failure triggers one BLE credential refresh, not an endless retry loop.
+3. **Connect directly to the saved BLE address.** Credential refresh first uses
+   a three-second connection attempt instead of the usual five-second scan.
+   A failed direct connection or service discovery falls back to discovery once.
+   Discovery can identify the same camera at a changed address; its advertised
+   name is only a hint, and authenticated credential exchange is still required
+   before updating the saved address. Further failures are shown for Select retry.
+
+No new pairing code is required, and the camera still rotates its Wi-Fi password
+on every reboot. Opening the app intentionally joins the configured camera AP;
+an unrelated existing Wi-Fi connection is never reused as a shortcut.
+
+Measured on the attached devices: frozen photo to live frame **262 ms**, cached
+app startup **3.7 seconds**, and camera-reboot recovery **13.4-14.4 seconds**
+(including the stale-password attempt and authenticated BLE exchange, with no
+scan). Deliberately invalidating the saved BLE address recovered through discovery
+in about **17.4 seconds**. These are observed timings, not guaranteed deadlines.
+Full-resolution capture/SD-save time is unchanged.
 
 ### Agent deployment checklist (macOS)
 
@@ -368,6 +402,26 @@ connection alone is not a passing result; check the probe's explicit PASS lines.
 `tests/ble_reconnect_probe.py` executes the installed app through the normal
 Badgeware run loop after a camera restart, verifies the pairing key is unchanged,
 the Wi-Fi password is refreshed, and live frames continue for ten seconds.
+`tests/connection_hardware_probe.py` measures the fast paths and counts BLE
+provisioning, scans, and Wi-Fi associations. Its default `cached` scenario takes
+two actual SD photos and checks photo/gallery resume without reconnecting.
+Run that scenario while the camera's cached password is still current:
+
+```sh
+mpremote connect <badge-port> run esp32-cam/tests/connection_hardware_probe.py
+# Restart only the camera, then exercise cached-password failure and direct BLE:
+mpremote connect <badge-port> exec 'CONNECTION_SCENARIO="reboot"' + \
+  run esp32-cam/tests/connection_hardware_probe.py
+# Use a disposable config with an invalid BLE address to verify discovery:
+mpremote connect <badge-port> exec 'CONNECTION_SCENARIO="address"' + \
+  run esp32-cam/tests/connection_hardware_probe.py
+```
+
+The address scenario preserves the real config and removes its private
+`/camera-speed-config.json` in cleanup. If interrupted by a native reset, remove
+that specific temporary file after recovery. These probes enable an eight-second
+watchdog; let the badge reset between runs or hard-reset it explicitly.
+Optional `TRACE_CONNECTION=True` logs connection/service events, not credentials.
 `tests/real_hardware_probe.py` accepts an optional `CAMERA_WATCHDOG` object;
 probes using a watchdog will reboot once feeding stops.
 `tests/ble_host_probe.py` tests the actual BLE GATT protocol from a Mac with

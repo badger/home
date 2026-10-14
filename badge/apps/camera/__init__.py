@@ -36,6 +36,9 @@ class CameraApp:
         self.gallery_index = 0
         self.next_preview = 0
         self.connecting_since = None
+        self.cached_wifi = False
+        self.resume_pending = False
+        self.camera_verified = False
         self.wlan = network.WLAN(network.STA_IF)
         self.was_active = self.wlan.active()
         try:
@@ -85,25 +88,36 @@ class CameraApp:
         self.detail = detail
         print("Camera:", message, detail)
 
-    def connect(self):
+    def connect(self, refresh=False):
         if self.config is None:
             self.error("Install camera_config.json", "See esp32-cam/README.md")
             return
         if self.provisioner:
             self.provisioner.close()
             self.provisioner = None
-        if self.config.get("pairing"):
+        self.cancel_request()
+        self.camera_verified = False
+        self.resume_pending = False
+        cached = (isinstance(self.config.get("ssid"), str) and self.config["ssid"]
+                  and isinstance(self.config.get("password"), str) and self.config["password"])
+        if self.config.get("pairing") and (refresh or not cached):
+            self.cached_wifi = False
             from camera_ble import Provisioner
             self.wlan.disconnect()
             self.wlan.active(False)
             self.provisioner = Provisioner(self.config, self.config_path)
             self.mode = "PAIRING"
-            self.message = "Looking for BLE cameras..."
+            self.message = self.provisioner.message
             self.detail = "First pairing: code on camera SD/USB"
             return
-        self.connect_wifi()
+        try:
+            self.connect_wifi(cached=bool(self.config.get("pairing")))
+        except OSError as error:
+            if not self.recover_connection(error):
+                raise
 
-    def connect_wifi(self):
+    def connect_wifi(self, cached=False):
+        self.cached_wifi = cached
         self.mode = "CONNECTING"
         self.message = "Connecting to camera..."
         self.detail = "Camera needs separate USB power"
@@ -112,12 +126,37 @@ class CameraApp:
         self.wlan.connect(self.config["ssid"], self.config["password"])
         self.connecting_since = time.ticks_ms()
 
+    def resume_preview(self):
+        if self.camera_verified and self.wlan.isconnected() and not self.pending:
+            self.cancel_request()
+            self.mode = "LIVE"
+            self.message = "LIVE"
+            self.detail = "Select: photo   Up/down: gallery"
+            self.resume_pending = True
+            self.next_preview = time.ticks_ms()
+        else:
+            self.connect()
+
+    def recover_connection(self, error):
+        if self.cached_wifi or self.resume_pending:
+            print("Camera: connection refresh needed:", error)
+            try:
+                self.connect(refresh=True)
+            except (OSError, ValueError, CameraError) as refresh_error:
+                self.error("Camera reconnect failed", str(refresh_error))
+            return True
+        return False
+
     def start_request(self, operation, path, method="GET", limit=65536):
         self.operation = operation
+        timeout = 30000 if operation == "capture" else 12000
+        if operation in ("status", "preview") and (self.cached_wifi or self.resume_pending):
+            timeout = 3000
         self.request = Request(self.config["host"], self.config["port"], path,
-                               method, limit, 30000 if operation == "capture" else 12000)
+                               method, limit, timeout)
 
     def take_photo(self):
+        self.resume_pending = False
         if not self.pending:
             photo_id = binascii.hexlify(os.urandom(8)).decode()
             self.store.begin(photo_id)
@@ -183,6 +222,8 @@ class CameraApp:
                 raise CameraError("Incompatible camera firmware")
             if not status.get("camera"):
                 raise CameraError(status.get("error") or "Camera sensor not detected")
+            self.cached_wifi = False
+            self.camera_verified = True
             if self.pending:
                 self.take_photo()
             else:
@@ -193,6 +234,7 @@ class CameraApp:
                     self.detail = "SD missing - preview only"
         elif operation == "preview":
             self.set_frame(data)
+            self.resume_pending = False
             self.next_preview = time.ticks_ms() + 100
         elif operation == "capture":
             result = json.loads(data)
@@ -263,12 +305,16 @@ class CameraApp:
                         self.take_photo()
                     elif self.mode in ("FROZEN", "GALLERY", "ERROR"):
                         self.frame = None
-                        self.connect()
+                        if self.mode == "ERROR":
+                            self.connect()
+                        else:
+                            self.resume_preview()
             if self.mode == "CONNECTING" and self.request is None:
                 if self.wlan.isconnected():
                     self.start_request("status", "/status", limit=2048)
-                elif time.ticks_diff(time.ticks_ms(), self.connecting_since) > 15000:
-                    self.error("Camera Wi-Fi not found", "Power camera; Select retries")
+                elif time.ticks_diff(time.ticks_ms(), self.connecting_since) > (4000 if self.cached_wifi else 15000):
+                    if not self.recover_connection("Saved Wi-Fi credentials unavailable"):
+                        self.error("Camera Wi-Fi not found", "Power camera; Select retries")
             if self.request:
                 data = self.request.step()
                 if data is not None:
@@ -278,7 +324,8 @@ class CameraApp:
                     self.start_request("preview", "/preview")
         except (OSError, ValueError, KeyError, TypeError, MemoryError, CameraError) as error:
             sys.print_exception(error)
-            self.error(str(error), "Select retries same photo" if self.pending else "Select to reconnect")
+            if not isinstance(error, (OSError, CameraError)) or not self.recover_connection(error):
+                self.error(str(error), "Select retries same photo" if self.pending else "Select to reconnect")
         self.draw()
 
     def draw(self):
