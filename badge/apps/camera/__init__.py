@@ -4,6 +4,7 @@ import binascii
 import json
 import network
 import os
+import sys
 import time
 
 from camera_core import CameraError, MAX_THUMB, PhotoStore, Request, jpeg_dimensions, jpeg_rotation
@@ -27,6 +28,10 @@ class CameraApp:
         self.detail = ""
         self.store = None
         self.config = None
+        self.config_path = config_path
+        self.provisioner = None
+        self.code_digits = [0] * 6
+        self.code_cursor = 0
         self.pending = None
         self.gallery_index = 0
         self.next_preview = 0
@@ -37,12 +42,17 @@ class CameraApp:
             self.store = PhotoStore(cache_path)
             self.rotation = self.store.rotation()
             self.pending = self.store.pending()
-            with open(config_path) as file:
-                self.config = json.load(file)
-            if not isinstance(self.config.get("ssid"), str) or not self.config["ssid"]:
-                raise CameraError("Missing camera SSID")
-            if not isinstance(self.config.get("password"), str):
-                raise CameraError("Missing camera password")
+            try:
+                with open(config_path) as file:
+                    self.config = json.load(file)
+            except OSError as error:
+                if error.args[0] != 2:
+                    raise
+                self.config = {}
+            if not isinstance(self.config, dict):
+                raise CameraError("Invalid camera config")
+            if not self.config.get("ssid") or self.config.get("pairing"):
+                self.config["pairing"] = "srp-v1"
             # This private AP protocol uses an IPv4 literal: never block on DNS.
             host = self.config.get("host", "192.168.4.1")
             parts = host.split(".")
@@ -66,15 +76,34 @@ class CameraApp:
 
     def error(self, message, detail="Select to retry"):
         self.cancel_request()
+        if self.provisioner:
+            self.config = self.provisioner.config
+            self.provisioner.close()
+            self.provisioner = None
         self.mode = "ERROR"
         self.message = message
         self.detail = detail
         print("Camera:", message, detail)
 
     def connect(self):
-        if not self.config:
+        if self.config is None:
             self.error("Install camera_config.json", "See esp32-cam/README.md")
             return
+        if self.provisioner:
+            self.provisioner.close()
+            self.provisioner = None
+        if self.config.get("pairing"):
+            from camera_ble import Provisioner
+            self.wlan.disconnect()
+            self.wlan.active(False)
+            self.provisioner = Provisioner(self.config, self.config_path)
+            self.mode = "PAIRING"
+            self.message = "Looking for BLE cameras..."
+            self.detail = "First pairing: code on camera SD/USB"
+            return
+        self.connect_wifi()
+
+    def connect_wifi(self):
         self.mode = "CONNECTING"
         self.message = "Connecting to camera..."
         self.detail = "Camera needs separate USB power"
@@ -148,6 +177,8 @@ class CameraApp:
         self.request = None
         if operation == "status":
             status = json.loads(data)
+            if self.config.get("camera_id") and status.get("camera_id") != self.config["camera_id"]:
+                raise CameraError("Wrong Wi-Fi camera identity")
             if status.get("protocol") != 1:
                 raise CameraError("Incompatible camera firmware")
             if not status.get("camera"):
@@ -183,7 +214,41 @@ class CameraApp:
         try:
             if badge.pressed(BUTTON_BACK):
                 return False
-            if self.mode != "CAPTURING":
+            if self.mode == "PAIRING":
+                pairing = self.provisioner
+                if pairing.state == "CHOOSE":
+                    if badge.pressed(BUTTON_UP):
+                        pairing.choice = (pairing.choice - 1) % len(pairing.cameras)
+                    elif badge.pressed(BUTTON_DOWN):
+                        pairing.choice = (pairing.choice + 1) % len(pairing.cameras)
+                    elif badge.pressed(BUTTON_SELECT):
+                        pairing.choose()
+                elif pairing.state == "CODE":
+                    if badge.pressed(BUTTON_LEFT):
+                        self.code_cursor = (self.code_cursor - 1) % 6
+                    elif badge.pressed(BUTTON_RIGHT):
+                        self.code_cursor = (self.code_cursor + 1) % 6
+                    elif badge.pressed(BUTTON_UP):
+                        self.code_digits[self.code_cursor] = (self.code_digits[self.code_cursor] + 1) % 10
+                    elif badge.pressed(BUTTON_DOWN):
+                        self.code_digits[self.code_cursor] = (self.code_digits[self.code_cursor] - 1) % 10
+                    elif badge.pressed(BUTTON_SELECT):
+                        pairing.code("".join(str(digit) for digit in self.code_digits))
+                elif pairing.state == "SCANNING" and badge.pressed(BUTTON_UP):
+                    pairing.close()
+                    self.provisioner = None
+                    self.show_gallery(-1)
+                    if self.mode != "GALLERY":
+                        self.connect()
+                if self.provisioner:
+                    config = pairing.step()
+                    self.message = pairing.message
+                    if config:
+                        self.config = config
+                        pairing.close()
+                        self.provisioner = None
+                        self.connect_wifi()
+            elif self.mode != "CAPTURING":
                 if self.mode in ("LIVE", "FROZEN", "GALLERY") and badge.pressed(BUTTON_LEFT):
                     self.rotate(-1)
                 elif self.mode in ("LIVE", "FROZEN", "GALLERY") and badge.pressed(BUTTON_RIGHT):
@@ -212,6 +277,7 @@ class CameraApp:
                 if time.ticks_diff(time.ticks_ms(), self.next_preview) >= 0:
                     self.start_request("preview", "/preview")
         except (OSError, ValueError, KeyError, TypeError, MemoryError, CameraError) as error:
+            sys.print_exception(error)
             self.error(str(error), "Select retries same photo" if self.pending else "Select to reconnect")
         self.draw()
 
@@ -228,6 +294,18 @@ class CameraApp:
         screen.font = font.nope
         screen.text(self.message[:46], 5, 5)
         screen.text(self.detail[:48], 5, 224)
+        if self.mode == "PAIRING" and self.provisioner:
+            pairing = self.provisioner
+            if pairing.state == "CHOOSE":
+                screen.text(pairing.camera_name(), 12, 90)
+                screen.text("Up/down: choose  Select: pair", 12, 115)
+            elif pairing.state == "CODE":
+                screen.text("Code from camera PAIRING.TXT", 12, 70)
+                screen.text("or its USB serial output", 12, 90)
+                for index, digit in enumerate(self.code_digits):
+                    screen.text(str(digit), 75 + 28 * index, 120)
+                screen.text("^", 75 + 28 * self.code_cursor, 135)
+                screen.text("Arrows: edit   Select: confirm", 12, 165)
         if self.mode in ("CONNECTING", "ERROR", "CAPTURING"):
             screen.pen = color.rgb(0, 0, 0, 220)
             screen.rectangle(8, 75, 304, 80)
@@ -247,6 +325,8 @@ class CameraApp:
 
     def close(self):
         self.cancel_request()
+        if self.provisioner:
+            self.provisioner.close()
         self.wlan.disconnect()
         if not self.was_active:
             self.wlan.active(False)

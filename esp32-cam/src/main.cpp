@@ -4,7 +4,7 @@
 #include <SD_MMC.h>
 #include <esp_camera.h>
 #include <img_converters.h>
-#include <camera_config.h>
+#include "pairing.h"
 
 // AI Thinker / diymore ESP32-CAM with OV2640, not ESP32-S3 USB cameras.
 static WebServer server(80);
@@ -263,7 +263,11 @@ void setup() {
     sdReady = mountCard();
     WiFi.mode(WIFI_AP);
     WiFi.setSleep(false);
-    if (!WiFi.softAP(CAMERA_SSID, CAMERA_PASSWORD, 6, false, 1)) {
+    if (!setupPairing(sdReady)) {
+        Serial.println("BLE pairing initialization failed");
+        return;
+    }
+    if (!WiFi.softAP(cameraSSID().c_str(), cameraPassword().c_str(), 6, false, 1)) {
         Serial.println("Wi-Fi AP initialization failed");
         return;
     }
@@ -272,6 +276,7 @@ void setup() {
             String("{\"protocol\":1,\"camera\":") + (cameraReady ? "true" : "false") +
             ",\"sd\":" + (sdReady ? "true" : "false") +
             ",\"error\":\"" + cameraError + "\"" +
+            ",\"camera_id\":\"" + cameraIdentity() + "\"" +
             ",\"sensor\":\"OV2640\",\"width\":1600,\"height\":1200}");
     });
     server.on("/preview", HTTP_GET, preview);
@@ -286,6 +291,7 @@ void setup() {
 }
 
 void loop() {
+    pollPairing();
     server.handleClient();
     delay(2);
 }

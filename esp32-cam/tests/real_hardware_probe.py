@@ -10,6 +10,7 @@ sys.path.insert(0, "/system/apps/camera")
 from camera_core import Request, jpeg_rotation
 
 real_badge = badge
+watchdog = globals().get("CAMERA_WATCHDOG")
 
 
 class Buttons:
@@ -31,6 +32,8 @@ app = namespace["CameraApp"]()
 
 
 def tick():
+    if watchdog:
+        watchdog.feed()
     app.update()
     display.update()
     time.sleep_ms(5)
@@ -56,6 +59,8 @@ def press(key):
 def fetch(path, method="GET", limit=2 * 1024 * 1024):
     request = Request(app.config["host"], app.config["port"], path, method, limit, 30000)
     while True:
+        if watchdog:
+            watchdog.feed()
         data = request.step()
         if data is not None:
             return data

@@ -1,1 +1,4 @@
 Pillow>=11,<13
+cryptography>=44,<47
+srptools==1.0.1
+bleak>=0.22,<3
