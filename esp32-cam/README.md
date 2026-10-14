@@ -79,6 +79,10 @@ Open **Camera** from the badge launcher:
 
 - **Select** in the live view captures an OV2640 maximum-resolution
   **1600 x 1200 JPEG** onto the camera's SD card.
+  The white GPIO4 flash LED lights only while acquiring a new full-resolution
+  shot, including exposure-settling frames, and turns off before SD saving.
+  Live preview, gallery browsing, and retries of an already-saved shot do not
+  turn it on. Failed frame acquisition also turns it off before returning an error.
 - The displayed image then freezes on a thumbnail decoded from that
   **saved JPEG**, not a later live frame.
 - **Select** again returns to the live view.

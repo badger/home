@@ -13,6 +13,7 @@ static bool sdReady = false;
 static String cameraError;
 static constexpr size_t MAX_JPEG = 2 * 1024 * 1024;
 static constexpr size_t MAX_THUMB = 32768;
+static constexpr int FLASH_LED_PIN = 4;
 
 static void fail(int status, const String &message) {
     Serial.println(message);
@@ -156,7 +157,13 @@ static void capture() {
     String path = photoPath(id, ".jpg");
     // Retrying a lost response with the same ID must not take a second photo.
     if (!SD_MMC.exists(path)) {
+        digitalWrite(FLASH_LED_PIN, HIGH);
+        uint32_t flashStarted = millis();
+        // Discard frames under illumination so exposure can settle before the shot.
         camera_fb_t *frame = freshFrame(FRAMESIZE_UXGA, 10, 3);
+        digitalWrite(FLASH_LED_PIN, LOW);
+        Serial.printf("Capture flash off after %lu ms\n",
+                      static_cast<unsigned long>(millis() - flashStarted));
         bool ok = frame && frame->format == PIXFORMAT_JPEG &&
                   frame->width == 1600 && frame->height == 1200 &&
                   frame->len + 36 <= MAX_JPEG && isUXGA(frame->buf, frame->len);
@@ -257,8 +264,8 @@ static void setupCamera() {
 
 void setup() {
     Serial.begin(115200);
-    pinMode(4, OUTPUT);
-    digitalWrite(4, LOW);
+    pinMode(FLASH_LED_PIN, OUTPUT);
+    digitalWrite(FLASH_LED_PIN, LOW);
     setupCamera();
     sdReady = mountCard();
     WiFi.mode(WIFI_AP);

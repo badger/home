@@ -4,6 +4,8 @@ Live Wi-Fi viewfinder and shutter for a diymore ESP32-CAM with OV2640.
 Select takes a full-resolution photo on the camera SD card and freezes its
 preview; Select again resumes live view. Up/Down browses the last 15 compact
 photo copies stored on the badge.
+The camera's white flash LED illuminates new full-resolution captures only;
+it stays off during live preview and review.
 Left/Right changes rotation in 90-degree steps; the setting persists and new
 SD photos carry matching EXIF orientation metadata.
 
