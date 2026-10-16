@@ -499,6 +499,12 @@ def resolve_asset(asset: str, app_dir: Path, repo_root: Path) -> Path | None:
     return app_dir / asset
 
 
+def excluded_from_scan(relative: Path) -> bool:
+    return any(
+        part.startswith(".") or part == "__pycache__" for part in relative.parts
+    )
+
+
 def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> list[Issue]:
     issues: list[Issue] = []
     if not app_dir.is_dir():
@@ -508,9 +514,10 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
     if not APP_NAME_RE.fullmatch(app_dir.name):
         issues.append(
             Issue(
-                "ERROR",
-                "App directory must start with a lowercase letter and contain only "
-                "lowercase letters, numbers, hyphens, or underscores.",
+                "WARNING",
+                "For new apps, start the directory name with a lowercase letter "
+                "and use only lowercase letters, numbers, hyphens, or underscores. "
+                "Existing app names do not need to change.",
                 app_dir,
             )
         )
@@ -549,7 +556,9 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
 
     parsed: dict[Path, AppVisitor] = {}
     for python_file in sorted(app_dir.rglob("*.py")):
-        if python_file.is_symlink():
+        if python_file.is_symlink() or excluded_from_scan(
+            python_file.relative_to(app_dir)
+        ):
             continue
         _, visitor = parse_python(python_file, issues)
         if visitor is not None:
@@ -711,7 +720,7 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
     estimated_bytes = 0
     image_count = 0
     for png in sorted(app_dir.rglob("*.png")):
-        if png.is_symlink():
+        if png.is_symlink() or excluded_from_scan(png.relative_to(app_dir)):
             continue
         try:
             width, height, _, color_type = png_info(png)

@@ -83,6 +83,44 @@ class SkillScriptTests(unittest.TestCase):
             self.assertNotIn("from badgeware import", source)
             self.assertNotIn('if __name__ == "__main__"', source)
 
+    def test_scaffold_rejects_digit_leading_names(self):
+        with tempfile.TemporaryDirectory() as temp:
+            apps = Path(temp)
+            with self.assertRaises(ValueError):
+                scaffold_app.scaffold(
+                    "30_minutes_to_alpha_centauri", "Alpha Centauri", apps
+                )
+            self.assertFalse(any(apps.iterdir()))
+
+    def test_deploy_accepts_existing_digit_leading_app_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            app_dir = root / "badge" / "apps" / "30_minutes_to_alpha_centauri"
+            app_dir.mkdir(parents=True)
+            (app_dir / "__init__.py").write_text(
+                "def update():\n    pass\n\nrun(update)\n", encoding="utf-8"
+            )
+            issues = validate_app.validate_app(app_dir, root)
+            self.assertFalse([issue for issue in issues if issue.severity == "ERROR"])
+            mount = root / "BADGER"
+            destination = mount / "apps" / app_dir.name
+            destination.mkdir(parents=True)
+            (destination / "old.txt").write_text("old", encoding="utf-8")
+
+            with redirect_stdout(io.StringIO()):
+                deployed = deploy_app.deploy(app_dir, mount, True, True, root)
+
+            self.assertEqual(deployed, destination)
+            self.assertEqual(
+                (destination / "__init__.py").read_bytes(),
+                (app_dir / "__init__.py").read_bytes(),
+            )
+            self.assertFalse((destination / "old.txt").exists())
+            self.assertEqual(
+                len(list((mount / ".badge-app-backups").glob(f"{app_dir.name}-*"))),
+                1,
+            )
+
     def test_scaffold_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
             apps = Path(temp)
@@ -355,6 +393,66 @@ class SkillScriptTests(unittest.TestCase):
             self.assertFalse(destination.exists())
             self.assertNotIn("WARNING:", output.getvalue())
             self.assertNotIn("Missing icon.png", output.getvalue())
+
+    def test_deploy_ignores_hidden_and_cached_python_and_png_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            app_dir = scaffold_app.scaffold(
+                "demo", "Demo", root / "badge" / "apps"
+            )
+            excluded = [
+                "._helper.py",
+                "._picture.png",
+                "assets/._helper.py",
+                "assets/._picture.png",
+                ".hidden/helper.py",
+                ".hidden/picture.png",
+                "assets/.hidden/helper.py",
+                "assets/.hidden/picture.png",
+                "__pycache__/helper.py",
+                "__pycache__/picture.png",
+                "assets/__pycache__/helper.py",
+                "assets/__pycache__/picture.png",
+            ]
+            for relative in excluded:
+                path = app_dir / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"\x00not valid Python or PNG")
+
+            issues = validate_app.validate_app(app_dir, root)
+            self.assertFalse([issue for issue in issues if issue.severity == "ERROR"])
+            mount = root / "BADGER"
+            (mount / "apps").mkdir(parents=True)
+            with redirect_stdout(io.StringIO()):
+                destination = deploy_app.deploy(app_dir, mount, True, False, root)
+
+            self.assertEqual(
+                sorted(
+                    path.relative_to(destination).as_posix()
+                    for path in destination.rglob("*")
+                    if path.is_file()
+                ),
+                ["__init__.py", "icon.png"],
+            )
+
+    def test_validator_still_checks_visible_python_and_png_files(self):
+        for relative in ("assets/helper.py", "assets/picture.png"):
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                app_dir = scaffold_app.scaffold(
+                    "demo", "Demo", root / "badge" / "apps"
+                )
+                path = app_dir / relative
+                path.write_bytes(b"\x00not valid Python or PNG")
+
+                issues = validate_app.validate_app(app_dir, root)
+
+                self.assertTrue(
+                    any(
+                        issue.severity == "ERROR" and issue.path == path
+                        for issue in issues
+                    )
+                )
 
     def test_deploy_rejects_secrets_hidden_files_and_bytecode(self):
         with tempfile.TemporaryDirectory() as temp:
