@@ -67,6 +67,14 @@ the RP2350 GPIO map and onboard peripheral connections. See the
 [USB serial and MicroPython REPL guide](./hardware/USB_SERIAL.md) to inspect a
 connected badge and copy files or apps.
 
+## Skills for building 2026 apps
+
+Two HYB26 skills in `.github/` help you build apps for the GitHub Universe 2026 badge.
+Use the [Mac edition](./.github/hyb26-skill-mac/SKILL.md) on macOS.
+Use the [Windows edition](./.github/hyb26-skill-windows/SKILL.md) on Windows.
+Both editions help you create, check, debug, and copy apps to your badge.
+Each skill includes setup instructions, examples, and tools to get started.
+
 ## Creating a 2026 app
 
 Apps are directories under `badge/apps/`:
