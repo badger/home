@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 badge/.badge_state/**
+badge25/.badge_state/**

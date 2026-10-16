@@ -52,9 +52,15 @@ try:
                                   ("/agents", "&copilot=w"), ("/usage", "$AIC: 1.2")):
             assert protocol.handle("POST", endpoint, headers, payload.encode(), now)[0] == 200
         assert protocol.live(now)
-        server = Server(protocol, port=8086, discovery_port=4668)
+        server = Server(protocol, port=8086, discovery_port=4668, host="127.0.0.1")
         try:
+            assert server.udp is None
+            protocol.open_pairing(now)
             server.step(now)
+            assert server.udp is not None
+            protocol.pairing_code = None
+            server.step(now)
+            assert server.udp is None
         finally:
             server.close()
         protocol.expire(time.ticks_add(now, 15000))

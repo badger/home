@@ -161,6 +161,15 @@ class NetworkTests(unittest.TestCase):
 
     request = ProtocolTests.request
 
+    def complete(self, request):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(request)
+            deadline = time.monotonic() + 3
+            while not future.done() and time.monotonic() < deadline:
+                self.server.step(self.clock.now)
+                time.sleep(0.001)
+            return future.result(timeout=1)
+
     def exchange(self, method, path, body="", auth=True):
         def request():
             headers = {"Authorization": "Bearer " + self.token} if auth else {}
@@ -174,13 +183,7 @@ class NetworkTests(unittest.TestCase):
             with response:
                 return response.status, json.loads(response.read())
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(request)
-            deadline = time.monotonic() + 3
-            while not future.done() and time.monotonic() < deadline:
-                self.server.step(self.clock.now)
-                time.sleep(0.001)
-            return future.result(timeout=1)
+        return self.complete(request)
 
     def test_real_http_supports_the_daemon_request_sequence(self):
         status, value = self.exchange("GET", "/status")
@@ -195,16 +198,75 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(self.exchange("GET", "/status", auth=False)[0], 401)
 
     def test_real_udp_discovery_uses_upstream_service_and_version(self):
+        self.protocol.open_pairing(self.clock.now)
+        self.server.step(self.clock.now)
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.addCleanup(udp.close)
         udp.settimeout(1)
-        udp.sendto(monitor.DISCOVER, self.server.udp.getsockname())
-        self.server.step(self.clock.now)
-        value = json.loads(udp.recv(512))
+        def request():
+            udp.sendto(monitor.DISCOVER, ("127.0.0.1", self.server.udp.getsockname()[1]))
+            return json.loads(udp.recv(512))
+
+        value = self.complete(request)
         self.assertEqual(value["service"], "esp32-agent-companion")
         self.assertEqual(value["protocol"], 1)
         self.assertEqual(value["deviceId"], self.protocol.device_id)
         self.assertEqual(value["port"], self.server.port)
+
+    def test_http_listener_requires_a_specific_interface(self):
+        self.assertEqual(self.server.listener.getsockname()[0], "127.0.0.1")
+        for host in (None, "", "0.0.0.0"):
+            with self.subTest(host=host), patch.object(monitor.socket, "socket") as factory:
+                with self.assertRaisesRegex(ValueError, "specific network address"):
+                    monitor.Server(self.protocol, host=host)
+                factory.assert_not_called()
+
+    def test_discovery_socket_exists_only_during_the_pairing_window(self):
+        self.assertIsNone(self.server.udp)
+        self.protocol.open_pairing(self.clock.now)
+        self.server.step(self.clock.now)
+        udp = self.server.udp
+        self.assertEqual(udp.getsockname()[0], "0.0.0.0")
+        self.clock.advance(59999)
+        self.server.step(self.clock.now)
+        self.assertIs(self.server.udp, udp)
+        self.clock.advance(1)
+        self.server.step(self.clock.now)
+        self.assertIsNone(self.server.udp)
+        self.assertEqual(udp.fileno(), -1)
+        self.assertEqual(self.exchange("GET", "/status")[0], 200)
+        self.protocol.open_pairing(self.clock.now)
+        self.server.step(self.clock.now)
+        udp = self.server.udp
+        self.protocol.pairing_code = None
+        self.server.step(self.clock.now)
+        self.assertIsNone(self.server.udp)
+        self.assertEqual(udp.fileno(), -1)
+
+    def test_pairing_success_and_lockout_close_discovery_without_closing_http(self):
+        for success in (True, False):
+            with self.subTest(success=success):
+                self.protocol.open_pairing(self.clock.now)
+                self.server.step(self.clock.now)
+                udp = self.server.udp
+                code = self.protocol.pairing_code
+                for _ in range(1 if success else 5):
+                    self.assertEqual(self.exchange("POST", "/pair",
+                                                  code if success else "incorrect", auth=False)[0],
+                                     200 if success else 403)
+                self.assertIsNone(self.server.udp)
+                self.assertEqual(udp.fileno(), -1)
+                self.assertEqual(self.exchange("GET", "/status")[0], 200)
+
+    def test_discovery_closes_at_expiry_across_ticks_rollover(self):
+        self.clock.now = test_copilot.PERIOD - 1000
+        self.protocol.open_pairing(self.clock.now)
+        self.server.step(self.clock.now)
+        udp = self.server.udp
+        self.clock.advance(60000)
+        self.server.step(self.clock.now)
+        self.assertIsNone(self.server.udp)
+        self.assertEqual(udp.fileno(), -1)
 
     def test_fragmented_http_and_partial_responses(self):
         first = b"POST /state HTTP/1.1\r\nAuthorization: Bearer " + self.token.encode()
@@ -396,11 +458,40 @@ class WifiTests(unittest.TestCase):
             client = self.create({})
             client.step(self.clock.now)
             self.assertTrue(client.server)
-            server.assert_called_once_with(client.protocol, 80)
+            server.assert_called_once_with(client.protocol, 80, host="192.0.2.10")
             client.close()
         self.wlan.disconnect.assert_not_called()
         self.wlan.active.assert_any_call(True)
         self.assertNotIn((False,), [call.args for call in self.wlan.active.call_args_list])
+
+    def test_address_change_rebinds_http_and_requests_full_resync(self):
+        self.wlan.active.return_value = True
+        self.wlan.isconnected.return_value = True
+        self.wlan.ifconfig.return_value = ("192.0.2.10", "", "", "")
+        with patch.object(monitor, "Server") as factory:
+            client = self.create({})
+            client.step(self.clock.now)
+            old = client.server
+            client.protocol.state = "working"
+            client.protocol.last_state = client.protocol.last_seen = self.clock.now
+            boot = client.protocol.boot
+            self.wlan.ifconfig.return_value = ("192.0.2.11", "", "", "")
+            client.step(self.clock.now)
+            old.close.assert_called_once()
+            self.assertEqual(factory.call_count, 2)
+            factory.assert_called_with(client.protocol, 80, host="192.0.2.11")
+            self.assertEqual(client.protocol.state, "idle")
+            self.assertNotEqual(client.protocol.boot, boot)
+
+    def test_invalid_wifi_address_is_reported_without_falling_back_to_all_interfaces(self):
+        self.wlan.isconnected.return_value = True
+        self.wlan.ifconfig.return_value = ("0.0.0.0", "", "", "")
+        with patch.object(monitor.socket, "socket") as factory:
+            client = self.create({})
+            client.step(self.clock.now)
+            factory.assert_not_called()
+        self.assertIsNone(client.server)
+        self.assertEqual(client.error, "Network error; Select retries")
 
     def test_disconnect_closes_sockets_and_reconnect_requests_full_resync(self):
         self.wlan.active.return_value = True

@@ -77,8 +77,12 @@ only when the animation frame changes, not on every display refresh.
    Agent enablement, usage visibility, and usage windows remain settings in
    Agent Buddy. No separate bridge or badge-specific daemon is needed.
 
-Pairing requires physical access to the badge, expires after 60 seconds, and
-locks after five incorrect attempts. The token and device ID persist privately
+UDP broadcast discovery listens on `0.0.0.0` **only during the 60-second pairing
+window opened with Up**. Its socket closes on expiry, cancellation, successful
+pairing, or five incorrect attempts. The HTTP listener binds only to the badge's
+current Wi-Fi address and remains available for authenticated monitoring.
+
+Pairing requires physical access to the badge. The token and device ID persist privately
 in **`/state/copilot_pairing.json`**; the daemon stores its side of the pairing
 using its existing configuration. Restarting the app does not require pairing
 again. Pairing/storage errors are reported instead of silently replacing keys.
@@ -95,6 +99,10 @@ settings, sound, or captive-portal Wi-Fi setup. It identifies itself as
 The UI explicitly shows configuration, pairing, and connection states. It
 switches to live display only after receiving an authenticated state packet.
 The daemon's regular authenticated status probes keep long-running work alive.
+The daemon remembers the paired address, so normal reconnects do not require
+discovery. If DHCP changes the badge's address, its HTTP listener rebinds and
+invalidates stale session state. Press Up to temporarily enable discovery so
+the daemon can find the new address; existing pairing tokens remain valid.
 After 15 seconds without daemon contact, or if Wi-Fi drops, stale work,
 indicators, and usage are no longer shown as live. A changed boot epoch causes
 the existing daemon to resynchronize its full state on reconnect.

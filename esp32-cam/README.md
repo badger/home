@@ -58,7 +58,6 @@ esp32-cam/
   src/flash_led.h           Dim pairing indicator and full-brightness capture priority
   platformio.ini           Pinned AI Thinker ESP32-CAM build target
   requirements.txt         Host build-tool versions
-  provision.py             Legacy Wi-Fi-only provisioning (unused by BLE builds)
   build.py                 Build and package complete flashable firmware
   flash.py                 Check and flash a selected camera, optional backup
   ESP32BadgeCam.3mf         Multi-color clip-on case model for attaching to the badge
@@ -150,8 +149,10 @@ The [firmware directory guide](firmware/README.md) explains all generated files.
 
 The same new binary can be installed on multiple cameras. Each generates its
 own identity-based SSID, first-use proximity enrollment token, and random Wi-Fi password at
-runtime. The older `provision.py` and ignored `local/` files are retained only
-for rollback to the Wi-Fi-only baseline; BLE builds do not read them.
+runtime. The obsolete host-side `provision.py` password generator has been
+removed; Wi-Fi-only rollback tooling remains available in baseline commit
+`7032183`. Existing private `local/` files remain git-ignored and are not read
+by BLE builds.
 
 Before replacing firmware, back up the camera's flash. Substitute the
 **camera's CH340 port**, not the badge port:

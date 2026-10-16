@@ -271,8 +271,11 @@ class Peer:
 
 
 class Server:
-    def __init__(self, protocol, port=80, discovery_port=4666, host="0.0.0.0"):
+    def __init__(self, protocol, port=80, discovery_port=4666, host=None):
+        if not isinstance(host, str) or not host or host == "0.0.0.0":
+            raise ValueError("A specific network address is required")
         self.protocol = protocol
+        self.discovery_port = discovery_port
         self.clients = []
         self.listener = self.udp = None
         try:
@@ -282,12 +285,20 @@ class Server:
             self.listener.listen(3)
             self.listener.setblocking(False)
             self.port = port if port else self.listener.getsockname()[1]
-            self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.udp.bind((host, discovery_port))
-            self.udp.setblocking(False)
         except OSError:
             self.close()
             raise
+
+    def update_discovery(self, now):
+        if self.protocol.pairing(now):
+            if self.udp is None:
+                self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                # Broadcast reception needs a wildcard bind, only during physical pairing.
+                self.udp.bind(("0.0.0.0", self.discovery_port))
+                self.udp.setblocking(False)
+        elif self.udp is not None:
+            self.udp.close()
+            self.udp = None
 
     def step(self, now):
         self.protocol.expire(now)
@@ -310,6 +321,9 @@ class Server:
             if not client.step(self.protocol, now):
                 client.close()
                 self.clients.remove(client)
+        self.update_discovery(now)
+        if self.udp is None:
+            return
         for _ in range(2):
             try:
                 data, address = self.udp.recvfrom(64)
@@ -428,13 +442,18 @@ class Monitor:
                     self.message = "Waiting for badge Wi-Fi"
                 return
             self.joining_since = None
-            self.address = self.wlan.ifconfig()[0]
+            address = self.wlan.ifconfig()[0]
+            if self.server is not None and address != self.address:
+                self.server.close()
+                self.server = None
+                self.protocol.invalidate()
+            self.address = address
             if self.server is None:
-                self.server = Server(self.protocol, self.config.get("port", 80))
+                self.server = Server(self.protocol, self.config.get("port", 80), host=self.address)
             self.server.step(now)
             self.message = ("Live session monitor" if self.protocol.live(now) else
                             "Waiting for Agent Buddy" if self.protocol.token else "Up: pair Agent Buddy")
-        except OSError as error:
+        except (OSError, ValueError) as error:
             self.fail("Network error; Select retries", error)
 
     def live(self, now):
