@@ -85,6 +85,7 @@ class CopilotApp:
                     self.monitor.protocol.pairing_code = None
                 else:
                     self.demo = False
+                    self.remote_mode = None
                     self.monitor.open_pairing(now)
             elif down:
                 if self.monitor.protocol:

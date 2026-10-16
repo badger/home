@@ -88,6 +88,8 @@ wlan = None
 _hw_rtc = None
 time_valid = False    # do we have a real time to display?
 ntp_synced = False    # has an NTP sync completed at least once?
+NTP_RETRY_MS = 60000
+ntp_failed_at = None
 source = "--"         # where the shown time came from: "RTC" or "NTP"
 status = "Starting..."   # short network/sync status line
 hw_status = ""        # hardware RTC write result: "RTC set" / "RTC err"
@@ -98,13 +100,14 @@ def load_credentials():
     global WIFI_SSID, WIFI_PASSWORD
     if WIFI_SSID is not None:
         return True
+    sys.path.insert(0, "/")
     try:
-        sys.path.insert(0, "/")
         from secrets import WIFI_SSID as S, WIFI_PASSWORD as P
-        sys.path.pop(0)
         WIFI_SSID, WIFI_PASSWORD = S, P
     except ImportError:
         WIFI_SSID, WIFI_PASSWORD = None, None
+    finally:
+        sys.path.pop(0)
     return WIFI_SSID is not None
 
 
@@ -166,7 +169,7 @@ def have_ip():
 def tick_network():
     """Bring WiFi up and sync time over NTP (once). On success also writes the
     battery-backed hardware RTC. Non-blocking-ish."""
-    global wlan, ntp_synced, time_valid, source, status
+    global wlan, ntp_synced, time_valid, source, status, ntp_failed_at
 
     if ntp_synced:
         return
@@ -191,6 +194,10 @@ def tick_network():
         status = "Connecting..."
         return
 
+    if (ntp_failed_at is not None
+            and time.ticks_diff(time.ticks_ms(), ntp_failed_at) < NTP_RETRY_MS):
+        return
+
     # We have an IP - try a single NTP sync (brief blocking call).
     status = "Syncing time..."
     try:
@@ -202,6 +209,7 @@ def tick_network():
         status = "Synced"
     except Exception:
         status = "Sync failed"
+        ntp_failed_at = time.ticks_ms()
 
 
 def init():
@@ -236,13 +244,14 @@ def draw_battery(x, y, level, charging):
 
 
 def update():
-    tick_network()
-
     # Manual re-sync with button A: re-runs NTP and re-writes the hardware RTC.
     if io.BUTTON_A in io.pressed:
-        global ntp_synced, hw_status
+        global ntp_synced, hw_status, ntp_failed_at
         ntp_synced = False
+        ntp_failed_at = None
         hw_status = ""
+
+    tick_network()
 
     # Adjust the timezone with UP / DOWN and save the change immediately.
     if io.BUTTON_UP in io.pressed and config["tz_offset"] < TZ_MAX:

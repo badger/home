@@ -368,6 +368,84 @@ class LiveUITests(unittest.TestCase):
         self.assertFalse(self.app.demo)
         self.assertEqual(self.app.mode, "working")
 
+    def start_demo_mood(self, mode):
+        self.press("DOWN")
+        self.clock.advance(960)
+        self.app.update()
+        if mode == "attention":
+            self.clock.advance(6000)
+            self.app.update()
+        self.assertTrue(self.app.demo)
+        self.assertEqual(self.app.mode, mode)
+        self.screen.reset_mock()
+
+    def assert_offline_idle(self):
+        self.assertFalse(self.app.demo)
+        self.assertFalse(self.app.was_live)
+        self.assertEqual(self.app.mode, "idle")
+        self.assertIn("Your Agent Buddy", self.labels())
+        self.assertNotIn("Working", self.labels())
+        self.assertNotIn("Needs attention", self.labels())
+        self.assertNotIn("DEMO - not session status", self.labels())
+
+    def test_up_leaves_demo_idle_when_pairing_is_unavailable(self):
+        self.app.update()
+        self.live_monitor.server = None
+        self.live_monitor.open_pairing = Mock()
+        for protocol_available in (True, False):
+            if not protocol_available:
+                self.live_monitor.protocol = None
+            for mode in ("working", "attention"):
+                with self.subTest(protocol_available=protocol_available, mode=mode):
+                    self.start_demo_mood(mode)
+                    self.press("UP")
+                    self.assert_offline_idle()
+        self.assertEqual(self.live_monitor.open_pairing.call_count, 4)
+
+    def test_up_leaves_demo_idle_after_pairing_is_cancelled_or_expires(self):
+        self.screen.measure_text.side_effect = lambda text, size=1: (len(text) * 7 * size, 13 * size)
+        self.app.update()
+        for end in ("cancel", "expire"):
+            for mode in ("working", "attention"):
+                with self.subTest(end=end, mode=mode):
+                    self.start_demo_mood(mode)
+                    self.press("UP")
+                    self.assertFalse(self.app.demo)
+                    self.assertEqual(self.app.mode, "idle")
+                    self.assertIn("Pair with Agent Buddy", self.labels())
+                    self.screen.reset_mock()
+                    if end == "cancel":
+                        self.press("UP")
+                    else:
+                        self.clock.advance(60000)
+                        self.app.update()
+                    self.assertIsNone(self.live_monitor.protocol.pairing_code)
+                    self.assert_offline_idle()
+
+    def test_up_leaving_demo_restores_authenticated_live_state(self):
+        self.screen.measure_text.side_effect = lambda text, size=1: (len(text) * 7 * size, 13 * size)
+        protocol = self.live_monitor.protocol
+        protocol.open_pairing(self.clock.now)
+        status, paired = protocol.handle("POST", "/pair", {},
+                                         protocol.pairing_code.encode(), self.clock.now)
+        self.assertEqual(status, 200)
+        headers = {"authorization": "Bearer " + paired["token"]}
+        for remote, demo in (("working", "attention"), ("attention", "working")):
+            with self.subTest(remote=remote, demo=demo):
+                status, _ = protocol.handle("POST", "/state", headers, remote.encode(), self.clock.now)
+                self.assertEqual(status, 200)
+                self.app.update()
+                self.start_demo_mood(demo)
+                self.press("UP")
+                self.assertFalse(self.app.demo)
+                self.assertTrue(self.app.was_live)
+                self.assertEqual(self.app.mode, remote)
+                self.screen.reset_mock()
+                self.press("UP")
+                self.assertEqual(self.app.mode, remote)
+                self.assertIn(self.namespace["LABELS"][remote], self.labels())
+                self.assertNotIn("DEMO - not session status", self.labels())
+
     def test_pairing_ui_and_cancel(self):
         self.screen.measure_text.side_effect = lambda text, size=1: (len(text) * 7 * size, 13 * size)
         self.press("UP")

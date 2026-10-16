@@ -16,6 +16,9 @@ A small status + settings screen for the badge.
 | **DOWN** | Timezone −1 hour           |
 | **A**    | Re-sync the time over NTP  |
 
+Failed NTP requests retry after 60 seconds, leaving the clock and controls
+responsive between attempts. **A** bypasses this delay for an immediate retry.
+
 The timezone offset (UTC−12 … UTC+14) is changed live with **UP** / **DOWN** and
 saved automatically via the badge `State` store (`/state/system.json`), then
 restored on the next boot. The RTCs always hold UTC; the offset is applied only
