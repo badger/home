@@ -20,6 +20,21 @@ people using the previous badge.
 The legacy simulator and Badgeware API documentation are under `badge25/`.
 They do not model the 2026 graphics and input APIs.
 
+## Examples
+
+The [Copilot Agent Buddy](./badge/apps/Copilot/README.md) is a coding-session
+monitor for the Universe 2026 badge. It uses the original Copilot character and
+connects over Wi-Fi to Dan Wahlin's existing Agent Buddy daemon for real session
+states, active-agent indicators, and usage. Only the badge-side client is
+included; it requires the October 2026 firmware and also offers an offline demo.
+
+See the [archived 2025 drawing examples](./badge25/badgerware/examples/README.md). The
+[2026 camera app](./badge/apps/camera/README.md) adds an ESP32-CAM Wi-Fi viewfinder,
+1600 x 1200 SD photography, rotation, and a last-15 photo gallery. Its companion
+[ESP32-CAM project](./esp32-cam/README.md) includes board purchase links, firmware
+source, build/flash scripts, and installation instructions. This example requires
+the October 2026 firmware, not the archived 2025 firmware.
+
 ## Pimoroni and Badgeware resources
 
 - [Tufty 2350 product page and specifications](https://shop.pimoroni.com/products/tufty-2350)
@@ -183,6 +198,9 @@ The Wi-Fi template is [`badge/secrets.py`](./badge/secrets.py). Keep committed
 values empty and configure credentials only on the device.
 
 ## Contributing
+
+We welcome contributions! If you've created a new app or improved an existing
+one, please consider submitting a pull request.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md). New development should target the
 2026 runtime under `badge/`; only compatibility fixes for the older hardware

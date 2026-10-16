@@ -1,0 +1,618 @@
+{
+  "repository": "https://github.com/DanWahlin/agent-buddy",
+  "revision": "c246248cc091b59fb199c54ad7f40fab0836e00a",
+  "size": [
+    192,
+    180
+  ],
+  "frames_per_track": 12,
+  "conversion": "Composite on black, RGB, Lanczos resize; Pillow 12.3.0",
+  "files": [
+    {
+      "file": "neutral.png",
+      "source": "characters/copilot/sprites/right-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "blink-1.png",
+      "source": "characters/copilot/sprites/right-00-blink-1.png",
+      "source_sha256": "42ecf575466a289bbe2760586ccb33452b6b0af6d64eaa2e3c7f9a98a6925eff",
+      "sha256": "0eb7356f1468ced6e486d1801f252916e52b4c017c2fbdb4ade59111073a54f4"
+    },
+    {
+      "file": "blink-2.png",
+      "source": "characters/copilot/sprites/right-00-blink-2.png",
+      "source_sha256": "c32e03b76b97f3da62e560e6f7be4da69131569dd281fac592cec1be93e9714b",
+      "sha256": "3ac4cca468e72513a963b3e3beff2d4a238222fdfff7a6643f754dfd34bec799"
+    },
+    {
+      "file": "blink-3.png",
+      "source": "characters/copilot/sprites/right-00-blink-3.png",
+      "source_sha256": "854f3dc15d64e5991fb053001754fcb275731f76e50b066a0b6685dcbf02252b",
+      "sha256": "5d93f6eced56c597019ae60806f357758e7447b9b67bb6db758553bbaba08692"
+    },
+    {
+      "file": "blink-4.png",
+      "source": "characters/copilot/sprites/right-00-blink-4.png",
+      "source_sha256": "60cc7bef1cf0337587b6976e876ce9ab2065e36d163244931d2e3d75b74a786c",
+      "sha256": "c3f034bfc5eebea8ee155e78ab129a16e4759acb1822f029de86a00c0ecb5921"
+    },
+    {
+      "file": "left-00.png",
+      "source": "characters/copilot/sprites/left-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "left-01.png",
+      "source": "characters/copilot/sprites/left-02.png",
+      "source_sha256": "63057beebb2f30b4b2eea8c509a0c08228d74d1c53dd7e357c72c3f9ac2805cf",
+      "sha256": "bd8319807f8e05443b2d25653a942c13ef68f8f183d75fc6741f74245334707e"
+    },
+    {
+      "file": "left-02.png",
+      "source": "characters/copilot/sprites/left-04.png",
+      "source_sha256": "eaaf96cc9d1576361230c64f2a79fe26e62a6dc5ba71d12668108444705fdfa5",
+      "sha256": "2f2970fed78f1db6f27e32d52b90819d56204324488fd1ad7388c19f4411b9f9"
+    },
+    {
+      "file": "left-03.png",
+      "source": "characters/copilot/sprites/left-06.png",
+      "source_sha256": "2bac49edb6a93cba959a6197f495cc4bf8f3904f353d7f1c72a99caa0b7ebc63",
+      "sha256": "576e59b18cff4a37f92f330d1ed3a4ce78a44c0ad81366dfde4b330841a99727"
+    },
+    {
+      "file": "left-04.png",
+      "source": "characters/copilot/sprites/left-08.png",
+      "source_sha256": "f0c8b5d0715c97ea1143a2a6725432f3d5bfb1febee7d2bb3d0048f8d5cf313c",
+      "sha256": "03b490b104c3c3718adae0760c528e65fac74818fc08efd36a33653fa9f44181"
+    },
+    {
+      "file": "left-05.png",
+      "source": "characters/copilot/sprites/left-10.png",
+      "source_sha256": "fee8799c438a4b8d5b469167e2ed901f18880b6a79ea940de48a7b67f03bfd56",
+      "sha256": "6088a64538f03e9f5ed3189a96f8f730128c7dcf23c7bf04b67b5e9095417349"
+    },
+    {
+      "file": "left-06.png",
+      "source": "characters/copilot/sprites/left-13.png",
+      "source_sha256": "ca54cf6fe1e20dcafe6673540ece0444c3334769acd99c6eb113c253a06d3858",
+      "sha256": "0102b179cf6dfaa6ed58ba7d93cf51174336bd66ae4ba3683cf20e8411acb9ee"
+    },
+    {
+      "file": "left-07.png",
+      "source": "characters/copilot/sprites/left-15.png",
+      "source_sha256": "d6beb84e4260f908f530075709173a206b51bc5f0c24f29c276de4af7e575a95",
+      "sha256": "71355c245bbda354dddfd76dce93780b467f3a7831d6ee0e8ab7cf5b90d0372b"
+    },
+    {
+      "file": "left-08.png",
+      "source": "characters/copilot/sprites/left-17.png",
+      "source_sha256": "1014471d947dfb1b2e409b808991e6444ce711c07c71ecb55398eca491f5819a",
+      "sha256": "09b1b6c065b8469cb4dceb02abd0b23a4601fd4f19d360c167d2f8d0ad6777e7"
+    },
+    {
+      "file": "left-09.png",
+      "source": "characters/copilot/sprites/left-19.png",
+      "source_sha256": "f71eba24648873a1287c37d11ce2b30ff45edc24c5b97383a5b1610bb7acdf25",
+      "sha256": "35ba091f8b7ee19f2d55c6391d9f65fc710b20c77f6d4d5d6d4f5cc98e9378d9"
+    },
+    {
+      "file": "left-10.png",
+      "source": "characters/copilot/sprites/left-21.png",
+      "source_sha256": "d67330af3b3b84119cc93cf061eb7fcf5649757df28155b340d2edc0adfd9207",
+      "sha256": "0fdfc309738b531ba7ca7c237fd593eac3f9570d706be1da0eb2d58436cea048"
+    },
+    {
+      "file": "left-11.png",
+      "source": "characters/copilot/sprites/left-23.png",
+      "source_sha256": "084b92422a6fa767b6c3dbd829f4628458410d0e6af8dc58413d5a60c67a6c79",
+      "sha256": "4cc16454dcdc48769f359374aebf103470381b10ac619472a781f78ad2182e06"
+    },
+    {
+      "file": "right-00.png",
+      "source": "characters/copilot/sprites/right-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "right-01.png",
+      "source": "characters/copilot/sprites/right-02.png",
+      "source_sha256": "bacd63885f08d19222f45ade91c5ee1b7e2d42b092c9a3f4a18ce0fd9ef74ebc",
+      "sha256": "283de43a2d995272117e462927e377b77f1d29aabb0bb748021f419316e97ec9"
+    },
+    {
+      "file": "right-02.png",
+      "source": "characters/copilot/sprites/right-04.png",
+      "source_sha256": "95c1ec7414c2ea2efaacd0b5133987c536f25bcbc7ac6d5ea85ff42cc9d8135e",
+      "sha256": "608db4a03032a06e116d19790f166ba93a783c6fe20ad6515c442088103e993a"
+    },
+    {
+      "file": "right-03.png",
+      "source": "characters/copilot/sprites/right-06.png",
+      "source_sha256": "1d4cc894f2b6126af8dc591ea92c51da7f85581f57f1b8667fbbc3dea526ad1d",
+      "sha256": "c21ff947493c8397dcabfe95d5f91f6b1d2ed8c4cb1b62344e54c99605f7ac10"
+    },
+    {
+      "file": "right-04.png",
+      "source": "characters/copilot/sprites/right-08.png",
+      "source_sha256": "23f6e13e9e70ec016484f44b693da2cc2003f87ce05c8d3611c534de7542ca59",
+      "sha256": "cf69eca1cedc53e61f516acf2b74b84b7d841e2ddbc15d8f0cb6ea1318032497"
+    },
+    {
+      "file": "right-05.png",
+      "source": "characters/copilot/sprites/right-10.png",
+      "source_sha256": "d50493a4d2f088063a4fa2b20e33debdd6a79a83a8dacad7996c456bdacfc17b",
+      "sha256": "712742d2382996ea65011b30d2030291d890834026b0d343328046b6ac9cbdbd"
+    },
+    {
+      "file": "right-06.png",
+      "source": "characters/copilot/sprites/right-13.png",
+      "source_sha256": "efa828900d0d037b6115fb441e5fcc253b709c6493ad4fd1be2b0855a0f36c3b",
+      "sha256": "97eceaa24f034740195cdd44738561c36fe211e7fcc90e1cc93021b797b703e9"
+    },
+    {
+      "file": "right-07.png",
+      "source": "characters/copilot/sprites/right-15.png",
+      "source_sha256": "a40a1ab3c180f81c72a5d0267df84f252ae87c4776e24a96a4313d61669d645c",
+      "sha256": "7b5798faadf1bad348ccec645c6893ffd47a3461ee14f7ed3d3042baaaf175c0"
+    },
+    {
+      "file": "right-08.png",
+      "source": "characters/copilot/sprites/right-17.png",
+      "source_sha256": "1dc88ac8fad191ae3456237ec5955d06a1fad47a915cb0f4635ed19526829b92",
+      "sha256": "961de3af11db30cae7bbada852dae3679660f0dddcf3e3bc6856af07e83ac35e"
+    },
+    {
+      "file": "right-09.png",
+      "source": "characters/copilot/sprites/right-19.png",
+      "source_sha256": "efc60c8e1c58afa11842de6782769145430b9243ca5251bde270b11389870b50",
+      "sha256": "8973bb6383d17fa8b75a0515335754f52ce788f33c36aa2de161c00dc597ec17"
+    },
+    {
+      "file": "right-10.png",
+      "source": "characters/copilot/sprites/right-21.png",
+      "source_sha256": "7d9054f9947908d26868f5accb0fa91c013a88a51ac7d1fc0f448e95da18a363",
+      "sha256": "eb392f49359879688fcd2aa533bef37ddf49d1ae46d520e3b330a1471725523b"
+    },
+    {
+      "file": "right-11.png",
+      "source": "characters/copilot/sprites/right-23.png",
+      "source_sha256": "e1178f0a1a538705aa5929182070de839cc047a972962076858219e94d0b6f00",
+      "sha256": "be8d1c12a2b49dc3e86f7b8fde8c077456d14fb04c8e42b01acd481d870bc399"
+    },
+    {
+      "file": "up-00.png",
+      "source": "characters/copilot/sprites/up-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "up-01.png",
+      "source": "characters/copilot/sprites/up-02.png",
+      "source_sha256": "1b86e53e8ed2c0d5ce456fd9df210b15941b24acadbe9524217a5f7b57ee8697",
+      "sha256": "7621f4e1ff70bb26a94cbc126385fd86799bfefc171ce518b40480da50962df8"
+    },
+    {
+      "file": "up-02.png",
+      "source": "characters/copilot/sprites/up-04.png",
+      "source_sha256": "ee4c55843ecf76b04e085b62f8cc7b8c22b671fb8dea4a739eef7e29440499b1",
+      "sha256": "153259bd64dbef21e6779cf126451caf563ddf26b61d8b62203014e29a3f9af0"
+    },
+    {
+      "file": "up-03.png",
+      "source": "characters/copilot/sprites/up-06.png",
+      "source_sha256": "f15eb97c0ee2415112e6a14481addc0184fbc2b3ea5c42e7a0ac461a6c9dde5c",
+      "sha256": "55f9646da2cf6fd9571ccff2bad1191c987889cba48bd0532c4d6ed2946c173d"
+    },
+    {
+      "file": "up-04.png",
+      "source": "characters/copilot/sprites/up-08.png",
+      "source_sha256": "cd8357f663ecd1244dec33e2d509015f2180cddde8d569d72e09acc02634b251",
+      "sha256": "8fa61216378d4201726d4bd78c1318f3c1f44d867c128e91bf826d540b39ff38"
+    },
+    {
+      "file": "up-05.png",
+      "source": "characters/copilot/sprites/up-10.png",
+      "source_sha256": "26f08bf276add06f54d4c0a69a8385dec9b276f0b6c775934b6b5f89bf9196a4",
+      "sha256": "8a7ce6f3e963da1c76c1b1bca05249697ed1720e12391d8abce91eb77673b49f"
+    },
+    {
+      "file": "up-06.png",
+      "source": "characters/copilot/sprites/up-13.png",
+      "source_sha256": "8c5aa1fcc3e0b5db0381e9cdf3c080507f706ec819393653b42c445f17cf7329",
+      "sha256": "d149edcd7e34a4a8f634e7ffc078131036016d7f98e360342b22ba9f02b225c9"
+    },
+    {
+      "file": "up-07.png",
+      "source": "characters/copilot/sprites/up-15.png",
+      "source_sha256": "d644638817b1cff1f909e1c1a56c28f81f99b2e8bd2e6b76d171782c954aec7d",
+      "sha256": "a5e713fc6ff5cc2cea3cb0349218f090338b329d897944d6ef43c5c6f82d916b"
+    },
+    {
+      "file": "up-08.png",
+      "source": "characters/copilot/sprites/up-17.png",
+      "source_sha256": "1be37367fb8070dfa5a2370d3ea3c02e927f6d9fefdb2938d61de2397f5de58b",
+      "sha256": "6a7e6e9c89913ead8d7a233aa51f07d59f3d84243c1c0c9337df165abc15f28e"
+    },
+    {
+      "file": "up-09.png",
+      "source": "characters/copilot/sprites/up-19.png",
+      "source_sha256": "03b39ce5548184602a82b3d5810a5b47b7e7a179b8d510144f466789ee37e6b8",
+      "sha256": "f99eff1ef3692c0e936597d1184cc64a1da2ddc0ce81571c972828341cd11d82"
+    },
+    {
+      "file": "up-10.png",
+      "source": "characters/copilot/sprites/up-21.png",
+      "source_sha256": "54e729a968d9702a9626460c9fd0895a0fae9183e81eeb0a68bcc0ba24ba8a7c",
+      "sha256": "315771c3739061341e8ef13243922e45f80424cc25a42961a61ca99376f0ecf7"
+    },
+    {
+      "file": "up-11.png",
+      "source": "characters/copilot/sprites/up-23.png",
+      "source_sha256": "7f3baa49b3f9e15d69fc43feb4f46997d4504f8ed97f0394f0ba12ad33d3e7b3",
+      "sha256": "a2f29c1556f9c330650c8432ab27fad70209982fd6cec6b7134c417e0799a2ee"
+    },
+    {
+      "file": "down-00.png",
+      "source": "characters/copilot/sprites/down-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "down-01.png",
+      "source": "characters/copilot/sprites/down-02.png",
+      "source_sha256": "ab087f5b5a713e1e332b6146beb665abdfe28a109e44b61fd33653c3bde32e22",
+      "sha256": "ae3a7bd6acc27873d0c89e2aec6442e07d0110b09d8243e998d4ca8c6501d7eb"
+    },
+    {
+      "file": "down-02.png",
+      "source": "characters/copilot/sprites/down-04.png",
+      "source_sha256": "b89cc39d392afff7229e525ec6b240f8cec842db48c1b4bd4853b3e8e5ba202e",
+      "sha256": "2999e935679f2fd626588bd745cf00603173057111c84a60f66a9163d17d560e"
+    },
+    {
+      "file": "down-03.png",
+      "source": "characters/copilot/sprites/down-06.png",
+      "source_sha256": "9e4f1e24b73b556567e3099d3367b6d8fe8f90b15192b4e6bd2cafd7d465a0d3",
+      "sha256": "bd201a3828470000cc3708679710b734a8bb48381dad44a5a6a11ac09d27f567"
+    },
+    {
+      "file": "down-04.png",
+      "source": "characters/copilot/sprites/down-08.png",
+      "source_sha256": "f8e6e0c88962d9ae2def8d64738d79ceecfcaeabb9ffe4bd87ac4efbe4d9766b",
+      "sha256": "188887636bcd07cca3cd725834b13e1f51791c7b4995ebf1098fbfba47d0d66c"
+    },
+    {
+      "file": "down-05.png",
+      "source": "characters/copilot/sprites/down-10.png",
+      "source_sha256": "ca02f2ca262d60b57cb9ed298dd5722d7684c207aa7b7801e9059928d6402dd6",
+      "sha256": "aa289c1cc00829249ede007241ae931b465f0c20f503f9d6567a75a49fb04ca7"
+    },
+    {
+      "file": "down-06.png",
+      "source": "characters/copilot/sprites/down-13.png",
+      "source_sha256": "4a2f32d4507d240ffeec994dd2bf1ff86b4d33ad1a716a0ec68a2c23e39f7001",
+      "sha256": "91681c4454f3bbc0db903dbbb69c1e3c046b395d569cd39718c9ac8c17bffeda"
+    },
+    {
+      "file": "down-07.png",
+      "source": "characters/copilot/sprites/down-15.png",
+      "source_sha256": "aaef20179188ab7aa575256b7ccc381dd6d5e8b4bb21753db63ea23d0709001c",
+      "sha256": "00e2c41a7957f20f4430db94c3af0def4e7c0b57dcb0c89c47491a99bb27f634"
+    },
+    {
+      "file": "down-08.png",
+      "source": "characters/copilot/sprites/down-17.png",
+      "source_sha256": "f3400b2209a143a510b810ed64d4cebbe7fc272d66a3c966d837a81d35a74817",
+      "sha256": "9fe999ac27a3c4daba9bfa582509def065154a1f25d5fb248182ee8832905816"
+    },
+    {
+      "file": "down-09.png",
+      "source": "characters/copilot/sprites/down-19.png",
+      "source_sha256": "af0f1444c99f5400235eeae8e319c5c4d944cee265ba2bfcfb713083064558c9",
+      "sha256": "4b97dc83b0a47320ee407604f11c004824178c4db08b3b6bed8608c39a6221a2"
+    },
+    {
+      "file": "down-10.png",
+      "source": "characters/copilot/sprites/down-21.png",
+      "source_sha256": "c0a18ec9dc01372eb53b39e19f06e2360cecf34973079e01b5e834ee6c5ea9fe",
+      "sha256": "3bdaa217e30e3ef808fa1a250f0a70f0ffad12adc51a61a3ee1ed6fc037f1532"
+    },
+    {
+      "file": "down-11.png",
+      "source": "characters/copilot/sprites/down-23.png",
+      "source_sha256": "a56f5cce4d323a739f0a7749fc058f05b42280d5576b88462181657e8c7f0afd",
+      "sha256": "290d3cba093158bf565345d1eb42be7c5142d4a4872c9e2f1203174a10b81947"
+    },
+    {
+      "file": "surprise-00.png",
+      "source": "characters/copilot/expressions/surprise-spring-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "surprise-01.png",
+      "source": "characters/copilot/expressions/surprise-spring-02.png",
+      "source_sha256": "1b2cb456c06336d7905b65702701b593adfcc9c487fd3d862b00ffcb84de2eea",
+      "sha256": "9a3c035efcfe0fabd418cf8f517e78ee56a6cc4078f57138218f951751504561"
+    },
+    {
+      "file": "surprise-02.png",
+      "source": "characters/copilot/expressions/surprise-spring-04.png",
+      "source_sha256": "cd4caf3069e0e8c15f88d7176a00193eca709ebb62a57a26ed8bc03a79c9e7fc",
+      "sha256": "2f870f74a7689e9719eeb8af18ab58df81da169db7f94f2afc15258779c8069d"
+    },
+    {
+      "file": "surprise-03.png",
+      "source": "characters/copilot/expressions/surprise-spring-06.png",
+      "source_sha256": "ae8a6061835ae527fdfc6a680802ad796c2af161296a1746f35922532e54473d",
+      "sha256": "044eb47f4553dca572ea65a7079580cc1a0cec379acea07178ee3ec76d050a5d"
+    },
+    {
+      "file": "surprise-04.png",
+      "source": "characters/copilot/expressions/surprise-spring-08.png",
+      "source_sha256": "9a50da58f9acbc8d08880b4105f317ed8dc3e56cfeaa7ba6a0938abf6c20eda2",
+      "sha256": "0c5947b29d6b8bbdfa1a5d72aa706b14fa96fcc364aeff101e9b4f0fc696764f"
+    },
+    {
+      "file": "surprise-05.png",
+      "source": "characters/copilot/expressions/surprise-spring-10.png",
+      "source_sha256": "b9e0068b4a011b7a6c8f4e218871d8824e6139513c0ef59e653d2e82f9889fdc",
+      "sha256": "c772bae25f2d575b283ccc07d832e97697d6e65798fa66a734ebba3534862075"
+    },
+    {
+      "file": "surprise-06.png",
+      "source": "characters/copilot/expressions/surprise-spring-13.png",
+      "source_sha256": "58bdfc71b7d585aaefdc48d6c451112e8bea65eaefde0685e3b5b1e69ee99e39",
+      "sha256": "0f3c847a4ffdf8cfedd200967eeba66b8e716214ff92c2832b9d60ac5480ee78"
+    },
+    {
+      "file": "surprise-07.png",
+      "source": "characters/copilot/expressions/surprise-spring-15.png",
+      "source_sha256": "c1c93ad50c36a1314ede2dc39024e78ca59b4361d53b8a31b49c1e2ce41309c6",
+      "sha256": "f5e11a40427cede512daadff72f94a43e427793efd825e98cbd0013e2fc0e0e7"
+    },
+    {
+      "file": "surprise-08.png",
+      "source": "characters/copilot/expressions/surprise-spring-17.png",
+      "source_sha256": "00bf5e529ee67a375377a11232f608e5dbbed4a9e70be9a57b6459798516e291",
+      "sha256": "ee6aba7bb44c3c115e024c31d851a14879b3f9f3c5d6d4d655f3b8b9f8ba0a9a"
+    },
+    {
+      "file": "surprise-09.png",
+      "source": "characters/copilot/expressions/surprise-spring-19.png",
+      "source_sha256": "0dfa1ea6ee8d37663d280c93fdb6b96460cbe3c9befdb32933585aa06e0737dd",
+      "sha256": "76ab80b771922602ac6325504dfefd877f01902e5f71eaf9bcf913795e0694fc"
+    },
+    {
+      "file": "surprise-10.png",
+      "source": "characters/copilot/expressions/surprise-spring-21.png",
+      "source_sha256": "38625357eeaec62fbb88670b5d3ef5d5285af4cd507e815a51bcef243cfc1821",
+      "sha256": "4b44fe06861f01b4796e469355118878a8131d39578ed64c2c30a1031ada917f"
+    },
+    {
+      "file": "surprise-11.png",
+      "source": "characters/copilot/expressions/surprise-spring-23.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "working-00.png",
+      "source": "characters/copilot/expressions/working-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "working-01.png",
+      "source": "characters/copilot/expressions/working-02.png",
+      "source_sha256": "6874b814f802d535159e9b06078085467a64d51098f6891d7f123307d69889d2",
+      "sha256": "2aac840d0cb325da551d93ce22b6ddb582072143d117099985ce178330ad990b"
+    },
+    {
+      "file": "working-02.png",
+      "source": "characters/copilot/expressions/working-04.png",
+      "source_sha256": "8815c915ecf4b11e5e8b3c4948652ee4419ac1fd22562201008579f7f48f3910",
+      "sha256": "05c06c586cfe65974e14af62bd48bac3aff4d42868a718a047205f247551ac3b"
+    },
+    {
+      "file": "working-03.png",
+      "source": "characters/copilot/expressions/working-06.png",
+      "source_sha256": "b1288e9d41cef71a4b86336545e9d711a52a2f106a9c7b35df49ac099ddb6a11",
+      "sha256": "e6791f7b1f22dfbe5005590338d27b27a2259517b79cc19d958797f622182dee"
+    },
+    {
+      "file": "working-04.png",
+      "source": "characters/copilot/expressions/working-08.png",
+      "source_sha256": "3315b9e96fc9aa8762677302a2ad4e4a4b6072a764b0c5cd460ab9c64f3b961e",
+      "sha256": "cdca49f73363b3a913aa0905c06b968887f340983f481488980ea11b941f6d3c"
+    },
+    {
+      "file": "working-05.png",
+      "source": "characters/copilot/expressions/working-10.png",
+      "source_sha256": "00ec0e7dcd4cc8dd538ce8d5518f133970c82cb6969b4e28a0cf9a5d472f508f",
+      "sha256": "ec6598e14f16a4923cccfa72749dcce75e27dcdd5af16e8b7e530319e4cada4b"
+    },
+    {
+      "file": "working-06.png",
+      "source": "characters/copilot/expressions/working-13.png",
+      "source_sha256": "5c460fd1d245e7d4b303a3f6ea054b9f231c0bc76b75fe29e34b9e70649e2f3d",
+      "sha256": "d5ecaa1c4e233841db53f5593b7e3b98b1db9bfebb83589a745b5ed199e3c153"
+    },
+    {
+      "file": "working-07.png",
+      "source": "characters/copilot/expressions/working-15.png",
+      "source_sha256": "790c050bfb5557cf434edaae269947b412cdf6542273b92b1be55a393ec3afad",
+      "sha256": "5db64b463cb90f9049aa8b6917541afce7c69cbe4f8c879e94b7ac9f195e1892"
+    },
+    {
+      "file": "working-08.png",
+      "source": "characters/copilot/expressions/working-17.png",
+      "source_sha256": "2d1af40d58ad980df51a9f23e9f29bb41cedc131b1e5b60d0f88f0ffdb4316d2",
+      "sha256": "e1cfe7ed84c9aee82b41e940b9fabcba30bc1c87135a954e2299993535f3c55d"
+    },
+    {
+      "file": "working-09.png",
+      "source": "characters/copilot/expressions/working-19.png",
+      "source_sha256": "fcc6aa29d69473862de7461f4e74066bb6a59c7dc22657f6a3e936f611d8cdf2",
+      "sha256": "9f38fbf658db429cefe4c60afc8286d8f67f85134a6acdace27186501ff5f802"
+    },
+    {
+      "file": "working-10.png",
+      "source": "characters/copilot/expressions/working-21.png",
+      "source_sha256": "82bab3eccb0b68cc79590cb54f91c8a23c37a4412e6787390289f39aac84bb68",
+      "sha256": "0369714943a4a8dea6ec9637adac8ea607c29c5e0376f28cb047e438e643fc56"
+    },
+    {
+      "file": "working-11.png",
+      "source": "characters/copilot/expressions/working-23.png",
+      "source_sha256": "3afb3f566e5a4cf97106b672db8093035570f7f6a605648dce63ae62a91689b9",
+      "sha256": "f54296508587ff834b8ff18985dc041049506afcc4201c619d10398c1caad1f9"
+    },
+    {
+      "file": "attention-00.png",
+      "source": "characters/copilot/expressions/attention-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "attention-01.png",
+      "source": "characters/copilot/expressions/attention-02.png",
+      "source_sha256": "4d2905a73389ae37eea5792f5c4c56b06d6f5c2a88c35b69253694d6f10b0e07",
+      "sha256": "e5ebff18f6f6aad913a5dfe84fcbc9695c6bc75bf16667c64d1908286baa174f"
+    },
+    {
+      "file": "attention-02.png",
+      "source": "characters/copilot/expressions/attention-04.png",
+      "source_sha256": "9abf09f5aadeba9bd0214ec994a1b357bf9c52f7bc7d8eb1281c2e3070174e65",
+      "sha256": "bf598d658d123d5c843bbea7982577de0d56a1fb6b8dd12ab7c264f12778092c"
+    },
+    {
+      "file": "attention-03.png",
+      "source": "characters/copilot/expressions/attention-06.png",
+      "source_sha256": "72ae1607c92c301effbc87ad8d6b92a1b7d58667079f2f1ef47f8092daa37f5e",
+      "sha256": "c30cd1987bf33fd51bd47a9b317fc77d414aca85da976b54cce44d0987fbbbab"
+    },
+    {
+      "file": "attention-04.png",
+      "source": "characters/copilot/expressions/attention-08.png",
+      "source_sha256": "41e48a7ad4c3e4efefe4ccdc436b932ae18094c3a9dd6bce4dfc7c5036e87dfe",
+      "sha256": "f7746663cf0ff8cb6a730cde23cf897f859894ffb22ad8d13ee938f7328d6817"
+    },
+    {
+      "file": "attention-05.png",
+      "source": "characters/copilot/expressions/attention-10.png",
+      "source_sha256": "429639ffea24ff8b71da4e5b4d879a77d50ae4bf7df8f0cc515e38a5cf977c3d",
+      "sha256": "950edf078723ad1e4d1f3bf315a7100bc49fb25516e2bc2562f352fe4c1a12fb"
+    },
+    {
+      "file": "attention-06.png",
+      "source": "characters/copilot/expressions/attention-13.png",
+      "source_sha256": "138f7d8f6227f825e4690ca7815e964855f9f26d206fac44c17c21b453582ca4",
+      "sha256": "4fc17466ed7db75996f03ba4df590a6136b4d0dfab409ffbd72125d98c4f3537"
+    },
+    {
+      "file": "attention-07.png",
+      "source": "characters/copilot/expressions/attention-15.png",
+      "source_sha256": "51787bf18894087cf31557bc81b05b55042b94d8c0e7ce2595147cfd8401751f",
+      "sha256": "c9169dfe414b32a67dab0e4fa0a895aa9fe6ea4b09b85c5aff4ff6092bda4f93"
+    },
+    {
+      "file": "attention-08.png",
+      "source": "characters/copilot/expressions/attention-17.png",
+      "source_sha256": "ae612528762083abf7383bc57a6c1c74577c520fbe7c155a25496e5ab2a2dae3",
+      "sha256": "b1f6dff80a3cdce53d248db1ec52920967b78cd31299b28ab0f6fd82d994a008"
+    },
+    {
+      "file": "attention-09.png",
+      "source": "characters/copilot/expressions/attention-19.png",
+      "source_sha256": "3a62e1a3eda3ff59c1ab6433f5fbe12c21a55c674073ee40b8438402a5b21060",
+      "sha256": "83d8b03dc739318afa66b04f2e6ba972fa52f63b7cc57efe725fab19961610f3"
+    },
+    {
+      "file": "attention-10.png",
+      "source": "characters/copilot/expressions/attention-21.png",
+      "source_sha256": "dcf74f06aea32e0da17543ef8e52204ec7c4804e4645b04c2fc33a769ab297cf",
+      "sha256": "498a59387765ea58097e56ee0561f6cb3888c76cfbebde8cf27a748830c4fbbe"
+    },
+    {
+      "file": "attention-11.png",
+      "source": "characters/copilot/expressions/attention-23.png",
+      "source_sha256": "43584403fad6f33c76c9d48dfdae836218d347cab3c74f9dfd6f0b4b0d714383",
+      "sha256": "537adbef75758508bb154dbc8c92252b150f2b3bab2b58072df2741622648772"
+    },
+    {
+      "file": "complete-00.png",
+      "source": "characters/copilot/expressions/complete-00.png",
+      "source_sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+      "sha256": "ad88a9bd7d2a2b96e79276ebd8dcf7d5346043c3c2693404f98280d715c343bd"
+    },
+    {
+      "file": "complete-01.png",
+      "source": "characters/copilot/expressions/complete-02.png",
+      "source_sha256": "5b81599811f707ab08f4abd2d76439b1641a6216069376f903b926127409f10b",
+      "sha256": "9ad4fa4b010430872779b6ed69dbecb17790c0015904115a2d4aa9a5ae61b02f"
+    },
+    {
+      "file": "complete-02.png",
+      "source": "characters/copilot/expressions/complete-04.png",
+      "source_sha256": "7db0651766875fea947097874385d57a6758ba40959c1f6faedcf8677a796d35",
+      "sha256": "794fb352d385df027f03ccf195cff8a90ead715f83ee8f7db108afa094ff485a"
+    },
+    {
+      "file": "complete-03.png",
+      "source": "characters/copilot/expressions/complete-06.png",
+      "source_sha256": "50f037a51ec778835d08d16e350e42c4544ad4df77be918e860371aba5fff112",
+      "sha256": "613253bf33dc516e73ebcd37262e95636327ec8040c8a1f08167684c967b3d79"
+    },
+    {
+      "file": "complete-04.png",
+      "source": "characters/copilot/expressions/complete-08.png",
+      "source_sha256": "340321dc9cb0b404ba9a5eacc905d9375dd1b7d7101371611bc5d8e05d9e5bd8",
+      "sha256": "bd10e1c9c224b2602c79ba0aa32db34226220741c9c2546de9942cf64f082e0d"
+    },
+    {
+      "file": "complete-05.png",
+      "source": "characters/copilot/expressions/complete-10.png",
+      "source_sha256": "99ee22556aaa55178942f2170d28a0dbfc9e226c376583522b6c206efff3a251",
+      "sha256": "c6e769e6f2310862e3d2b4cead57388336bff8e73d52d5af6c51d7dd9105eb8b"
+    },
+    {
+      "file": "complete-06.png",
+      "source": "characters/copilot/expressions/complete-13.png",
+      "source_sha256": "53bab0973be0ccac522e17d68855c9e66011f46ff6137a1c3d7004790fd54986",
+      "sha256": "8d4cf7803bae6f3706d123e3041ce3d76aef5b5823bff384420f4f30d3fbdee3"
+    },
+    {
+      "file": "complete-07.png",
+      "source": "characters/copilot/expressions/complete-15.png",
+      "source_sha256": "9ef8469d958838eadb0618b56d9004791ab94823a9428ae96516bf848c2ad89d",
+      "sha256": "d18d91d9ba74969b9f3a55ea43a5723e074b0a9f989dccfe38a3e36e574cd405"
+    },
+    {
+      "file": "complete-08.png",
+      "source": "characters/copilot/expressions/complete-17.png",
+      "source_sha256": "3609b451e98c30b27a9c6c2a9b0dd45dbbd75785f48587ed7374129e23fef8fe",
+      "sha256": "37025fe7560b9a8e5a000b227ee07cf6dec43a7b53a7ccaf60dd38cac0b11afe"
+    },
+    {
+      "file": "complete-09.png",
+      "source": "characters/copilot/expressions/complete-19.png",
+      "source_sha256": "80dbdf9617c7c8e7306ff98768b58a10fcfd5e728fbdbe1d4b8ba5708960b103",
+      "sha256": "3d9e2f71a2bd4ec8a24d0954e0bfe9a637063b8653dda67060b29118d300d571"
+    },
+    {
+      "file": "complete-10.png",
+      "source": "characters/copilot/expressions/complete-21.png",
+      "source_sha256": "890e99211cc995366c3b6947ef6c2d93c6a20bce61cb64c9d6978282991728fe",
+      "sha256": "06456aed8ea525af55e931ce026b55dcae975ade755c9fd2ef9fb489e552c3d6"
+    },
+    {
+      "file": "complete-11.png",
+      "source": "characters/copilot/expressions/complete-23.png",
+      "source_sha256": "5666e84d0dc7fb794f7e2ca8e6004db60ca97e07d713663843544f58bed29d83",
+      "sha256": "6f059c3fec7cdf31d86bfc705105d96fbe288d10bbe15a2915559ddd6e2a0e04"
+    }
+  ]
+}
