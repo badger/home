@@ -17,7 +17,7 @@ from skill_paths import find_apps_dir, project_root
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 EXCLUDED_NAMES = {"__pycache__", ".DS_Store", "secrets.py"}
-EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
+EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".mpy"}
 
 
 def load_validator():

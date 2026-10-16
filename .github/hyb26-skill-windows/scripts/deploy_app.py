@@ -85,8 +85,8 @@ def find_mount(explicit: Path | None) -> Path:
 def should_copy(path: Path) -> bool:
     return (
         not path.name.startswith(".")
-        and path.name not in EXCLUDED_NAMES
-        and path.suffix not in EXCLUDED_SUFFIXES
+        and path.name.casefold() not in {name.casefold() for name in EXCLUDED_NAMES}
+        and path.suffix.casefold() not in EXCLUDED_SUFFIXES
     )
 
 
