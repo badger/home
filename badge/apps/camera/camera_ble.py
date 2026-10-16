@@ -144,14 +144,6 @@ class Provisioner:
         item = self.cameras[self.choice]
         return self.names.get(item[:2], "Camera " + binascii.hexlify(item[1]).decode())
 
-    def code(self, value):
-        if self.state != "CODE":
-            return
-        self.state = "WORKING"
-        self.message = "Authenticating camera..."
-        self.started = time.ticks_ms()
-        self.send(2, self.pair.start(value))
-
     def send(self, operation, data):
         self.operation = operation
         self.packet = bytes([operation]) + data
@@ -226,14 +218,21 @@ class Provisioner:
             if self.config.get("camera_id") and self.config["camera_id"] != identity:
                 raise CameraError("Wrong camera identity")
             self.identity = identity
-            if data[38]:
+            if data[38] & 1:
                 key = self.config.get("pending_pair_key") or self.config.get("pair_key")
                 if not isinstance(key, str) or len(key) != 64:
                     raise CameraError("Camera paired elsewhere; reset pairing")
                 self.send(4, self.pair.reconnect(binascii.unhexlify(key)))
+            elif data[38] & 2:
+                self.state = "NEARBY"
+                self.message = "Hold badge against camera..."
+                self.send(5, b"")
             else:
-                self.state = "CODE"
-                self.message = "Enter camera's 6-digit code"
+                raise CameraError("Update camera firmware for code-free pairing")
+        elif operation == 5:
+            self.state = "WORKING"
+            self.message = "Making camera friends..."
+            self.send(2, self.pair.nearby(data))
         elif operation == 2:
             proof = self.pair.challenge(data)
             # Persist before the camera commits, so a lost reply is recoverable.
@@ -343,7 +342,7 @@ class Provisioner:
             self.scan_fallback("Direct connection timed out")
         if self.state == "SCANNING" and time.ticks_diff(time.ticks_ms(), self.started) > 7000:
             raise CameraError("Camera BLE scan timed out")
-        if self.state == "WORKING" and time.ticks_diff(time.ticks_ms(), self.started) > 30000:
+        if self.state in ("WORKING", "NEARBY") and time.ticks_diff(time.ticks_ms(), self.started) > 30000:
             raise CameraError("Camera BLE timed out")
         return self.result
 

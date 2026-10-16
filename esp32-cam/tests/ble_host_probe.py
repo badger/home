@@ -107,7 +107,7 @@ async def hello(client, identity):
     nonce = os.urandom(16)
     data = await rpc(client, 1, nonce)
     assert len(data) == 39 and data[:6].hex() == identity
-    return Pairing(data[:6], data[6:22], nonce, data[22:38]), bool(data[38])
+    return Pairing(data[:6], data[6:22], nonce, data[22:38]), data[38]
 
 
 async def main(args):
@@ -125,21 +125,19 @@ async def main(args):
         connection = BleakClient(device, timeout=20)
     old = json.loads(args.config.read_text()) if args.config.exists() else None
     async with connection as client:
-        pairing, paired = await hello(client, setup["camera_id"])
-        if not paired:
-            public = pairing.start("%06d" % ((int(setup["code"]) + 1) % 1000000))
-            challenge = await rpc(client, 2, public)
-            try:
-                await rpc(client, 3, pairing.challenge(challenge))
-            except CameraError as error:
-                assert str(error) == "Incorrect pairing code", str(error)
-                print("PASS incorrect SRP code rejected", flush=True)
-            else:
-                raise AssertionError("Incorrect code accepted")
-            await asyncio.sleep(6)
-            pairing, paired = await hello(client, setup["camera_id"])
-            assert not paired
-            challenge = await rpc(client, 2, pairing.start(setup["code"]))
+        pairing, flags = await hello(client, setup["camera_id"])
+        if not flags & 1:
+            assert flags & 2, "Update camera firmware for proximity pairing"
+            if args.serial_port:
+                try:
+                    await rpc(client, 5, b"")
+                except CameraError as error:
+                    assert str(error) == "Pair close to camera over BLE", str(error)
+                    print("PASS USB cannot enroll; use a real nearby BLE peer", flush=True)
+                    return
+                raise AssertionError("USB bypassed proximity enrollment")
+            token = await rpc(client, 5, b"")
+            challenge = await rpc(client, 2, pairing.nearby(token))
             proof = pairing.challenge(challenge)
             config = {"pairing": "srp-v1", "camera_id": setup["camera_id"],
                       "pair_key": pairing.key.hex()}
@@ -160,8 +158,8 @@ async def main(args):
             assert old and old["password"] != config["password"]
             assert old["pair_key"] == config["pair_key"]
             print("PASS camera restart rotates Wi-Fi password and preserves pairing", flush=True)
-        next_pairing, paired = await hello(client, setup["camera_id"])
-        assert paired
+        next_pairing, flags = await hello(client, setup["camera_id"])
+        assert flags & 1
         for bad in (bytes(32), proof):
             try:
                 await rpc(client, 4, bad)
@@ -170,18 +168,19 @@ async def main(args):
             else:
                 raise AssertionError("Unauthorised/replayed proof accepted")
         print("PASS unauthorised and replayed protocol requests rejected", flush=True)
-        try:
-            await rpc(client, 2, pairing.start(setup["code"]))
-        except CameraError as error:
-            assert str(error) == "Camera already paired", str(error)
-        else:
-            raise AssertionError("Owned camera allowed replacement pairing")
+        for operation, data in ((5, b""), (2, bytes(256))):
+            try:
+                await rpc(client, operation, data)
+            except CameraError as error:
+                assert str(error) == "Camera already paired", str(error)
+            else:
+                raise AssertionError("Owned camera allowed replacement pairing")
         print("PASS owned camera rejects replacement pairing", flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--setup", required=True, type=Path, help="Private camera ID/code JSON from USB")
+    parser.add_argument("--setup", required=True, type=Path, help="JSON containing the expected camera_id (no code)")
     parser.add_argument("--config", required=True, type=Path, help="Private pairing output; never commit")
     parser.add_argument("--check-rekey", action="store_true")
     parser.add_argument("--serial-port", help="Validate crypto over USB instead; does not test BLE")

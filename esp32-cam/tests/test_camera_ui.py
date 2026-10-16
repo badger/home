@@ -151,19 +151,26 @@ class CameraUITests(unittest.TestCase):
         self.namespace["brush"].image.assert_called_once()
         self.assertEqual(self.screen.pen, "white")
 
-    def test_pairing_keeps_camera_choice_and_code_controls(self):
+    def test_first_use_has_friendly_connect_prompt_not_an_error(self):
+        self.app.mode = "WELCOME"
+        self.app.message = "Connect new camera"
+        self.app.detail = "Press Select to pair"
+        self.render()
+        self.assertEqual(self.texts(), ["Connect new camera", "Press Select to pair"])
+        self.assertEqual(self.screen.pen, "white")
+        self.namespace["brush"].image.assert_called_once()
+
+    def test_pairing_keeps_camera_choice_and_replaces_code_with_proximity(self):
         self.app.mode = "PAIRING"
         self.app.provisioner = types.SimpleNamespace(state="CHOOSE", camera_name=lambda: "BadgeCam-test")
         self.render()
         self.assertEqual(self.texts().count("Pick your camera"), 1)
         self.assertIn("BadgeCam-test", self.texts())
         self.screen.reset_mock()
-        self.app.provisioner.state = "CODE"
-        self.app.code_digits = [1, 2, 3, 4, 5, 6]
-        self.app.code_cursor = 2
+        self.app.provisioner.state = "NEARBY"
         self.render()
-        self.assertEqual(self.texts().count("Let's pair!"), 1)
-        self.assertEqual(self.texts()[2:8], ["1", "2", "3", "4", "5", "6"])
+        self.assertEqual(self.texts(), ["Hold your badge", "against camera"])
+        self.assertEqual(self.screen.pen, "white")
 
     def test_errors_are_not_repeated_in_title_and_body(self):
         self.app.mode = "ERROR"

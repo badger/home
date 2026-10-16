@@ -1,8 +1,8 @@
 #include "pairing.h"
+#include "proximity.h"
 
 #include <NimBLEDevice.h>
 #include <Preferences.h>
-#include <SD_MMC.h>
 #include <esp_system.h>
 #include <mbedtls/aes.h>
 #include <mbedtls/bignum.h>
@@ -25,7 +25,7 @@ static const char *PRIME =
     "94B5C803D89F7AE435DE236D525F54759B65E372FCD68EF20FA7111F9E4AFF73";
 
 static Preferences storage;
-static String identity, ssid, password, pin;
+static String identity, ssid, password, enrollmentToken;
 static Bytes id, salt, bond, context, candidate, transcript;
 static NimBLECharacteristic *output;
 static QueueHandle_t inbox;
@@ -33,6 +33,11 @@ struct Fragment { uint16_t size; uint8_t data[20]; };
 static Bytes incoming, outgoing;
 static size_t expected = 0;
 static bool hello = false, proofPending = false;
+static bool bleSession = false, enrollmentPending = false;
+static ProximityGate proximity;
+static uint32_t lastSample = 0, enrollmentStart = 0;
+static uint32_t lastProximityLog = 0;
+static int lastRssi = 127, rssiStatus = 0;
 static volatile bool disconnected = false;
 static uint32_t sessionStart = 0, lastAttempt = 0;
 static bool attempted = false;
@@ -88,6 +93,8 @@ static void fail(const char *message) {
 }
 static void clearSession() {
     hello = proofPending = false;
+    bleSession = enrollmentPending = false;
+    enrollmentToken = "";
     candidate.clear();
     transcript.clear();
     context.clear();
@@ -113,7 +120,9 @@ public:
 static bool srp(const Bytes &client) {
     Number n, g, a, b, v, k, gb, pub, u, vu, shared, tmp, x;
     Bytes secret = randomBytes(32);
-    Bytes xHash = hash(joined(salt, hash(bytes(identity + ":" + pin))));
+    // The public, proximity-gated token supplies no password authentication.
+    // SRP is retained for ephemeral key agreement and mutual key confirmation.
+    Bytes xHash = hash(joined(salt, hash(bytes(identity + ":" + enrollmentToken))));
     int error = mbedtls_mpi_read_string(&n.value, 16, PRIME);
     error |= mbedtls_mpi_lset(&g.value, 2);
     error |= a.read(client);
@@ -161,7 +170,14 @@ static void credentials() {
     reply(4, joined(packet, hmac(auth, packet)));
 }
 
-static void process(const Bytes &request) {
+static bool enrollmentAllowed(bool viaBLE) {
+    if (!bond.empty()) { fail("Camera already paired"); return false; }
+    if (!viaBLE || !bleSession) { fail("Pair close to camera over BLE"); return false; }
+    if (!proximity.open(millis())) { fail("Restart camera to pair nearby"); return false; }
+    return true;
+}
+
+static void process(const Bytes &request, bool viaBLE = false) {
     if (request.empty()) { fail("Empty command"); return; }
     uint8_t command = request[0];
     Bytes data(request.begin() + 1, request.end());
@@ -171,11 +187,22 @@ static void process(const Bytes &request) {
         context = joined(joined(joined(bytes("BadgeCam-v1"), id), data), nonce);
         sessionStart = millis();
         hello = true;
-        reply(1, joined(joined(joined(id, salt), nonce), Bytes{uint8_t(!bond.empty())}));
+        bleSession = viaBLE;
+        reply(1, joined(joined(joined(id, salt), nonce), Bytes{uint8_t(2 | !bond.empty())}));
     } else if (!hello || millis() - sessionStart > 180000) {
         fail("Pairing session expired");
+    } else if (command == 5 && data.empty()) {
+        if (!enrollmentAllowed(viaBLE)) return;
+        if (enrollmentPending || !enrollmentToken.isEmpty()) {
+            fail("Pairing already started"); return;
+        }
+        enrollmentPending = true;
+        enrollmentStart = millis();
+        lastProximityLog = 0;
     } else if (command == 2 && data.size() == 256) {
-        if (!bond.empty()) { fail("Camera already paired"); return; }
+        if (!enrollmentAllowed(viaBLE)) return;
+        if (enrollmentToken.isEmpty()) { fail("Start proximity pairing first"); return; }
+        if (!proximity.near(millis())) { fail("Hold badge against camera; retry"); return; }
         if (failures >= 5 || (attempted && millis() - lastAttempt < 5000)) {
             fail("Pairing rate limited; restart camera"); return;
         }
@@ -186,15 +213,18 @@ static void process(const Bytes &request) {
         if (!srp(data)) fail("Invalid pairing exchange");
     } else if (command == 3 && data.size() == 32 && proofPending && bond.empty()) {
         proofPending = false;
+        if (!enrollmentAllowed(viaBLE)) return;
+        if (!proximity.near(millis())) { fail("Hold badge against camera; retry"); return; }
         if (!equal(data, hmac(candidate, joined(bytes("client"), transcript)))) {
             candidate.clear();
-            fail("Incorrect pairing code"); return;
+            fail("Pairing confirmation failed"); return;
         }
         if (storage.putBytes("bond", candidate.data(), candidate.size()) != candidate.size()) {
             fail("Cannot persist pairing"); return;
         }
         bond = candidate;
         candidate.clear();
+        enrollmentToken = "";
         reply(3, hmac(bond, joined(bytes("server"), transcript)));
         Serial.println("Pairing established; credentials are not logged.");
     } else if (command == 4 && data.size() == 32 && !bond.empty()) {
@@ -225,20 +255,13 @@ class Connections : public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer *) override { disconnected = true; }
 };
 
-bool setupPairing(bool sdReady) {
+bool setupPairing(bool) {
     if (!storage.begin("badge-camera", false)) return false;
     id.resize(6);
     esp_read_mac(id.data(), ESP_MAC_WIFI_STA);
     identity = hex(id);
     ssid = "BadgeCam-" + identity;
     password = hex(randomBytes(24));
-    pin = storage.isKey("pin") ? storage.getString("pin") : "";
-    if (pin.isEmpty()) {
-        char digits[7];
-        snprintf(digits, sizeof(digits), "%06u", unsigned(esp_random() % 1000000));
-        pin = digits;
-        if (!storage.putString("pin", pin)) return false;
-    }
     salt.resize(16);
     if (!storage.isKey("salt")) {
         salt = randomBytes(16);
@@ -249,17 +272,8 @@ bool setupPairing(bool sdReady) {
         if (length != 32) return false;
         bond.resize(32);
         if (storage.getBytes("bond", bond.data(), bond.size()) != bond.size()) return false;
-    } else {
-        Serial.printf("CAMERA_PAIRING_CODE %s %s\n", identity.c_str(), pin.c_str());
-        if (sdReady) {
-            File file = SD_MMC.open("/PAIRING.TXT", FILE_WRITE);
-            if (!file || file.printf("Camera: %s\nPairing code: %s\nKeep this code private.\n",
-                                     identity.c_str(), pin.c_str()) == 0) {
-                Serial.println("Pairing code SD write failed; use USB serial instead.");
-            }
-            file.close();
-        }
     }
+    proximity.begin(millis());
     inbox = xQueueCreate(40, sizeof(Fragment));
     if (!inbox) return false;
     NimBLEDevice::init(ssid.c_str());
@@ -280,6 +294,43 @@ bool setupPairing(bool sdReady) {
 
 void pollPairing() {
     if (!inbox) return;
+    if (disconnected) {
+        disconnected = false;
+        xQueueReset(inbox);
+        clearSession();
+        proximity.reset();
+        NimBLEDevice::startAdvertising();
+    }
+    uint32_t now = millis();
+    if (uint32_t(now - lastSample) >= ProximityGate::SAMPLE_MS) {
+        lastSample = now;
+        auto *server = NimBLEDevice::getServer();
+        int8_t rssi = 127;
+        if (server->getConnectedCount() == 1) {
+            uint16_t handle = server->getPeerInfo(size_t(0)).getConnHandle();
+            rssiStatus = ble_gap_conn_rssi(handle, &rssi);
+            lastRssi = rssi;
+            if (rssiStatus == 0) proximity.sample(handle, rssi, now);
+            else proximity.reset();
+        } else {
+            proximity.reset();
+        }
+    }
+    if (enrollmentPending) {
+        if (uint32_t(now - lastProximityLog) >= 1000) {
+            lastProximityLog = now;
+            Serial.printf("Pairing proximity: RSSI=%d dBm read_status=%d cutoff=%d near=%u\n",
+                          lastRssi, rssiStatus, ProximityGate::MIN_RSSI, unsigned(proximity.near(now)));
+        }
+        if (!proximity.open(now) || uint32_t(now - enrollmentStart) > 15000) {
+            enrollmentPending = false;
+            fail(proximity.open(now) ? "Hold badge against camera; retry" : "Restart camera to pair nearby");
+        } else if (proximity.near(now)) {
+            enrollmentPending = false;
+            enrollmentToken = hex(randomBytes(32));
+            reply(5, bytes(enrollmentToken));
+        }
+    }
     while (Serial.available()) {
         char c = Serial.read();
         if (c == '\n' || c == '\r') {
@@ -317,12 +368,6 @@ void pollPairing() {
             serialOverflow = true;
         }
     }
-    if (disconnected) {
-        disconnected = false;
-        xQueueReset(inbox);
-        clearSession();
-        NimBLEDevice::startAdvertising();
-    }
     Fragment fragment;
     if (xQueueReceive(inbox, &fragment, 0) != pdTRUE) return;
     const uint8_t *p = fragment.data;
@@ -345,10 +390,11 @@ void pollPairing() {
     if (incoming.size() == expected) {
         Bytes command = incoming;
         incoming.clear();
-        process(command);
+        process(command, true);
     }
 }
 
+bool cameraPairingOpen() { return inbox && bond.empty() && proximity.open(millis()); }
 String cameraIdentity() { return identity; }
 String cameraSSID() { return ssid; }
 String cameraPassword() { return password; }

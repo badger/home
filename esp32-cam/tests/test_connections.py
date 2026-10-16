@@ -1,7 +1,9 @@
 """Exercise the real app connection state machine with host-side hardware fakes."""
 
+import json
 from pathlib import Path
 import sys
+import tempfile
 import time
 import types
 import unittest
@@ -49,6 +51,81 @@ class ConnectionTests(unittest.TestCase):
         p = patch.dict(sys.modules, {"camera_ble": types.SimpleNamespace(Provisioner=self.provision)})
         p.start()
         self.addCleanup(p.stop)
+
+    def new_app(self, config=None, pending=None):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        config_path = str(Path(directory.name) / "config.json")
+        if config is not None:
+            Path(config_path).write_text(json.dumps(config))
+        store = Mock()
+        store.rotation.return_value = 0
+        store.pending.return_value = pending
+        with patch.dict(self.namespace, {"PhotoStore": Mock(return_value=store)}):
+            with patch.dict(sys.modules, {"mona": types.SimpleNamespace(shared=lambda: None)}):
+                app = self.namespace["CameraApp"](config_path, str(Path(directory.name) / "cache"))
+        app.draw = Mock()
+        return app
+
+    def test_first_use_waits_for_select_without_touching_bluetooth(self):
+        for config in (None, {"pairing": "srp-v1"}):
+            with self.subTest(config=config):
+                app = self.new_app(config)
+                self.assertEqual(app.mode, "WELCOME")
+                self.assertEqual(app.message, "Connect new camera")
+                self.assertEqual(app.detail, "Press Select to pair")
+                self.assertIsNone(app.provisioner)
+                app.update()
+                self.provision.assert_not_called()
+                app.wlan.connect.assert_not_called()
+
+    def test_select_from_welcome_starts_pairing(self):
+        app = self.new_app()
+        self.namespace["badge"].pressed.side_effect = lambda key: key == self.namespace["BUTTON_SELECT"]
+        app.update()
+        self.provision.assert_called_once()
+        self.assertEqual(app.mode, "PAIRING")
+
+    def test_leaving_welcome_does_not_disconnect_existing_wifi(self):
+        app = self.new_app()
+        app.wlan.reset_mock()
+        app.close()
+        app.wlan.disconnect.assert_not_called()
+        app.wlan.active.assert_not_called()
+
+    def test_actual_bluetooth_conflict_after_select_is_not_hidden(self):
+        app = self.new_app()
+        self.provision.side_effect = camera_core.CameraError("Bluetooth already in use")
+        self.namespace["badge"].pressed.side_effect = lambda key: key == self.namespace["BUTTON_SELECT"]
+        with patch.object(sys, "print_exception", create=True):
+            app.update()
+        self.assertEqual(app.mode, "ERROR")
+        self.assertEqual(app.message, "Bluetooth already in use")
+
+    def test_established_pairing_still_reconnects_automatically(self):
+        app = self.new_app(dict(self.app.config, pair_key="ab" * 32))
+        self.assertEqual(app.mode, "CONNECTING")
+        self.assertTrue(app.cached_wifi)
+        app.wlan.connect.assert_called_once_with("BadgeCam-test", "secret")
+        self.provision.assert_not_called()
+
+    def test_interrupted_pairing_still_recovers_automatically(self):
+        app = self.new_app({"pairing": "srp-v1", "pending_pair_key": "ab" * 32})
+        self.assertEqual(app.mode, "PAIRING")
+        self.provision.assert_called_once()
+
+    def test_legacy_wifi_config_does_not_show_first_use_prompt(self):
+        app = self.new_app({"ssid": "legacy", "password": "secret"})
+        self.assertEqual(app.mode, "CONNECTING")
+        self.assertFalse(app.cached_wifi)
+        app.wlan.connect.assert_called_once_with("legacy", "secret")
+        self.provision.assert_not_called()
+
+    def test_pending_photo_takes_priority_over_welcome(self):
+        app = self.new_app(pending="0011223344556677")
+        self.assertEqual(app.mode, "ERROR")
+        self.assertEqual(app.message, "Unfinished photo")
+        self.provision.assert_not_called()
 
     def test_start_uses_cached_wifi_without_ble(self):
         self.app.connect()

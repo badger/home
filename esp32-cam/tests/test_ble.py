@@ -152,6 +152,77 @@ class BLETests(unittest.TestCase):
         with self.assertRaises(ble.CameraError):
             self.p.completed(b"\xffUnrecognised badge")
 
+    def hello(self, flags, identity=bytes(range(6))):
+        self.p.operation = 1
+        self.p.nonce = bytes(16)
+        self.p.send = Mock()
+        self.p.completed(b"\x01" + identity + bytes(range(16)) + bytes(16) + bytes([flags]))
+
+    def test_unowned_camera_requests_proximity_without_code_entry(self):
+        self.hello(2)
+        self.assertEqual(self.p.state, "NEARBY")
+        self.p.send.assert_called_once_with(5, b"")
+
+    def test_old_firmware_needs_upgrade_not_code_entry(self):
+        with self.assertRaisesRegex(ble.CameraError, "Update camera firmware"):
+            self.hello(0)
+        self.p.send.assert_not_called()
+
+    def test_owned_camera_with_capability_uses_existing_key_without_proximity(self):
+        self.p.config = {"pair_key": "aa" * 32}
+        self.hello(3)
+        self.assertEqual(self.p.send.call_args.args[0], 4)
+
+    def test_old_owned_camera_still_reconnects(self):
+        self.p.config = {"pair_key": "aa" * 32}
+        self.hello(1)
+        self.assertEqual(self.p.send.call_args.args[0], 4)
+
+    def test_other_owner_never_starts_enrollment(self):
+        with self.assertRaisesRegex(ble.CameraError, "paired elsewhere"):
+            self.hello(3)
+        self.p.send.assert_not_called()
+
+    def test_identity_mismatch_does_not_enroll(self):
+        self.p.config = {"camera_id": "aabbccddeeff"}
+        with self.assertRaisesRegex(ble.CameraError, "Wrong camera identity"):
+            self.hello(2)
+        self.p.send.assert_not_called()
+
+    def test_token_automatically_starts_key_exchange(self):
+        self.hello(2)
+        self.p.operation = 5
+        self.p.send.reset_mock()
+        self.p.completed(b"\x05" + b"ab" * 32)
+        self.assertEqual(self.p.state, "WORKING")
+        operation, public = self.p.send.call_args.args
+        self.assertEqual(operation, 2)
+        self.assertEqual(len(public), 256)
+
+    def test_proximity_errors_are_visible(self):
+        for message in (b"Hold badge against camera; retry", b"Restart camera to pair nearby"):
+            self.p.operation = 5
+            with self.assertRaisesRegex(ble.CameraError, message.decode()):
+                self.p.completed(b"\xff" + message)
+
+    def test_nearby_wait_is_bounded(self):
+        self.p.state = "NEARBY"
+        with patch.object(time, "ticks_ms", return_value=30101):
+            with self.assertRaisesRegex(ble.CameraError, "timed out"):
+                self.p.step()
+
+    def test_completed_enrollment_saves_key_and_removes_pending(self):
+        self.p.operation = 4
+        self.p.address = (0, bytes(range(6)))
+        self.p.config = {"pending_pair_key": "bb" * 32}
+        self.p.pair = types.SimpleNamespace(key=b"\xaa" * 32, credentials=lambda data: {
+            "ssid": "BadgeCam-test", "password": "cc" * 24})
+        self.p.completed(b"\x04encrypted")
+        saved = json.loads(Path(self.path).read_text())
+        self.assertEqual(saved["pair_key"], "aa" * 32)
+        self.assertNotIn("pending_pair_key", saved)
+        self.assertEqual(self.p.state, "READY")
+
     def paired(self):
         p = ble.Provisioner({"ble_addr": "001122334455", "ble_addr_type": 0,
                              "camera_id": "aabbccddeeff"}, self.path)

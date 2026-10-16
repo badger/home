@@ -10,14 +10,19 @@ persistent last-15 gallery. The ESP32 does the camera capture and SD-card work;
 the badge handles the display and controls. Real-board testing achieved about
 two live frames per second, with 1600 x 1200 originals and 200 x 150 badge copies.
 
-**Verified on the attached October 2026 badge and ESP32-CAM:** first-use BLE
-pairing, wrong-code rejection, live preview, SD capture/review/gallery, and
+**Verified on the attached October 2026 badge and ESP32-CAM:** code-free BLE
+pairing, live preview, SD capture/review/gallery, and
 automatic reconnection with a fresh Wi-Fi password after camera restart.
 The latest run delivered 75 frames in 30 seconds with stable free memory.
 The earlier native crash was fixed by copying every queued BLE callback tuple:
 this MicroPython build frees synchronous callback arguments when the handler
 returns. The hardware-tested Wi-Fi-only baseline is preserved in `7032183`.
-The application-level cryptographic integration remains unaudited.
+The firmware and badge app are deployed. Initial code-free pairing succeeded
+with a camera-side RSSI of -53 dBm using the generous -70 dBm median cutoff.
+Two new 1600 x 1200 SD photos, exact cached thumbnails, stable frozen review,
+idempotent retries, gallery navigation and remembered-key reconnect were checked
+on real hardware. USB cannot bypass first enrollment. Host tests and the firmware
+build pass; the application-level cryptographic integration remains unaudited.
 
 ## Board and purchasing
 
@@ -48,7 +53,9 @@ flashed onto it.
 ```text
 esp32-cam/
   src/main.cpp             Camera, Wi-Fi HTTP protocol, SD saves, JPEG/EXIF
-  src/pairing.cpp           BLE RPC, SRP authentication, encrypted credentials, NVS
+  src/pairing.cpp           BLE RPC, proximity key agreement, encrypted credentials, NVS
+  src/proximity.h           Testable RSSI dwell, freshness and enrollment-window gate
+  src/flash_led.h           Dim pairing indicator and full-brightness capture priority
   platformio.ini           Pinned AI Thinker ESP32-CAM build target
   requirements.txt         Host build-tool versions
   provision.py             Legacy Wi-Fi-only provisioning (unused by BLE builds)
@@ -92,10 +99,15 @@ Open **Camera** from the badge launcher:
   **1600 x 1200 JPEG** onto the camera's SD card after an animated **3, 2, 1**
   countdown with the 3D Mona face. The badge screen goes white while capturing
   and saving, then shows the saved image without control hints.
-  The white GPIO4 flash LED lights only while acquiring a new full-resolution
+  Once paired, the white GPIO4 flash LED lights only while acquiring a new full-resolution
   shot, including exposure-settling frames, and turns off before SD saving.
   Live preview, gallery browsing, and retries of an already-saved shot do not
   turn it on. Failed frame acquisition also turns it off before returning an error.
+- An unpaired camera gives a **faint 100 ms blink every two seconds** while its
+  three-minute first-pairing window is open. The indicator uses about **0.8% PWM
+  brightness**, stops immediately on pairing or expiry, and is off on subsequent
+  boots of an already-paired camera. Photo capture takes priority at full brightness.
+  Its PWM timer is separate from the camera sensor clock.
 - The displayed image then freezes on a thumbnail decoded from that
   **saved JPEG**, not a later live frame.
 - **Select** again returns to the live view.
@@ -137,7 +149,7 @@ PlatformIO's build metadata. Building does not connect to or reflash hardware.
 The [firmware directory guide](firmware/README.md) explains all generated files.
 
 The same new binary can be installed on multiple cameras. Each generates its
-own identity-based SSID, first-use pairing code, and random Wi-Fi password at
+own identity-based SSID, first-use proximity enrollment token, and random Wi-Fi password at
 runtime. The older `provision.py` and ignored `local/` files are retained only
 for rollback to the Wi-Fi-only baseline; BLE builds do not read them.
 
@@ -185,13 +197,18 @@ Install `mpremote` with `python -m pip install mpremote` if it is not available.
    On the tested firmware the volume root maps to `/system`, so do **not**
    create an extra `system/` directory.
 4. Eject the badge USB volume cleanly; the badge reboots automatically.
-5. Power the camera and open **Camera**. Use Up/Down to select its
-   `BadgeCam-<identity>` advertisement, then Select.
-6. On first use, enter the six-digit code from `/PAIRING.TXT` on the camera SD
-   card, or its 115200-baud USB serial startup output. Left/Right chooses a
-   digit, Up/Down changes it, and Select submits. Keep the code private.
+5. Power the camera and open **Camera**. On first use, **Connect new camera**
+   waits for Select before starting Bluetooth discovery. Use Up/Down to select
+   its `BadgeCam-<identity>` advertisement, then Select.
+6. On first use, hold the badge directly against the camera and keep them
+   together until connected. Select confirms the camera choice; there is no
+   code to enter or `PAIRING.TXT` to copy. Start within three minutes of camera
+   power-on; if that window expires, power-cycle the camera and retry.
+   Keep other unpaired cameras off while establishing the first relationship.
    Subsequent starts reconnect automatically using saved Wi-Fi credentials,
-   refreshing them over BLE only when necessary.
+   refreshing them over BLE only when necessary, without the proximity check.
+   Existing paired cameras retain their keys across this firmware update.
+   An unpaired camera running old code-based firmware must be updated first.
 
 Photo thumbnails and a recovery record live in `/state/camera/`.
 Live frames stay in RAM: streaming does not continuously write badge flash.
@@ -282,8 +299,7 @@ does not need new firmware. Use the existing virtual environment when available;
    storage budget is small. The volume root is `/system`, not `/`.
 6. Wait for serial to reappear. Open Camera normally, or run the hardware probes
    below. Preserve the existing pairing and photo cache during updates.
-7. Clean up only known temporary test files, including any
-   `/camera_test_code.json` used for automated pairing. Then use
+7. Clean up only known temporary test files. Then use
    `mpremote connect <badge-port> exec "import machine; machine.reset()"` and
    verify USB re-enumeration and normal startup. This reset also disconnects
    serial, so an expected transport error is not itself a failure.
@@ -304,11 +320,37 @@ failure. Never format the SD card or discard existing originals while debugging.
 
 The tested badge exposes BLE central/GATT APIs but **not native BLE bonding**:
 `gap_pair` and the security config options are absent. This project therefore
-uses an application-level relationship, not an OS Bluetooth bond. SRP-6a uses
-the RFC 5054 2048-bit group, SHA-256, and a per-camera six-digit code. The code
-is never transmitted over BLE. Initial authentication is limited to five
-attempts per camera boot, at least five seconds apart. Proximity is not proof
-of ownership.
+uses an application-level relationship, not an OS Bluetooth bond.
+
+First enrollment is **proximity-gated trust on first use**, intentionally
+without a setup-code secret. After Select chooses a camera, its firmware checks
+the actual connected BLE peer's RSSI: the median of up to five readings,
+with at least three readings 200 ms apart, must be at least -70 dBm and
+no more than 600 ms stale. The rolling median tolerates brief signal dips
+without admitting a consistently weak signal. It waits up to 15 seconds
+for this condition. Enrollment is allowed only during the first three minutes
+after camera startup and only while unowned. Disconnects clear the readings and
+session but do not restart the enrollment window. The same check is required
+before key exchange and before ownership is committed.
+
+**RSSI is not a distance measurement or proof of ownership.** Antennas,
+transmit power and obstructions change it, and active nearby attackers, boosted
+transmitters or relays can claim or intercept first pairing. Pair in a trusted
+setting; -70 dBm is deliberately generous, not a guaranteed distance.
+The initial -45 dBm cutoff rejected the real badge at -50 to -58 dBm;
+the wider cutoff prioritizes reliable use over a tight proximity restriction.
+The camera, not just the badge UI, enforces this heuristic. Selecting a camera
+on the badge avoids unintended background enrollment by this app, but cannot
+stop another central racing to claim an unowned camera.
+
+The camera issues a random, session-only 256-bit token over BLE without logging
+or persisting it. SRP-6a (RFC 5054 2048-bit group, SHA-256) reuses this **public
+token** for ephemeral key agreement and mutual key confirmation, not password
+authentication. A passive listener knowing the token cannot derive the
+ephemeral shared key; an active man-in-the-middle is not excluded. Initial
+exchanges are limited to five attempts per boot, at least five seconds apart.
+New firmware neither generates setup PINs nor writes `PAIRING.TXT`. A file or
+PIN left by older firmware is ignored, not deleted from your SD/NVS.
 
 Both sides retain a 256-bit pairing key: camera NVS and the badge's private
 `/camera_config.json`. Config writes are atomic. The prospective key is saved
@@ -323,14 +365,15 @@ The app closes BLE before opening Wi-Fi. Each camera has a different SSID and
 password, but nearby cameras still share 2.4 GHz airtime.
 
 To deliberately replace the owner, send `UNPAIR` and a newline over camera USB
-serial. This clears pairing, generates a new setup code on reboot, and leaves
+serial. This clears pairing, reopens the enrollment window on reboot, and leaves
 SD photos intact. Back up and remove the badge's old `/camera_config.json`
-before pairing again. Protect the setup code, camera SD card, and USB access.
+before pairing again. Protect the camera, SD card, badge config, and USB access.
 
 For development, USB serial also accepts `RPC <hex-message>` and returns
 `RPC <hex-response>` using the same authenticated protocol handler. It is
-disabled while a BLE client is connected. This tests ESP32 cryptography
-without claiming to test its BLE radio or the badge driver.
+disabled while a BLE client is connected. It can test remembered-key crypto,
+but cannot issue enrollment tokens or create a new pairing: those operations
+require the current BLE peer and its RSSI. It does not test BLE radio behavior.
 
 ### Provisioning wire format
 
@@ -344,7 +387,8 @@ the response is not yet ready.
 
 | Opcode | Request payload | Response payload |
 | --- | --- | --- |
-| 1 | Random 16-byte badge nonce | Camera ID (6), salt (16), camera nonce (16), owned flag (1) |
+| 1 | Random 16-byte badge nonce | Camera ID (6), salt (16), camera nonce (16), flags (1): bit 0 owned, bit 1 proximity enrollment |
+| 5 | Empty; BLE only, unowned camera | 64 ASCII lowercase hex characters (random session token), after proximity check |
 | 2 | SRP client public value A (256 bytes, big-endian) | Server public value B (256 bytes) |
 | 3 | Client proof (32 bytes) | Server proof (32 bytes); ownership has been saved |
 | 4 | Reconnect proof (32 bytes) | IV (16), AES-CBC ciphertext, HMAC (32) |
@@ -353,7 +397,7 @@ the response is not yet ready.
 All responses start with their opcode. SRP integers are padded to 256 bytes;
 the username is the 12-character lowercase hexadecimal camera ID. Hashing uses
 SHA-256, including `k = H(PAD(N) || PAD(2))`, `u = H(PAD(A) || PAD(B))`,
-and `x = H(salt || H(username || ":" || code))`.
+and `x = H(salt || H(username || ":" || token))`.
 The context is ASCII `BadgeCam-v1`, camera ID bytes, badge nonce, camera nonce.
 The transcript hash is `H(context || salt || PAD(A) || PAD(B))`.
 The pairing key is `HMAC(H(PAD(S)), "pair" || transcript)`. Client/server
@@ -410,13 +454,30 @@ framebuffer pixel colors, catching transform-order and image-wrapping mistakes.
 `tests/ui_hardware_probe.py` checks the native MDI/font/portrait presentation,
 three-second countdown, white shutter framebuffer and clean gallery labels.
 It takes one actual SD photo, preserves pairing and uses an eight-second watchdog.
+`tests/onboarding_hardware_probe.py` uses a missing disposable config path to
+verify the real first-use welcome screen and Select-to-discover behavior,
+without replacing the badge's existing pairing or claiming another camera.
 
 `tests/ble_scan_probe.py` checks the badge's native scan in isolation.
 `tests/ble_isolation_probe.py` compares display and WLAN lifecycle variants
 with watchdog recovery and a diagnostic `/ble_probe_stage.txt` checkpoint.
-`tests/ble_hardware_probe.py` exercises the actual BLE app; a private
-`/camera_test_code.json` containing `camera_id` and `code` enables automated
-first-use entry. Remove that test file afterwards.
+`tests/ble_hardware_probe.py` exercises the actual BLE app and selects the first
+discovered camera on a new badge. Power only the intended camera, hold it against
+the badge, and start within three minutes of camera power-on. No test-code file
+is needed. Existing pairings are reused without being reset.
+To check deliberate rejection without weakening the production gate, pass
+`EXPECT_PAIRING_ERROR="Hold badge against camera; retry"` (signal below -70 dBm) or
+`EXPECT_PAIRING_ERROR="Restart camera to pair nearby"` (enrollment expired)
+using `mpremote exec ... + run ...`. An unexpected successful enrollment fails
+these negative tests.
+`tests/test_proximity.py` compiles the firmware's actual RSSI gate using the host
+`c++` compiler and checks threshold, dwell, stale/invalid samples, peer changes,
+disconnect resets, enrollment expiry and timer rollover. It also replays the
+observed physical-device readings, checks tolerance of brief low outliers, and
+requires sustained weak readings to revoke proximity.
+`tests/test_flash_led.py` executes the real LED controller with recorded Arduino
+PWM calls, checking the 100 ms / two-second dim pulse, immediate pairing/expiry
+shutoff, separate PWM channel/timer, capture priority and initialization errors.
 The full probe enables an eight-second hardware watchdog to recover from native
 hangs and reboots to the standalone launcher on completion. A dropped USB
 connection alone is not a passing result; check the probe's explicit PASS lines.
@@ -462,7 +523,9 @@ against `cryptography`, and HMAC against the standard library.
 | SD unavailable | Check FAT32 format, seating, capacity, and free space; the firmware deliberately never formats the card |
 | Badge cannot find camera Wi-Fi | Power the camera independently; reconnect so BLE can refresh credentials |
 | Camera paired elsewhere | Restore the private badge config or deliberately reset ownership with USB `UNPAIR` |
-| Incorrect pairing code | Use this camera's current `PAIRING.TXT` or USB startup code |
+| Hold badge against camera; retry | Keep the two boards touching, away from other cameras, and Select to retry; RSSI depends on antenna orientation |
+| Restart camera to pair nearby | First enrollment expired; power-cycle the unpaired camera and retry within three minutes |
+| Update camera firmware for code-free pairing | Flash the matching companion firmware; manual setup codes are no longer used |
 | Old BLE build disappears from USB | Install the version that copies all callback event tuples; physically RESET first if needed |
 | Sideways picture | Press Left/Right on the badge; the tested side-mounted arrangement needed 270 degrees clockwise (90 degrees counterclockwise) |
 | Badge left in a development REPL | Reboot normally and open Camera from the launcher before unplugging; installed apps do not need a host-mounted directory |

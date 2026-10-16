@@ -4,6 +4,7 @@
 #include <SD_MMC.h>
 #include <esp_camera.h>
 #include <img_converters.h>
+#include "flash_led.h"
 #include "pairing.h"
 
 // AI Thinker / diymore ESP32-CAM with OV2640, not ESP32-S3 USB cameras.
@@ -13,7 +14,7 @@ static bool sdReady = false;
 static String cameraError;
 static constexpr size_t MAX_JPEG = 2 * 1024 * 1024;
 static constexpr size_t MAX_THUMB = 32768;
-static constexpr int FLASH_LED_PIN = 4;
+static FlashLed flashLed;
 
 static void fail(int status, const String &message) {
     Serial.println(message);
@@ -157,11 +158,11 @@ static void capture() {
     String path = photoPath(id, ".jpg");
     // Retrying a lost response with the same ID must not take a second photo.
     if (!SD_MMC.exists(path)) {
-        digitalWrite(FLASH_LED_PIN, HIGH);
+        flashLed.capture(true);
         uint32_t flashStarted = millis();
         // Discard frames under illumination so exposure can settle before the shot.
         camera_fb_t *frame = freshFrame(FRAMESIZE_UXGA, 10, 3);
-        digitalWrite(FLASH_LED_PIN, LOW);
+        flashLed.capture(false);
         Serial.printf("Capture flash off after %lu ms\n",
                       static_cast<unsigned long>(millis() - flashStarted));
         bool ok = frame && frame->format == PIXFORMAT_JPEG &&
@@ -264,8 +265,10 @@ static void setupCamera() {
 
 void setup() {
     Serial.begin(115200);
-    pinMode(FLASH_LED_PIN, OUTPUT);
-    digitalWrite(FLASH_LED_PIN, LOW);
+    if (!flashLed.begin()) {
+        Serial.println("Flash LED PWM initialization failed");
+        return;
+    }
     setupCamera();
     sdReady = mountCard();
     WiFi.mode(WIFI_AP);
@@ -299,6 +302,7 @@ void setup() {
 
 void loop() {
     pollPairing();
+    flashLed.update(cameraPairingOpen(), millis());
     server.handleClient();
     delay(2);
 }

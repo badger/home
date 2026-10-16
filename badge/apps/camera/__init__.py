@@ -33,8 +33,6 @@ class CameraApp:
         self.config = None
         self.config_path = config_path
         self.provisioner = None
-        self.code_digits = [0] * 6
-        self.code_cursor = 0
         self.pending = None
         self.gallery_index = 0
         self.next_preview = 0
@@ -48,6 +46,7 @@ class CameraApp:
         self.menu_mona = None
         self.wlan = network.WLAN(network.STA_IF)
         self.was_active = self.wlan.active()
+        self.wifi_owned = False
         try:
             self.wireless_icon = image.load("/system/apps/camera/assets/camera-wireless.png")
             self.mona = image.load("/system/apps/camera/assets/mona.png")
@@ -85,6 +84,11 @@ class CameraApp:
                 raise CameraError("Invalid camera port")
             if self.pending:
                 self.error("Unfinished photo", "Select retries safely")
+            elif (self.config.get("pairing") and not self.config.get("pair_key")
+                  and not self.config.get("pending_pair_key")):
+                self.mode = "WELCOME"
+                self.message = "Connect new camera"
+                self.detail = "Press Select to pair"
             else:
                 self.connect()
         except (OSError, ValueError, CameraError) as error:
@@ -121,12 +125,13 @@ class CameraApp:
         if self.config.get("pairing") and (refresh or not cached):
             self.cached_wifi = False
             from camera_ble import Provisioner
+            self.wifi_owned = True
             self.wlan.disconnect()
             self.wlan.active(False)
             self.provisioner = Provisioner(self.config, self.config_path)
             self.mode = "PAIRING"
             self.message = self.provisioner.message
-            self.detail = "First pairing: code on camera SD/USB"
+            self.detail = ""
             return
         try:
             self.connect_wifi(cached=bool(self.config.get("pairing")))
@@ -135,6 +140,7 @@ class CameraApp:
                 raise
 
     def connect_wifi(self, cached=False):
+        self.wifi_owned = True
         self.cached_wifi = cached
         self.mode = "CONNECTING"
         self.message = "Connecting to camera..."
@@ -292,17 +298,6 @@ class CameraApp:
                         pairing.choice = (pairing.choice + 1) % len(pairing.cameras)
                     elif badge.pressed(BUTTON_SELECT):
                         pairing.choose()
-                elif pairing.state == "CODE":
-                    if badge.pressed(BUTTON_LEFT):
-                        self.code_cursor = (self.code_cursor - 1) % 6
-                    elif badge.pressed(BUTTON_RIGHT):
-                        self.code_cursor = (self.code_cursor + 1) % 6
-                    elif badge.pressed(BUTTON_UP):
-                        self.code_digits[self.code_cursor] = (self.code_digits[self.code_cursor] + 1) % 10
-                    elif badge.pressed(BUTTON_DOWN):
-                        self.code_digits[self.code_cursor] = (self.code_digits[self.code_cursor] - 1) % 10
-                    elif badge.pressed(BUTTON_SELECT):
-                        pairing.code("".join(str(digit) for digit in self.code_digits))
                 elif pairing.state == "SCANNING" and badge.pressed(BUTTON_UP):
                     pairing.close()
                     self.provisioner = None
@@ -329,9 +324,9 @@ class CameraApp:
                 elif badge.pressed(BUTTON_SELECT):
                     if self.mode == "LIVE":
                         self.begin_countdown()
-                    elif self.mode in ("FROZEN", "GALLERY", "ERROR"):
+                    elif self.mode in ("FROZEN", "GALLERY", "ERROR", "WELCOME"):
                         self.frame = None
-                        if self.mode == "ERROR":
+                        if self.mode in ("ERROR", "WELCOME"):
                             self.connect()
                         else:
                             self.resume_preview()
@@ -373,7 +368,7 @@ class CameraApp:
         if self.mode == "COUNTDOWN":
             self.draw_countdown()
             return
-        if self.mode in ("CONNECTING", "PAIRING", "ERROR"):
+        if self.mode in ("WELCOME", "CONNECTING", "PAIRING", "ERROR"):
             self.draw_connection()
             return
         if self.mode in ("FROZEN", "GALLERY"):
@@ -431,6 +426,11 @@ class CameraApp:
             offset = (time.ticks_ms() // 300) % 3
             self.draw_sprite(self.wireless_icon, 120, 20 - offset * 2, 80, 80)
         screen.pen = color.white
+        if self.mode == "WELCOME":
+            self.wrapped_text(self.message, 122, 2, 32)
+            screen.font = font.nope
+            self.center_text(self.detail, 211)
+            return
         if self.mode == "PAIRING" and self.provisioner:
             pairing = self.provisioner
             if pairing.state == "CHOOSE":
@@ -439,20 +439,10 @@ class CameraApp:
                 self.center_text(pairing.camera_name(), 162)
                 self.center_text("Up/down: choose   Select: pair", 211)
                 return
-            elif pairing.state == "CODE":
-                self.center_text("Let's pair!", 103, 2)
-                screen.font = font.nope
-                self.center_text("Code on camera SD / USB", 139)
-                screen.font = font.ziplock
-                for index, digit in enumerate(self.code_digits):
-                    screen.text(str(digit), 65 + 33 * index, 159, 2)
-                screen.font = font.nope
-                screen.rectangle(65 + 33 * self.code_cursor, 192, 22, 2)
-                self.center_text("Arrows: edit   Select: confirm", 216)
-                return
             heading = {
                 "SCANNING": "Finding your\ncamera...",
                 "DIRECT": "Hello again,\ncamera!",
+                "NEARBY": "Hold your badge\nagainst camera",
             }.get(pairing.state, "Getting you\nconnected...")
         else:
             heading = "Connecting to\nyour camera..."
@@ -476,9 +466,10 @@ class CameraApp:
         self.cancel_request()
         if self.provisioner:
             self.provisioner.close()
-        self.wlan.disconnect()
-        if not self.was_active:
-            self.wlan.active(False)
+        if self.wifi_owned:
+            self.wlan.disconnect()
+            if not self.was_active:
+                self.wlan.active(False)
 
 
 app = CameraApp()

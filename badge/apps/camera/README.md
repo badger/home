@@ -6,14 +6,22 @@ countdown. The screen turns white during full-resolution capture/SD saving,
 then freezes on the saved photo in the same clean layout as the gallery.
 Select again resumes live view. Up/Down browses the last 15 compact
 photo copies stored on the badge.
-The camera's white flash LED illuminates new full-resolution captures only;
-it stays off during live preview and review.
+Once paired, the camera's white flash LED illuminates new full-resolution captures
+only; it stays off during live preview and review. An unpaired camera instead
+gives a faint blink every two seconds during its three-minute first-pairing window.
+The indicator stops when paired or when that window expires.
 Left/Right changes rotation in 90-degree steps; the setting persists and new
 SD photos carry matching EXIF orientation metadata.
 
 The new companion uses BLE for first-use pairing and Wi-Fi credential refresh.
-Enter the camera's six-digit code from its SD card `PAIRING.TXT` or USB serial
-output once. The app then maintains its private `/camera_config.json` itself.
+First use shows **Connect new camera** without starting Bluetooth or showing an
+error; press Select to begin discovery. Choose the camera with Select and keep
+the badge nearby. Genuine Bluetooth conflicts are reported only when connecting.
+No setup code or `PAIRING.TXT` is needed. First pairing must start within three
+minutes of camera power-on; power-cycle the camera if that window expires.
+The app maintains its private `/camera_config.json` itself. Existing pairings
+are preserved and reconnect without the proximity gate. Update old camera
+firmware before first pairing with this app.
 Install all four Python files, `icon.png`, and the two runtime PNGs in `assets/`.
 The launcher icon is Pictogrammers' MDI **camera**; connection/pairing screens
 use MDI **camera-wireless** and large, rounded `font.ziplock` text with no
@@ -29,10 +37,15 @@ address. Discovery is the fallback, not the normal reconnect path. On the
 attached hardware, photo-to-live resume took 262 ms and cached startup about
 3.7 seconds. Select still resumes first; press Select again to take another photo.
 
-Hardware verification covers first-use BLE pairing, incorrect-code rejection,
-automatic reconnection after camera restart, live preview, full-resolution SD
-captures, frozen review, and the badge gallery. Pairing is application-level SRP,
-not native Bluetooth bonding; its security design remains unaudited.
+Real-hardware verification covers code-free BLE pairing with the generous
+-70 dBm median cutoff, automatic reconnection after camera restart, live preview,
+two full-resolution SD captures, exact saved thumbnails, idempotent retries,
+frozen review, and the badge gallery. USB cannot bypass first enrollment.
+Pairing uses application-level SRP key agreement
+with a public proximity-gated token, not native Bluetooth bonding or a private
+password. RSSI cannot prove distance or ownership and does not prevent an active
+attacker or relay during first enrollment. Pair in a trusted setting; the design
+remains unaudited.
 The pre-BLE Wi-Fi implementation is preserved in commit `7032183`.
 See [setup, power requirements, controls, and recovery](../../../esp32-cam/README.md).
 This app uses the October 2026 `badge`, `screen`, `image`, `rect`, and logical
@@ -49,7 +62,7 @@ project, not the badge app name. Do not rename either when deploying.
 | `__init__.py` | `CameraApp` state machine, buttons, rendering, BLE-to-Wi-Fi handoff |
 | `camera_core.py` | Bounded nonblocking HTTP, JPEG validation/EXIF, atomic last-15 cache |
 | `camera_ble.py` | BLE discovery and paginated RPC; copies callback data before queuing |
-| `camera_pairing.py` | SRP authentication, credential verification/decryption, config persistence |
+| `camera_pairing.py` | Proximity TOFU key agreement, credential verification/decryption, config persistence |
 | `icon.png` | 24 x 24 launcher icon |
 | `camera_launcher_icon.py` | MDI contours for launchers with a hardcoded vector icon registry |
 | `assets/camera-wireless.png` | Connection-screen MDI pictogram |
@@ -83,8 +96,9 @@ The camera and badge may already be paired; first-use setup is not an upgrade st
   This build frees synchronous callback argument tuples on return. Queuing
   numeric-only tuples by reference caused native crashes and USB disappearance.
   `tuple(data)` may return the original tuple; construct a fresh tuple explicitly.
-- Close BLE before joining camera Wi-Fi. Do not replace SRP with unauthenticated
-  credential reads or assume this firmware supports native Bluetooth bonding.
+- Close BLE before joining camera Wi-Fi. Remembered-camera credentials require
+  authentication; never expose them via an unauthenticated read. First pairing
+  is deliberately proximity-based TOFU, not native Bluetooth bonding.
 - Real hardware is required for display, BLE, and JPEG-decoder verification;
   the 2025 simulator and desktop unit tests cannot establish those behaviors.
 

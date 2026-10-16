@@ -1,4 +1,4 @@
-"""Application-level SRP pairing for badges without native BLE bonding."""
+"""Proximity TOFU key agreement and authenticated remembered-camera sessions."""
 
 import binascii
 import hashlib
@@ -55,12 +55,16 @@ class Pairing:
         self.key = None
         self.transcript = None
 
-    def start(self, code):
-        if len(code) != 6 or not code.isdigit():
-            raise CameraError("Enter six pairing digits")
+    def nearby(self, token):
+        if (len(token) != 64
+                or any(c not in b"0123456789abcdef" for c in token)):
+            raise CameraError("Invalid proximity pairing token")
+        return self.exchange(token)
+
+    def exchange(self, token):
         self.secret = int.from_bytes(os.urandom(32), "big")
         self.public = pad(pow(G, self.secret, N))
-        self.x = int.from_bytes(digest(self.salt + digest(self.identity + b":" + code.encode())), "big")
+        self.x = int.from_bytes(digest(self.salt + digest(self.identity + b":" + token)), "big")
         return self.public
 
     def challenge(self, public):

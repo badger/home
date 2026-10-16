@@ -18,6 +18,15 @@ in the binary. Older Wi-Fi-only builds do contain private credentials and must
 not be published. Firmware source, the pinned build definition, and packaging
 scripts are in the parent directory.
 
+New cameras pair by holding the badge against the camera during the first three
+minutes of power-on and selecting it in the app. No `PAIRING.TXT` or setup PIN
+is generated. A faint flash-LED blink every two seconds indicates that this
+first-pairing window is open; it stops on pairing or timeout and never appears
+on already-paired boots. Upgrade both camera firmware and badge app for first-use pairing.
+Existing remembered keys survive component-aware reflashing and keep working.
+Proximity uses RSSI as a heuristic, not cryptographic distance verification;
+see the [pairing threat model](../README.md#ble-pairing-and-security).
+
 Use `python esp32-cam/flash.py --port <camera-port>` to verify the merged image's
 checksums and flash the four separate components. This leaves NVS pairing data
 at `0x9000` intact. Writing the entire merged image at `0x0` erases that data and

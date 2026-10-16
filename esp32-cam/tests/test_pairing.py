@@ -26,12 +26,13 @@ class PairingTests(unittest.TestCase):
                              hmac.digest(key, b"message", "sha256"))
 
     def test_srp_shared_key_matches_independent_library(self):
-        context = SRPContext(self.client.identity.decode(), "123456",
+        token = b"ab" * 32
+        context = SRPContext(self.client.identity.decode(), token.decode(),
                              prime=format(pairing.N, "x"), generator="2",
                              hash_func=hashlib.sha256)
         # srptools serialises integers minimally; use a non-zero-leading salt here.
         self.client.salt = bytes(range(1, 17))
-        public = self.client.start("123456")
+        public = self.client.nearby(token)
         private = 123456789012345678901234567890123456789
         x = context.get_common_password_hash(int.from_bytes(self.client.salt, "big"))
         verifier = context.get_common_password_verifier(x)
@@ -47,15 +48,45 @@ class PairingTests(unittest.TestCase):
             self.client.verify(bytes(32))
 
     def test_srp_rejects_invalid_public_values(self):
-        self.client.start("123456")
+        self.client.nearby(b"ab" * 32)
         for value in (b"short", bytes(256), pairing.pad(pairing.N)):
             with self.assertRaises(pairing.CameraError):
                 self.client.challenge(value)
 
-    def test_code_validation(self):
-        for code in ("12345", "1234567", "123a56"):
+    def test_mismatched_tokens_cannot_confirm_pairing(self):
+        self.client.salt = bytes(range(1, 17))
+        context = SRPContext(self.client.identity.decode(), "ab" * 32,
+                             prime=format(pairing.N, "x"), generator="2",
+                             hash_func=hashlib.sha256)
+        public = self.client.nearby(b"cd" * 32)
+        private = 123456789012345678901234567890123456789
+        x = context.get_common_password_hash(int.from_bytes(self.client.salt, "big"))
+        verifier = context.get_common_password_verifier(x)
+        server_public = context.get_server_public(verifier, private)
+        scramble = context.get_common_secret(server_public, int.from_bytes(public, "big"))
+        shared = context.get_server_premaster_secret(
+            verifier, private, int.from_bytes(public, "big"), scramble)
+        proof = self.client.challenge(pairing.pad(server_public))
+        key = pairing.mac(pairing.digest(pairing.pad(shared)), b"pair" + self.client.transcript)
+        self.assertNotEqual(proof, pairing.mac(key, b"client" + self.client.transcript))
+        with self.assertRaisesRegex(pairing.CameraError, "proof"):
+            self.client.verify(pairing.mac(key, b"server" + self.client.transcript))
+
+    def test_token_validation(self):
+        for token in (b"", b"ab" * 31, b"ab" * 33, b"AB" * 32, b"z" * 64, b"123456"):
             with self.assertRaises(pairing.CameraError):
-                self.client.start(code)
+                self.client.nearby(token)
+
+    def test_fresh_sessions_and_tokens_produce_different_keys(self):
+        clients = [pairing.Pairing(bytes(range(6)), bytes(range(16)),
+                                  bytes([index]) * 16, bytes(range(32, 48)))
+                   for index in range(3)]
+        keys = []
+        for index, client in enumerate(clients):
+            client.nearby(bytes([97 + index]) * 64)
+            client.challenge(pairing.pad(pow(2, 1234567, pairing.N)))
+            keys.append(client.key)
+        self.assertEqual(len(set(keys)), 3)
 
     def test_resume_is_bound_to_both_nonces_and_camera(self):
         key = bytes(range(32))

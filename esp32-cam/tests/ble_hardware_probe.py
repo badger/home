@@ -1,6 +1,5 @@
-"""Run on a real badge; optional private /camera_test_code.json supplies first-use code."""
+"""Run on a real badge with the camera held against it; no setup-code file."""
 
-import json
 import machine
 import sys
 import time
@@ -9,6 +8,7 @@ import time
 watchdog = machine.WDT(timeout=8000)
 namespace = dict(globals())
 source_path = globals().get("CAMERA_APP_PATH", "/system/apps/camera/__init__.py")
+sys.path.insert(0, source_path.rsplit("/", 1)[0])
 with open(source_path) as file:
     exec(file.read().split("\napp = CameraApp()")[0], namespace)
 CameraApp = namespace["CameraApp"]
@@ -37,23 +37,23 @@ if globals().get("TRACE_BLE", False):
     CameraApp.connect_wifi = traced(CameraApp.connect_wifi, "Wi-Fi connect")
 
 
-def drive(app, wrong_code=False):
+def drive(app):
     start = time.ticks_ms()
-    chosen = entered = False
+    chosen = False
     previous = None
     while time.ticks_diff(time.ticks_ms(), start) < 120000:
         watchdog.feed()
         app.update()
         display.update()
         if app.mode == "ERROR":
-            if wrong_code and "Incorrect pairing code" in app.message:
-                print("PASS incorrect code rejected")
-                return
+            if app.message == globals().get("EXPECT_PAIRING_ERROR"):
+                mark("PASS camera rejected enrollment: " + app.message)
+                return False
             raise RuntimeError(app.message)
         if app.mode == "LIVE" and app.frame is not None:
-            assert not wrong_code
+            assert not globals().get("EXPECT_PAIRING_ERROR"), "Enrollment unexpectedly succeeded"
             mark("PASS BLE provisioning reached real Wi-Fi preview")
-            return
+            return True
         p = app.provisioner
         state = (app.mode, p.state if p else None)
         if state != previous:
@@ -63,39 +63,21 @@ def drive(app, wrong_code=False):
             if p.state == "CHOOSE" and not chosen:
                 p.choose()
                 chosen = True
-            elif p.state == "CODE" and not entered:
-                with open("/camera_test_code.json") as file:
-                    private = json.load(file)
-                assert p.identity == private["camera_id"], "Wrong physical camera"
-                code = private["code"]
-                if wrong_code:
-                    code = "%06d" % ((int(code) + 1) % 1000000)
-                p.code(code)
-                entered = True
+        elif app.mode == "WELCOME":
+            app.connect()
         time.sleep_ms(10)
     raise RuntimeError("BLE hardware probe timed out")
 
 
 def main():
-    if globals().get("TEST_WRONG_CODE", False):
-        print("Starting wrong-code test")
-        watchdog.feed()
-        app = CameraApp()
-        try:
-            drive(app, True)
-        finally:
-            app.close()
-        watchdog.feed()
-        time.sleep_ms(6000)
-
     print("Starting camera app")
     watchdog.feed()
     app = CameraApp()
     try:
-        drive(app)
-        assert app.config["pairing"] == "srp-v1"
-        assert len(app.config["pair_key"]) == 64
-        print("PASS pairing and camera identity persisted")
+        if drive(app):
+            assert app.config["pairing"] == "srp-v1"
+            assert len(app.config["pair_key"]) == 64
+            print("PASS pairing and camera identity persisted")
     finally:
         app.close()
 
