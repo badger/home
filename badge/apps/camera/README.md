@@ -1,8 +1,10 @@
 # Camera (2026 firmware only)
 
 Live Wi-Fi viewfinder and shutter for a diymore ESP32-CAM with OV2640.
-Select takes a full-resolution photo on the camera SD card and freezes its
-preview; Select again resumes live view. Up/Down browses the last 15 compact
+Select slides in the 3D Mona portrait and starts an animated three-second
+countdown. The screen turns white during full-resolution capture/SD saving,
+then freezes on the saved photo in the same clean layout as the gallery.
+Select again resumes live view. Up/Down browses the last 15 compact
 photo copies stored on the badge.
 The camera's white flash LED illuminates new full-resolution captures only;
 it stays off during live preview and review.
@@ -12,7 +14,13 @@ SD photos carry matching EXIF orientation metadata.
 The new companion uses BLE for first-use pairing and Wi-Fi credential refresh.
 Enter the camera's six-digit code from its SD card `PAIRING.TXT` or USB serial
 output once. The app then maintains its private `/camera_config.json` itself.
-Install all four Python files plus `icon.png`.
+Install all four Python files, `icon.png`, and the two runtime PNGs in `assets/`.
+The launcher icon is Pictogrammers' MDI **camera**; connection/pairing screens
+use MDI **camera-wireless** and large, rounded `font.ziplock` text with no
+duplicate header message. Live view has no LIVE label or control hints;
+photo review shows just its photo counter. SD warnings and errors remain visible.
+Back can cancel the countdown before a capture is started; repeated Select,
+rotation and gallery inputs are ignored during countdown/capture.
 
 Returning from a photo or gallery reuses the verified Wi-Fi connection instead
 of pairing again. App startup tries the saved Wi-Fi credentials first; if they
@@ -43,6 +51,10 @@ project, not the badge app name. Do not rename either when deploying.
 | `camera_ble.py` | BLE discovery and paginated RPC; copies callback data before queuing |
 | `camera_pairing.py` | SRP authentication, credential verification/decryption, config persistence |
 | `icon.png` | 24 x 24 launcher icon |
+| `camera_launcher_icon.py` | MDI contours for launchers with a hardcoded vector icon registry |
+| `assets/camera-wireless.png` | Connection-screen MDI pictogram |
+| `assets/mona.png` | Transparent crop of the repository's existing 3D Mona portrait |
+| `assets/*.svg`, `assets/NOTICE.txt`, `assets/LICENSE-MDI.txt` | Icon sources and Apache-2.0 attribution; not needed on the device |
 | `screenshot.png` | Documentation photo only; do not copy to the badge |
 
 For presentation-only changes, edit `__init__.py`; normally no ESP32 rebuild or
@@ -57,8 +69,9 @@ The camera and badge may already be paired; first-use setup is not an upgrade st
   documented elsewhere on this branch. `badge`, `screen`, `image`, `rect`,
   `mat3`, `brush`, `color`, `font`, `run`, and logical button constants are
   provided by the runtime. **Do not `import badge`.**
-- `badge.mode(HIRES | VSYNC)` selects 320 x 240. The current photo area is below
-  the 22-pixel title and above the footer at y=217. `run(app.update)` performs
+- `badge.mode(HIRES | VSYNC)` selects 320 x 240. The photo fit remains in the
+  y=22..217 region; the live view no longer draws header/footer text.
+  `run(app.update)` performs
   display updates and button polling; returning `False` exits the app.
 - `image.load(jpeg_bytes, 320, 240)` decodes from memory. Use
   `screen.blit(frame, rect(...))`, not the old multi-coordinate blit signature.
@@ -78,7 +91,8 @@ The camera and badge may already be paired; first-use setup is not an upgrade st
 ### Deploy and check
 
 Follow the [exact macOS deployment commands](../../../esp32-cam/README.md#agent-deployment-checklist-macos).
-Only the four Python files and icon belong on the badge. `/system` is read-only
+Only the four Python files, icon, and two runtime asset PNGs belong on the badge.
+Do not copy the SVGs, license, or documentation onto it. `/system` is read-only
 through the normal REPL: use mass storage for persistent app updates, then eject.
 Host-mounted files and `/camera_app_test.py` are test scaffolding, not installation.
 
@@ -89,6 +103,7 @@ From the repository root:
 mpremote connect <badge-port> run esp32-cam/tests/rotation_hardware_probe.py
 mpremote connect <badge-port> run esp32-cam/tests/real_hardware_probe.py
 mpremote connect <badge-port> run esp32-cam/tests/connection_hardware_probe.py
+mpremote connect <badge-port> run esp32-cam/tests/ui_hardware_probe.py
 ```
 
 The real hardware probe takes two actual SD photos and adds them to the badge
@@ -100,5 +115,30 @@ the watchdog-protected BLE probes described in the companion README.
 The connection probe also takes two actual photos, times resuming preview,
 and asserts that neither Wi-Fi association nor BLE provisioning is repeated.
 Its reboot and stale-address scenarios are documented in the companion README.
+The UI probe takes one actual SD photo, checks all countdown numbers, native
+font/icon drawing, a white shutter framebuffer, and clean live/review/gallery
+labels. The three-second delay applies only to new user-triggered photos;
+recovering an unfinished capture skips the countdown and retains its ID.
+
+MDI assets are Apache-2.0 licensed; see `assets/NOTICE.txt` and
+`assets/LICENSE-MDI.txt`. The fallback Mona asset is cropped from the existing
+`badge/apps/gallery/images/mona.png` artwork, with its blue backdrop removed.
+On firmware with the current 3D launcher, the countdown reuses
+`/system/apps/menu/mona.mpy`'s shared renderer and `mona_menu.p3d`, including
+its tilt-aware pose and slide-up animation. Older launchers use the portrait
+fallback and log that the native renderer is unavailable.
+
+The current 3D menu ignores app PNG icons and uses `menu/icons.mpy`'s `ICONS`
+registry. For that launcher only, copy `camera_launcher_icon.py` into
+`/system/apps/menu/` and add these lines after `from icons import ICONS` in its
+existing `app.py` (preserve all other menu code):
+
+```python
+from camera_launcher_icon import CONTOURS as CAMERA_CONTOURS
+ICONS["camera"] = CAMERA_CONTOURS
+```
+
+Hard-reset afterwards to rebuild the shared tile cache. PNG-based launchers
+need only the app's `icon.png`, not this registry integration.
 
 ![Camera example displaying an upright saved photo](screenshot.png)

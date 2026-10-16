@@ -13,6 +13,9 @@ badge.mode(HIRES | VSYNC)
 screen.font = font.nope
 screen.antialias = image.OFF
 
+COUNTDOWN_MS = 3000
+MONA_SLIDE_MS = 280
+
 
 class CameraApp:
     def __init__(self, config_path="/camera_config.json", cache_path="/state/camera"):
@@ -39,9 +42,24 @@ class CameraApp:
         self.cached_wifi = False
         self.resume_pending = False
         self.camera_verified = False
+        self.countdown_since = None
+        self.wireless_icon = None
+        self.mona = None
+        self.menu_mona = None
         self.wlan = network.WLAN(network.STA_IF)
         self.was_active = self.wlan.active()
         try:
+            self.wireless_icon = image.load("/system/apps/camera/assets/camera-wireless.png")
+            self.mona = image.load("/system/apps/camera/assets/mona.png")
+            menu_path = "/system/apps/menu"
+            sys.path.insert(0, menu_path)
+            try:
+                from mona import shared
+                self.menu_mona = shared()
+            except (ImportError, OSError) as error:
+                print("Camera: native menu Mona unavailable; using portrait:", error)
+            finally:
+                sys.path.remove(menu_path)
             self.store = PhotoStore(cache_path)
             self.rotation = self.store.rotation()
             self.pending = self.store.pending()
@@ -130,8 +148,8 @@ class CameraApp:
         if self.camera_verified and self.wlan.isconnected() and not self.pending:
             self.cancel_request()
             self.mode = "LIVE"
-            self.message = "LIVE"
-            self.detail = "Select: photo   Up/down: gallery"
+            self.message = ""
+            self.detail = ""
             self.resume_pending = True
             self.next_preview = time.ticks_ms()
         else:
@@ -166,6 +184,14 @@ class CameraApp:
         self.detail = "Keep camera powered"
         self.start_request("capture", "/capture?id=" + self.pending
                            + "&rotation=" + str(self.rotation * 90), "POST", 2048)
+
+    def begin_countdown(self):
+        self.cancel_request()
+        self.resume_pending = False
+        self.countdown_since = time.ticks_ms()
+        self.mode = "COUNTDOWN"
+        self.message = ""
+        self.detail = ""
 
     def set_frame(self, data, saved=False):
         jpeg_dimensions(data)
@@ -209,7 +235,7 @@ class CameraApp:
         self.set_frame(data, saved=True)
         self.mode = "GALLERY"
         self.message = "Photo %d / %d" % (self.gallery_index + 1, len(self.store.photos))
-        self.detail = "Up/down: browse   Select: camera"
+        self.detail = ""
 
     def received(self, data):
         operation = self.operation
@@ -228,8 +254,8 @@ class CameraApp:
                 self.take_photo()
             else:
                 self.mode = "LIVE"
-                self.message = "LIVE"
-                self.detail = "Select: photo   Up/down: gallery"
+                self.message = ""
+                self.detail = ""
                 if not status.get("sd"):
                     self.detail = "SD missing - preview only"
         elif operation == "preview":
@@ -249,8 +275,9 @@ class CameraApp:
             self.store.finish()
             self.pending = None
             self.mode = "FROZEN"
-            self.message = "SAVED 1600x1200 on SD"
-            self.detail = "Select: camera   Up/down: gallery"
+            self.gallery_index = len(self.store.photos) - 1
+            self.message = "Photo %d / %d" % (len(self.store.photos), len(self.store.photos))
+            self.detail = ""
 
     def update(self):
         try:
@@ -290,7 +317,7 @@ class CameraApp:
                         pairing.close()
                         self.provisioner = None
                         self.connect_wifi()
-            elif self.mode != "CAPTURING":
+            elif self.mode not in ("CAPTURING", "COUNTDOWN"):
                 if self.mode in ("LIVE", "FROZEN", "GALLERY") and badge.pressed(BUTTON_LEFT):
                     self.rotate(-1)
                 elif self.mode in ("LIVE", "FROZEN", "GALLERY") and badge.pressed(BUTTON_RIGHT):
@@ -301,14 +328,19 @@ class CameraApp:
                     self.show_gallery(1)
                 elif badge.pressed(BUTTON_SELECT):
                     if self.mode == "LIVE":
-                        self.cancel_request()
-                        self.take_photo()
+                        self.begin_countdown()
                     elif self.mode in ("FROZEN", "GALLERY", "ERROR"):
                         self.frame = None
                         if self.mode == "ERROR":
                             self.connect()
                         else:
                             self.resume_preview()
+            if self.mode == "COUNTDOWN":
+                if time.ticks_diff(time.ticks_ms(), self.countdown_since) >= COUNTDOWN_MS:
+                    self.take_photo()
+                # Present the white shutter frame before progressing its request.
+                self.draw()
+                return None
             if self.mode == "CONNECTING" and self.request is None:
                 if self.wlan.isconnected():
                     self.start_request("status", "/status", limit=2048)
@@ -329,46 +361,116 @@ class CameraApp:
         self.draw()
 
     def draw(self):
+        if self.mode == "CAPTURING":
+            screen.pen = color.rgb(255, 255, 255)
+            screen.clear()
+            return
         screen.pen = color.black
         screen.clear()
         if self.frame is not None:
             screen.pen = self.frame_brush
             screen.rectangle(self.frame_rect)
-        screen.pen = color.rgb(0, 0, 0, 190)
-        screen.rectangle(0, 0, 320, 22)
-        screen.rectangle(0, 217, 320, 23)
+        if self.mode == "COUNTDOWN":
+            self.draw_countdown()
+            return
+        if self.mode in ("CONNECTING", "PAIRING", "ERROR"):
+            self.draw_connection()
+            return
+        if self.mode in ("FROZEN", "GALLERY"):
+            screen.pen = color.rgb(0, 0, 0, 190)
+            screen.rectangle(0, 0, 320, 22)
+            screen.pen = color.white
+            screen.font = font.nope
+            self.center_text(self.message, 7)
+        if self.detail:
+            screen.pen = color.rgb(0, 0, 0, 190)
+            screen.rectangle(0, 217, 320, 23)
+            screen.pen = color.white
+            screen.font = font.nope
+            self.center_text(self.detail, 224)
+
+    def center_text(self, text, y, size=1):
+        width, _ = screen.measure_text(text, size)
+        screen.text(text, (320 - width) // 2, y, size)
+
+    def draw_sprite(self, sprite, x, y, width, height):
+        transform = mat3().translate(x, y).scale(width / sprite.width, height / sprite.height)
+        screen.pen = brush.image(sprite, transform)
+        screen.rectangle(x, y, width, height)
+
+    def draw_countdown(self):
+        elapsed = max(0, time.ticks_diff(time.ticks_ms(), self.countdown_since))
+        screen.pen = color.rgb(28, 14, 45, 175)
+        screen.rectangle(0, 0, 320, 240)
+        progress = min(1, elapsed / MONA_SLIDE_MS)
+        eased = 1 - (1 - progress) ** 3
+        if self.menu_mona is not None:
+            self.menu_mona.look_at(160, 70)
+            self.menu_mona.prepare(-1.2 * (1 - eased))
+            self.menu_mona.render()
+        else:
+            self.draw_sprite(self.mona, 96, int(240 - 120 * eased), 128, 110)
+        number = str(max(1, 3 - elapsed // 1000))
+        pulse = elapsed % 1000
+        size = 7 if pulse < 100 else 6 if pulse < 200 else 5
+        screen.font = font.ziplock
         screen.pen = color.white
-        screen.font = font.nope
-        screen.text(self.message[:46], 5, 5)
-        screen.text(self.detail[:48], 5, 224)
+        self.center_text(number, 23, size)
+
+    def draw_connection(self):
+        screen.pen = color.rgb(28, 14, 45)
+        screen.clear()
+        screen.pen = color.white
+        screen.font = font.ziplock
+        if self.mode == "ERROR":
+            self.wrapped_text(self.message, 52, 2, 30)
+            screen.font = font.nope
+            self.wrapped_text(self.detail, 177, 1, 13)
+            return
+        if self.wireless_icon is not None:
+            offset = (time.ticks_ms() // 300) % 3
+            self.draw_sprite(self.wireless_icon, 120, 20 - offset * 2, 80, 80)
+        screen.pen = color.white
         if self.mode == "PAIRING" and self.provisioner:
             pairing = self.provisioner
             if pairing.state == "CHOOSE":
-                screen.text(pairing.camera_name(), 12, 90)
-                screen.text("Up/down: choose  Select: pair", 12, 115)
+                self.center_text("Pick your camera", 109, 2)
+                screen.font = font.nope
+                self.center_text(pairing.camera_name(), 162)
+                self.center_text("Up/down: choose   Select: pair", 211)
+                return
             elif pairing.state == "CODE":
-                screen.text("Code from camera PAIRING.TXT", 12, 70)
-                screen.text("or its USB serial output", 12, 90)
+                self.center_text("Let's pair!", 103, 2)
+                screen.font = font.nope
+                self.center_text("Code on camera SD / USB", 139)
+                screen.font = font.ziplock
                 for index, digit in enumerate(self.code_digits):
-                    screen.text(str(digit), 75 + 28 * index, 120)
-                screen.text("^", 75 + 28 * self.code_cursor, 135)
-                screen.text("Arrows: edit   Select: confirm", 12, 165)
-        if self.mode in ("CONNECTING", "ERROR", "CAPTURING"):
-            screen.pen = color.rgb(0, 0, 0, 220)
-            screen.rectangle(8, 75, 304, 80)
-            screen.pen = color.white
-            words = self.message.split()
+                    screen.text(str(digit), 65 + 33 * index, 159, 2)
+                screen.font = font.nope
+                screen.rectangle(65 + 33 * self.code_cursor, 192, 22, 2)
+                self.center_text("Arrows: edit   Select: confirm", 216)
+                return
+            heading = {
+                "SCANNING": "Finding your\ncamera...",
+                "DIRECT": "Hello again,\ncamera!",
+            }.get(pairing.state, "Getting you\nconnected...")
+        else:
+            heading = "Connecting to\nyour camera..."
+        self.wrapped_text(heading, 122, 2, 32)
+
+    def wrapped_text(self, message, y, size, line_height):
+        for paragraph in message.split("\n"):
             line = ""
-            y = 90
-            for word in words:
+            for word in paragraph.split():
                 candidate = (line + " " + word).strip()
-                if screen.measure_text(candidate)[0] > 288 and line:
-                    screen.text(line, 16, y)
-                    y += 16
+                if line and screen.measure_text(candidate, size)[0] > 288:
+                    self.center_text(line, y, size)
+                    y += line_height
                     line = word
                 else:
                     line = candidate
-            screen.text(line, 16, y)
+            self.center_text(line, y, size)
+            y += line_height
 
     def close(self):
         self.cancel_request()

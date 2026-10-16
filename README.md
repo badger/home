@@ -9,6 +9,12 @@ These apps are designed to be run on the base MonaOS MicroPython firmware pre-in
 
 ## Examples
 
+The [Copilot Agent Buddy](./badge/apps/Copilot/README.md) is a coding-session
+monitor for the Universe 2026 badge. It uses the original Copilot character and
+connects over Wi-Fi to Dan Wahlin's existing Agent Buddy daemon for real session
+states, active-agent indicators, and usage. Only the badge-side client is
+included; it requires the October 2026 firmware and also offers an offline demo.
+
 See the [badge examples](./badgerware/examples/README.md). The
 [2026 camera app](./badge/apps/camera/README.md) adds an ESP32-CAM Wi-Fi viewfinder,
 1600 x 1200 SD photography, rotation, and a last-15 photo gallery. Its companion
@@ -354,4 +360,3 @@ array, binascii, builtins, cmath, collections, errno, gc, hashlib, heapq, io, js
 We welcome contributions! If you've created a new app or improved an existing one, please consider submitting a pull request.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute to this project.
-

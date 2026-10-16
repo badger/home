@@ -78,7 +78,9 @@ Do not feed 5 V into badge GPIO or its 3.3 V Qw/ST connector.
 Open **Camera** from the badge launcher:
 
 - **Select** in the live view captures an OV2640 maximum-resolution
-  **1600 x 1200 JPEG** onto the camera's SD card.
+  **1600 x 1200 JPEG** onto the camera's SD card after an animated **3, 2, 1**
+  countdown with the 3D Mona face. The badge screen goes white while capturing
+  and saving, then shows the saved image without control hints.
   The white GPIO4 flash LED lights only while acquiring a new full-resolution
   shot, including exposure-settling frames, and turns off before SD saving.
   Live preview, gallery browsing, and retries of an already-saved shot do not
@@ -94,6 +96,7 @@ Open **Camera** from the badge launcher:
   display it upright without recompressing the full-resolution image. The badge
   gallery honors each photo's own orientation.
 - **Back/Home** leaves the app.
+  During the countdown it cancels before any capture ID or SD photo is created.
 - On an error, **Select** reconnects/retries. A pending capture keeps the same
   ID across retries and badge restarts, so a lost response does not take a
   second photo.
@@ -166,7 +169,7 @@ Install `mpremote` with `python -m pip install mpremote` if it is not available.
    `mpremote connect <badge-port> exec "import powman; powman.reset_into_msc()"`.
    A serial-disconnect error is normal as it changes USB mode.
 3. Copy `__init__.py`, `camera_core.py`, `camera_pairing.py`, `camera_ble.py`,
-   and `icon.png` from
+   and `icon.png` plus `assets/camera-wireless.png` and `assets/mona.png` from
    `badge/apps/camera/` into the USB volume's `apps/camera/` directory.
    On the tested firmware the volume root maps to `/system`, so do **not**
    create an extra `system/` directory.
@@ -216,7 +219,8 @@ app startup **3.7 seconds**, and camera-reboot recovery **13.4-14.4 seconds**
 (including the stale-password attempt and authenticated BLE exchange, with no
 scan). Deliberately invalidating the saved BLE address recovered through discovery
 in about **17.4 seconds**. These are observed timings, not guaranteed deadlines.
-Full-resolution capture/SD-save time is unchanged.
+Full-resolution capture/SD-save time is unchanged; new shots now have a
+three-second UI countdown before the request. Retrying a pending shot skips it.
 
 ### Agent deployment checklist (macOS)
 
@@ -248,10 +252,13 @@ does not need new firmware. Use the existing virtual environment when available;
    ```sh
    (
    set -e
-   mkdir -p /Volumes/BADGER/apps/camera
+   mkdir -p /Volumes/BADGER/apps/camera/assets
    cp badge/apps/camera/{__init__.py,camera_core.py,camera_ble.py,camera_pairing.py,icon.png} \
      /Volumes/BADGER/apps/camera/
-   for name in __init__.py camera_core.py camera_ble.py camera_pairing.py icon.png; do
+   cp badge/apps/camera/assets/{camera-wireless.png,mona.png} \
+     /Volumes/BADGER/apps/camera/assets/
+   for name in __init__.py camera_core.py camera_ble.py camera_pairing.py icon.png \
+     assets/camera-wireless.png assets/mona.png; do
      cmp "badge/apps/camera/$name" "/Volumes/BADGER/apps/camera/$name"
    done
    sync
@@ -389,6 +396,9 @@ camera AP, checks live frame delivery, reads back full-resolution SD originals,
 checks EXIF and thumbnail bytes, and verifies idempotent captures and gallery.
 `tests/rotation_hardware_probe.py` checks all four rotations against exact
 framebuffer pixel colors, catching transform-order and image-wrapping mistakes.
+`tests/ui_hardware_probe.py` checks the native MDI/font/portrait presentation,
+three-second countdown, white shutter framebuffer and clean gallery labels.
+It takes one actual SD photo, preserves pairing and uses an eight-second watchdog.
 
 `tests/ble_scan_probe.py` checks the badge's native scan in isolation.
 `tests/ble_isolation_probe.py` compares display and WLAN lifecycle variants
