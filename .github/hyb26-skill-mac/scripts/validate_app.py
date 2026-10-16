@@ -268,6 +268,9 @@ def resolve_app(value: str, repo_root: Path) -> Path:
     candidate = Path(value)
     if candidate.exists():
         return candidate.resolve()
+    project_relative = repo_root / candidate
+    if project_relative.exists():
+        return project_relative.resolve()
     named = repo_root / "badge" / "apps" / value
     return named.resolve()
 
@@ -591,7 +594,7 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
                         node.lineno if node is not None else None,
                     )
                 )
-            elif kind in {"module", "non-callable"}:
+            elif lifecycle_name != "on_exit" and kind in {"module", "non-callable"}:
                 issues.append(
                     Issue(
                         "ERROR",
