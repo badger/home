@@ -1,158 +1,281 @@
-import os
 import math
+import os
+import struct
+from array import array
 
 import ui
+from icons import ICONS
 
-DEFAULT_ICON = image.load("default_icon.png")
+TILES_PER_ROW = 4
 
-# bright icon colours
-COLORS = [color.orange, color.blue, color.red, color.green, color.yellow, color.grape]
-HIGHLIGHT = ((0.0, color.rgb(255, 255, 255, 64)), (1.0, color.rgb(255, 255, 255, 0)))
+APP_ORDER = ("merge_conflict", "mona_pet", "rogue", "iss", "snake")
 
-# icon shape
-squircle = shape.squircle(0, 0, 20, 4)
-shade_brush = color.rgb(0, 0, 0, 50)
-# Built once: the geometry is fixed and each icon's position comes from the
-# shape's transform, which the brush folds in at render time. Constructing it per
-# icon per frame rebuilt an identical 256-entry lookup table six times a frame,
-# about 2.6ms.
-highlight_brush = brush.gradient(brush.RADIAL, -20, -20, 0, 30, HIGHLIGHT)
+GAP = 4
+GRID_WIDTH = 312
+TILE = (GRID_WIDTH - (TILES_PER_ROW - 1) * GAP) // TILES_PER_ROW
+GRID_LEFT = (320 - (TILES_PER_ROW * TILE + (TILES_PER_ROW - 1) * GAP)) // 2
+GRID_TOP = ui.STATUS_HEIGHT + 2
+GRID_BOTTOM = ui.RIBBON_TOP
+ROW_PITCH = TILE + GAP
+VISIBLE_ROWS = max(1, (GRID_BOTTOM - GRID_TOP + GAP) // ROW_PITCH)
+
+DESIGN_TILE = 75
+DESIGN_SCALE = TILE / DESIGN_TILE
+ICON_SIZE = 48 * DESIGN_SCALE
+BORDER = 2
+BACKGROUND_SHIFT = 6
+ICON_SHIFT = 3
+SCROLL_MS = 90
+
+BASE_STRENGTH = 0.22
+MID_STRENGTH = 0.42
+HIGH_STRENGTH = 0.62
+
+HALF = TILE / 2
+DESIGN_HALF = DESIGN_TILE / 2
+
+ANIMATION_DIR = "/system/apps/menu/anim"
+ANIMATION_MAGIC = b"BWIC"
+ANIMATION_VERSION = 3
+
+
+def polygon(*values):
+    return shape.custom(array("f", values))
+
+
+def build_patterns():
+    return [
+        [
+            ("mid", shape.circle(18, 20, 36)),
+            ("base", shape.circle(18, 20, 22)),
+            ("high", shape.circle(18, 20, 10)),
+        ],
+        [
+            ("mid", polygon(-60, 10, 10, -60, 34, -60, -60, 34)),
+            ("high", polygon(-20, 60, 60, -20, 60, -6, -6, 60)),
+        ],
+        [
+            ("mid", polygon(-DESIGN_HALF - 8, DESIGN_HALF + 8, DESIGN_HALF + 8, DESIGN_HALF + 8, DESIGN_HALF + 8, -DESIGN_HALF - 8)),
+            ("high", shape.circle(-16, -16, 8)),
+        ],
+        [
+            ("mid", shape.circle(-DESIGN_HALF, DESIGN_HALF, 52)),
+            ("base", shape.circle(-DESIGN_HALF, DESIGN_HALF, 40)),
+            ("mid", shape.circle(-DESIGN_HALF, DESIGN_HALF, 28)),
+            ("base", shape.circle(-DESIGN_HALF, DESIGN_HALF, 16)),
+        ],
+        [
+            ("mid", shape.regular_polygon(16, 16, 42, 4)),
+            ("high", shape.regular_polygon(16, 16, 18, 4)),
+        ],
+        [
+            ("mid", shape.circle(0, DESIGN_HALF + 6, 32)),
+            ("high", shape.circle(22, -20, 9)),
+        ],
+        [
+            ("mid", shape.rectangle(-DESIGN_HALF - 8, -DESIGN_HALF - 8, 26, DESIGN_TILE + 16)),
+            ("high", shape.rectangle(-DESIGN_HALF + 22, -DESIGN_HALF - 8, 8, DESIGN_TILE + 16)),
+        ],
+    ]
+
+
+PATTERNS = build_patterns()
+
+
+def build_icon(contours):
+    return shape.custom(*(array("f", values) for values in contours))
+
+
+def animated_slugs():
+    try:
+        return {name[:-4] for name in os.listdir(ANIMATION_DIR) if name.endswith(".bin")}
+    except OSError:
+        return set()
+
+
+class Animation:
+    def __init__(self, file, fps, offsets):
+        self.file = file
+        self.fps = fps
+        self.offsets = offsets
+        self.shapes = [None] * len(offsets)
+
+    def frame(self, index):
+        index = min(len(self.shapes) - 1, index)
+        if self.shapes[index] is None:
+            file = self.file
+            file.seek(self.offsets[index])
+            contours = []
+            for _ in range(file.read(1)[0]):
+                points = struct.unpack("<H", file.read(2))[0]
+                contours.append(array("f", file.read(points * 8)))
+            self.shapes[index] = shape.custom(*contours)
+        return self.shapes[index]
+
+
+def load_animation(slug):
+    try:
+        file = open(f"{ANIMATION_DIR}/{slug}.bin", "rb")
+    except OSError:
+        return None
+    header = file.read(9)
+    if header[:4] != ANIMATION_MAGIC:
+        file.close()
+        return None
+    version, fps, count = struct.unpack_from("<HBH", header, 4)
+    if version != ANIMATION_VERSION:
+        file.close()
+        return None
+    offsets = struct.unpack(f"<{count}I", file.read(4 * count))
+    return Animation(file, fps, offsets)
 
 
 class App:
-    def __init__(self, collection, name, path):
-        self.active = False
-        self.index = len(collection)
-        self.pos = vec2((self.index % 3) * 48 + 32, (math.floor((self.index % 6) / 3)) * 48 + 42)
-        self.icon = image.load(f"{path}/icon.png") if file_exists(f"{path}/icon.png") else DEFAULT_ICON
+    def __init__(self, index, name, slug, path, animated=False):
+        self.index = index
         self.name = name
+        self.slug = slug
         self.path = path
-        self.spin = False
-        collection.append(self)
+        self.animated = animated
+        self.column = index % TILES_PER_ROW
+        self.row = index // TILES_PER_ROW
+        self.rgb = ui.PALETTE[index % len(ui.PALETTE)]
+        self.base = ui.shade(self.rgb, BASE_STRENGTH)
+        self.tones = {
+            "base": self.base,
+            "mid": ui.shade(self.rgb, MID_STRENGTH),
+            "high": ui.shade(self.rgb, HIGH_STRENGTH),
+        }
+        self.solid = color.rgb(*self.rgb)
+        self.pattern = PATTERNS[(index * 3) % len(PATTERNS)]
+        self.icon_key = slug if slug in ICONS else "default"
+        self.icon = build_icon(ICONS[self.icon_key])
+        self.animation = None
+        self.was_selected = False
+        self.selected_at = 0
 
-    def activate(self, active):
-        # if this icon wasn't already activated then flag it for the spin animation
-        if not self.active and active:
-            self.spin = True
-            self.spin_start = badge.ticks
-        self.active = active
+    def current_icon(self, selected):
+        if not self.animated:
+            return self.icon
+        if selected and not self.was_selected:
+            if self.animation is None:
+                self.animation = load_animation(self.icon_key)
+                if self.animation is None:
+                    self.animated = False
+                    return self.icon
+            self.selected_at = badge.ticks
+        self.was_selected = selected
+        if not selected:
+            return self.icon
+        animation = self.animation
+        return animation.frame((badge.ticks - self.selected_at) * animation.fps // 1000)
 
-    def draw(self):
-        width = 1
-        sprite_width = self.icon.width
-        sprite_offset = sprite_width / 2
+    def draw(self, scroll, tilt, selected, scale=1.0):
+        if scale <= 0:
+            return
+        centre_x = GRID_LEFT + self.column * (TILE + GAP) + HALF
+        centre_y = GRID_TOP + self.row * ROW_PITCH - scroll + HALF
+        size = TILE * scale
+        left = centre_x - size / 2
+        top = centre_y - size / 2
+        if top + size < GRID_TOP or top > GRID_BOTTOM:
+            return
 
-        if self.spin:
-            # create a spin animation that runs over 100ms
-            speed = 100
-            frame = badge.ticks - self.spin_start
+        clip_top = max(top, GRID_TOP)
+        clip_bottom = min(top + size, GRID_BOTTOM)
+        screen.clip = rect(left, clip_top, size, clip_bottom - clip_top)
 
-            # calculate the width of the tile during this part of the animation
-            width = round(math.cos(frame / speed) * 3) / 3
+        if selected:
+            border = BORDER * scale
+            screen.pen = ui.white
+            screen.rectangle(left, top, size, size)
+            screen.pen = self.solid
+            screen.rectangle(left + border, top + border, size - border * 2, size - border * 2)
+        else:
+            screen.pen = self.base
+            screen.rectangle(left, top, size, size)
+            transform = mat3().translate(
+                centre_x - tilt.x * BACKGROUND_SHIFT,
+                centre_y - tilt.y * BACKGROUND_SHIFT,
+            ).scale(scale * DESIGN_SCALE)
+            for tone, element in self.pattern:
+                element.transform = transform
+                screen.pen = self.tones[tone]
+                screen.shape(element)
 
-            # ensure the width never reduces to zero or the icon disappears
-            width = max(0.1, width) if width > 0 else min(-0.1, width)
-
-            # determine how to offset and scale the sprite to match the tile width
-            sprite_width = width * self.icon.width
-            sprite_offset = abs(sprite_width) / 2
-
-            # once the animation has completed unset the spin flag
-            if frame > (speed * 6):
-                self.spin = False
-
-        # transform to the icon position (TODO: Fix need to fudge position by .5 pixels for smoother squircle)
-        squircle.transform = mat3().translate(self.pos.x + 0.5, self.pos.y + 0.5).scale(width, 1)
-
-        # draw the icon shading
-        screen.pen = shade_brush
-        screen.shape(squircle)
-
-        # draw the icon body
-        screen.pen = COLORS[self.index % 6]
-        screen.alpha = 255 if self.active else 128
-
-        squircle.transform = squircle.transform.translate(-1, -1)
-        screen.shape(squircle)
-        squircle.transform = squircle.transform.translate(2, 2)
-        screen.pen = shade_brush
-        screen.shape(squircle)
-        squircle.transform = squircle.transform.translate(-1, -1)
-        screen.pen = highlight_brush
-        screen.shape(squircle)
-
-        screen.alpha = 255
-
-        # draw the icon sprite
-        if sprite_width > 0:
-            self.icon.alpha = 255 if self.active else 100
-            screen.blit(
-                self.icon,
-                rect(
-                    self.pos.x - sprite_offset - 1,
-                    self.pos.y - 13,
-                    sprite_width,
-                    24
-                )
-            )
+        icon = self.current_icon(selected)
+        icon.transform = mat3().translate(
+            centre_x + tilt.x * ICON_SHIFT,
+            centre_y + tilt.y * ICON_SHIFT,
+        ).scale(ICON_SIZE * scale)
+        screen.pen = ui.white
+        screen.shape(icon)
 
 
 class Apps:
     def __init__(self, root):
         self.apps = []
         self.active_index = 0
+        self.changed_at = 0
+        self.scroll = 0.0
+        self.target = 0
+        self.last_ticks = None
 
         def capitalize(word):
             if len(word) <= 1:
                 return word
             return word[0].upper() + word[1:]
 
-        for path in sorted(os.listdir(root)):
-            name = " ".join([capitalize(word) for word in path.split("_")])
+        def order(slug):
+            return (APP_ORDER.index(slug) if slug in APP_ORDER else len(APP_ORDER), slug)
 
-            if is_dir(f"{root}/{path}"):
-                if path not in ("menu", "startup") and (file_exists(f"{root}/{path}/__init__.py") or file_exists(f"{root}/{path}/__init__.mpy")):
-                    App(self.apps, name, f"{root}/{path}")
+        animated = animated_slugs()
+        folders = [entry[0] for entry in os.ilistdir(root) if entry[1] == 0x4000]
+        for slug in sorted(folders, key=order):
+            path = f"{root}/{slug}"
+            if slug == "menu":
+                continue
+            if not (file_exists(f"{path}/__init__.py") or file_exists(f"{path}/__init__.mpy")):
+                continue
+            name = " ".join([capitalize(word) for word in slug.split("_")])
+            icon_key = slug if slug in ICONS else "default"
+            self.apps.append(App(len(self.apps), name, slug, path, icon_key in animated))
 
     @property
     def active(self):
         return self.apps[self.active_index]
 
-    def activate(self, index):
-        self.active_index = index
+    def move(self, step):
+        index = max(0, min(len(self.apps) - 1, self.active_index + step))
+        if index != self.active_index:
+            self.active_index = index
+            self.changed_at = badge.ticks
+
+    def active_centre(self):
+        app = self.active
+        x = GRID_LEFT + app.column * (TILE + GAP) + HALF
+        y = GRID_TOP + app.row * ROW_PITCH - self.target + HALF
+        return x, y
+
+    def update_scroll(self):
+        row = self.active.row
+        lowest = (row - VISIBLE_ROWS + 1) * ROW_PITCH
+        self.target = max(0, min(max(self.target, lowest), row * ROW_PITCH))
+        target = self.target
+
+        now = badge.ticks
+        dt = min(now - self.last_ticks, 200) if self.last_ticks is not None else 0
+        self.last_ticks = now
+        self.scroll += (target - self.scroll) * (1 - math.exp(-dt / SCROLL_MS))
+        if abs(target - self.scroll) < 0.5:
+            self.scroll = target
+
+    def draw(self, tilt, opening=None):
+        self.update_scroll()
         for app in self.apps:
-            app.activate(app.index == index)
-
-    def draw_icons(self):
-        offset = (self.active_index // 6) * 6
-        for app in self.apps[offset:offset + 6]:
-            app.draw()
-
-    def draw_label(self):
-        label = self.active.name
-        w, _ = screen.measure_text(label)
-        screen.pen = ui.phosphor
-        screen.shape(shape.rounded_rectangle(80 - (w / 2) - 4, 100, w + 8, 15, 4))
-        screen.pen = color.rgb(20, 40, 60)
-        screen.text(label, 80 - (w / 2), 101)
-
-    def draw_pagination(self, x=150, y=65):
-        pages = math.ceil(len(self.apps) / 6)
-        selected_page = self.active_index // 6
-        y -= (pages * 7) / 2
-
-        for page in range(pages):
-            offset = page * 6
-            pips = len(self.apps[offset:offset + 6])
-            for pip in range(pips):
-                if self.active_index - (page * 6) == pip:
-                    screen.pen = color.rgb(255, 255, 255, 200)
-                else:
-                    screen.pen = color.rgb(255, 255, 255, 100) if page == selected_page else color.rgb(255, 255, 255, 50)
-                screen.put(x + (pip % 3) * 2, y + (page * 7) + (pip // 3) * 2)
+            scale = opening.tile_scale(app) if opening else 1.0
+            app.draw(self.scroll, tilt, app.index == self.active_index, scale)
+        screen.clip = rect(0, 0, screen.width, screen.height)
 
     def __len__(self):
         return len(self.apps)
-
-    def __getitem__(self, i):
-        return self.apps[i]

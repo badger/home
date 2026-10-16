@@ -37,8 +37,10 @@ badge/
 ```
 
 An app directory is discovered when it contains `__init__.py` or
-`__init__.mpy`. Include a 24x24 `icon.png`; the menu falls back to its default
-icon when one is absent, but new apps should provide one.
+`__init__.mpy`. The menu copied from the 2026-10-08 firmware builds vector
+icons from its `icons.py` table and can load optional per-app animations from
+`menu/anim/`; it does not require an `icon.png`. Keep a 24x24 `icon.png` on new
+apps for compatibility with older menus and other tooling.
 
 Use an explicit application directory so local modules and relative assets
 resolve correctly:
@@ -300,12 +302,18 @@ Use these current 2026 examples:
 | App | Pattern |
 | --- | --- |
 | `apps/input_test/` | Capacitive input, physical input, direction, IMU, HIRES |
-| `apps/menu/` | Launcher return values, pagination, transforms |
+| `apps/menu/` | Launcher return values, ordered app discovery, tilt-aware scrolling, animated vector icons |
 | `apps/plucky_cluck/` | Frame-rate-independent game loop and sprites |
 | `apps/flappy/` | Ported 2025 game using the 2026 API |
 | `apps/gallery/` | Image loading and navigation |
 | `apps/sense/` | External Qw/ST I2C sensor use |
 | `apps/demos/` | Graphics, brush, text, and transform techniques |
+| `apps/contacts/`, `apps/pong/`, `apps/merge_conflict/` | Firmware-provided badge-link APIs |
+| `apps/mona_paint/`, `apps/mona_pet/`, `apps/rogue/` | Drawing tools, virtual pet, and dungeon game |
+
+The apps pulled from the 2026-10-08 firmware are documented in
+[`apps/README.md`](apps/README.md). They are part of the deployable tree and
+depend on modules supplied by the matching firmware.
 
 ## Porting from Universe 2025
 

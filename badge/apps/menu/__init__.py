@@ -5,66 +5,86 @@ sys.path.insert(0, "/system/apps/menu")
 sys.path.insert(0, "/")
 os.chdir("/system/apps/menu")
 
+badge.mode(HIRES | VSYNC)
+previous_clear = badge.default_clear
+badge.default_clear = color.rgb(0, 0, 0)
+
 import ui
 
-from app import Apps
+from app import TILES_PER_ROW, Apps
+from opening import Opening, after_cold_boot
 
-title_font = font.ark
-label_font = font.sins
+try:
+    from mona import MenuMona
+    mona = MenuMona()
+except (ImportError, OSError):
+    mona = None
 
+screen.antialias = image.X2
+screen.fill_rule = image.NON_ZERO
 
-# find installed apps and create apps
 apps = Apps("/system/apps")
+tilt = ui.Tilt()
+opening = Opening(apps) if after_cold_boot() else None
 
-active = 0
+FADE_STEP = 30
+fade = 0 if opening is None else 255
 
-MAX_ALPHA = 255
-alpha = 30
+
+def restore():
+    badge.default_clear = previous_clear
+    badge.mode(LORES | VSYNC)
 
 
 def update():
-    global active, apps, alpha
+    global fade, opening
 
-    # process button inputs to switch between apps
+    if opening is not None:
+        opening.advance()
+        if opening.skippable() and badge.buttons.pressed():
+            opening.finish()
+        if opening.done:
+            opening = None
+
     if badge.pressed(BUTTON_RIGHT):
-        if (active % 3) < 2 and active < len(apps) - 1:
-            active += 1
+        apps.move(1)
     if badge.pressed(BUTTON_LEFT):
-        if (active % 3) > 0 and active > 0:
-            active -= 1
-    if badge.pressed(BUTTON_UP) and active >= 3:
-        active -= 3
+        apps.move(-1)
     if badge.pressed(BUTTON_DOWN):
-        active += 3
-        if active >= len(apps):
-            active = len(apps) - 1
-
-    apps.activate(active)
+        apps.move(TILES_PER_ROW)
+    if badge.pressed(BUTTON_UP):
+        apps.move(-TILES_PER_ROW)
 
     if badge.pressed(BUTTON_SELECT):
+        restore()
         return apps.active.path
 
-    ui.draw_background()
+    if mona is not None:
+        mona.look_at(*apps.active_centre())
+        mona.prepare(opening.mona_lift() if opening else 0.0)
 
-    screen.font = title_font
-    ui.draw_header()
+    ribbon_hidden = 0.0
+    if opening is not None:
+        level = opening.background_level()
+        if level > 0:
+            screen.pen = color.rgb(level, level, level)
+            screen.clear()
+        ribbon_hidden = opening.ribbon_hidden()
 
-    # draw menu apps
-    apps.draw_icons()
+    tilt.update()
+    apps.draw(tilt, opening)
+    ui.draw_status(apps.active_index, len(apps), ribbon_hidden)
+    ui.draw_title(apps.active.name, apps.changed_at, ribbon_hidden)
 
-    # draw label for active menu icon
-    screen.font = label_font
-    apps.draw_label()
+    if mona is not None:
+        mona.render()
 
-    # draw hints for the active page
-    apps.draw_pagination()
-
-    if alpha <= MAX_ALPHA:
-        screen.pen = color.rgb(0, 0, 0, 255 - alpha)
-        screen.rectangle(screen.clip)
-        alpha += 30
+    if fade < 255:
+        screen.pen = color.rgb(0, 0, 0, 255 - fade)
+        screen.rectangle(0, 0, screen.width, screen.height)
+        fade += FADE_STEP
 
     return None
 
-# "on_exit" will be called if callable, else returned verbatim by `launch`
+
 on_exit = run(update).result

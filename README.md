@@ -52,6 +52,14 @@ and Badgeware ecosystem, but they do not model GitHub's custom 2026
 accelerometer, IR, capacitive controls, or firmware APIs exactly. Test those
 features on a Universe 2026 badge.
 
+## Firmware apps
+
+[`badge/apps/`](./badge/apps/) includes all app and menu files copied from a
+badge running the 2026-10-08 firmware build, overwriting matching files while
+retaining other repository apps. See the
+[app guide](./badge/apps/README.md) for the pulled app list and firmware
+dependencies. No files were written to the physical badge.
+
 ## Universe 2026 badge
 
 The 2026 badge is a custom derivative of Pimoroni's
@@ -93,7 +101,9 @@ badge/apps/my_app/
 └── assets/
 ```
 
-`icon.png` should be a 24x24 PNG. A minimal application is:
+Keep `icon.png` as a 24x24 PNG for compatibility with older menus and other
+tooling. The menu pulled from the 2026-10-08 firmware generates vector icons
+and does not require per-app icon files. A minimal application is:
 
 ```python
 import os
