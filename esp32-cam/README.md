@@ -54,11 +54,22 @@ esp32-cam/
   provision.py             Legacy Wi-Fi-only provisioning (unused by BLE builds)
   build.py                 Build and package complete flashable firmware
   flash.py                 Check and flash a selected camera, optional backup
+  ESP32BadgeCam.3mf         Multi-color clip-on case model for attaching to the badge
   firmware/                Generated binaries/checksums (git-ignored)
   local/                   Private pairing files (git-ignored)
   tests/                   Host tests, synthetic server, physical-badge probes
 badge/apps/camera/          The installable 2026 badge example
 ```
+
+## Clip-on camera case
+
+[ESP32BadgeCam.3mf](ESP32BadgeCam.3mf) is the **multi-color 3D-printing model**
+for the ESP32-CAM clip-on case, which allows the camera to be attached to the
+Universe 2026 badge. Open the 3MF in a compatible slicer to retain its separate
+parts and color assignments, then review the print settings for your printer.
+
+The clip provides mechanical attachment only; the camera still needs the
+separate regulated 5 V supply described below.
 
 ## Connections and controls
 
