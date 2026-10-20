@@ -77,8 +77,13 @@ def linkedin_url(value):
     value = value.strip()
     if not value:
         return ""
-    if "linkedin.com/" in value:
-        return value if value.startswith("https://") else "https://" + value.split("://")[-1]
+    rest = value.split("://", 1)[-1]
+    host, _, path = rest.partition("/")
+    host = host.lower()
+    if host == "linkedin.com" or host.endswith(".linkedin.com"):
+        return "https://" + host + "/" + path
+    if "." in value:
+        return ""
     return "https://www.linkedin.com/in/" + value.strip("/")
 
 
