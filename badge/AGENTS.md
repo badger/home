@@ -33,12 +33,22 @@ badge/
     └── my_app/
         ├── __init__.py
         ├── icon.png
+        ├── README.md
         └── assets/
 ```
 
 An app directory is discovered when it contains `__init__.py` or
-`__init__.mpy`. Include a 24x24 `icon.png`; the menu falls back to its default
-icon when one is absent, but new apps should provide one.
+`__init__.mpy`. Include an `icon.png` (24x24 minimum; the menu scales it into
+its tile, so a larger square image such as 48x48 looks sharper); the menu falls
+back to its default icon when one is absent, but new apps should provide one.
+
+Every app must have a `README.md`. Its first paragraph (after the title) is the
+app's description: one short plain-text sentence (10-200 characters, ending in
+punctuation) saying what the app is. Follow it with usage instructions and any
+extra hardware, Wi-Fi or `secrets.py` requirements, and ideally a screenshot.
+The `Validate app READMEs` check enforces this on pull requests
+(`python .github/scripts/validate_app_readmes.py badge/apps`), and the first
+sentence is used to build `app-descriptions.json` in badger/badgerfactory.
 
 Use an explicit application directory so local modules and relative assets
 resolve correctly:
