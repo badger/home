@@ -43,6 +43,15 @@ CONTRIB_FILE = f"{CACHE_DIR}/badge_contribs.json"
 AVATAR_FILE = f"{CACHE_DIR}/badge_avatar.png"
 
 HEADERS = {"User-Agent": "GitHub Universe Badge 2026"}
+TOKEN = str(getattr(secrets, "GITHUB_TOKEN", "") or "").strip()
+
+
+def headers_for(url):
+    if TOKEN and url.startswith("https://api.github.com/"):
+        headers = dict(HEADERS)
+        headers["Authorization"] = "Bearer " + TOKEN
+        return headers
+    return HEADERS
 
 RETRY_MS = 30000
 
@@ -110,7 +119,7 @@ class Download:
         self.temp_file = file + ".tmp"
         self.request = None
         if force_update or not file_exists(file):
-            self.request = fetch.url(url, headers=HEADERS).to(self.temp_file)
+            self.request = fetch.url(url, headers=headers_for(url)).to(self.temp_file)
 
     def ready(self):
         if self.request is None:
