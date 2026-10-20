@@ -1,5 +1,7 @@
 # Haiku Printer (2026 firmware only)
 
+Print a random code haiku as a GitHub Universe receipt on a thermal printer connected to the badge.
+
 Pick one of 256 code haiku at random, then print it as a GitHub Universe 2026
 store-style receipt on a thermal printer wired to the badge's Qw/ST (Stemma QT)
 port. Each receipt has the GitHub logo, the event header, the haiku, some joke
