@@ -1,5 +1,7 @@
 # Camera (2026 firmware only)
 
+Use the badge as a live viewfinder and shutter for a Wi-Fi ESP32-CAM, then review the photos you take.
+
 Live Wi-Fi viewfinder and shutter for a diymore ESP32-CAM with OV2640.
 Select slides in the 3D Mona portrait and starts an animated three-second
 countdown. The screen turns white during full-resolution capture/SD saving,
