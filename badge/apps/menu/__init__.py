@@ -5,66 +5,178 @@ sys.path.insert(0, "/system/apps/menu")
 sys.path.insert(0, "/")
 os.chdir("/system/apps/menu")
 
+badge.mode(HIRES)
+display.set_async(True)
+previous_clear = badge.default_clear
+badge.default_clear = color.rgb(0, 0, 0)
+
 import ui
 
-from app import Apps
+from app import shared as shared_apps
+from achievements import draw_marquee
+from celebration import Celebration
+from gallery import Viewer, prefetch
+from opening import Opening, after_cold_boot
 
-title_font = font.ark
-label_font = font.sins
+try:
+    import sparkle
+except ImportError:
+    sparkle = None
+
+try:
+    from mona import shared as shared_mona
+    mona = shared_mona()
+except (ImportError, OSError):
+    mona = None
+
+screen.antialias = image.X2
+screen.fill_rule = image.NON_ZERO
+
+apps = shared_apps("/system/apps")
+apps.achievements.listen()
+tilt = ui.Tilt()
+opening = Opening(apps) if after_cold_boot() else None
+
+FADE_STEP = 30
+IDLE_MS = 600
+fade = 0 if opening is None else 255
+viewer = None
+celebration = None
 
 
-# find installed apps and create apps
-apps = Apps("/system/apps")
+def resume_sparkle():
+    if sparkle is not None:
+        sparkle.resume()
 
-active = 0
 
-MAX_ALPHA = 255
-alpha = 30
+def restore():
+    resume_sparkle()
+    apps.achievements.close()
+    badge.default_clear = previous_clear
+    display.set_async(False)
+    badge.mode(LORES | VSYNC)
 
 
 def update():
-    global active, apps, alpha
+    global fade, opening, viewer, celebration
 
-    # process button inputs to switch between apps
-    if badge.pressed(BUTTON_RIGHT):
-        if (active % 3) < 2 and active < len(apps) - 1:
-            active += 1
-    if badge.pressed(BUTTON_LEFT):
-        if (active % 3) > 0 and active > 0:
-            active -= 1
-    if badge.pressed(BUTTON_UP) and active >= 3:
-        active -= 3
-    if badge.pressed(BUTTON_DOWN):
-        active += 3
-        if active >= len(apps):
-            active = len(apps) - 1
+    if opening is not None:
+        opening.advance()
+        if opening.skippable() and badge.buttons.pressed():
+            opening.finish()
+        if opening.done:
+            opening = None
 
-    apps.activate(active)
+    if apps.achievements.pending is not None:
+        viewer = None
+        if apps.picker is not None:
+            apps.picker.close()
+        apps.select(apps.achievements_tile.index)
+        left, top, width, height = apps.achievements_tile.bounds(apps.scroll)
+        celebration = Celebration(apps.achievements.pending, (left + width / 2, top + height / 2))
+        apps.achievements.pending = None
 
-    if badge.pressed(BUTTON_SELECT):
-        return apps.active.path
+    picker = apps.picker
+    if celebration is not None:
+        if badge.pressed():
+            celebration.dismiss()
+        if celebration.done:
+            celebration = None
+    elif viewer is not None:
+        if badge.pressed():
+            viewer.close()
+        if viewer.done:
+            viewer = None
+    elif picker is not None and picker.is_open:
+        if badge.pressed(BUTTON_RIGHT):
+            picker.move(1)
+        if badge.pressed(BUTTON_LEFT):
+            picker.move(-1)
+        if badge.pressed(BUTTON_SELECT) and picker.choose():
+            picker.close()
+        if badge.pressed(BUTTON_BACK) or badge.pressed(BUTTON_UP):
+            picker.close()
+    else:
+        if badge.pressed(BUTTON_RIGHT):
+            apps.move(1)
+        if badge.pressed(BUTTON_LEFT):
+            apps.move(-1)
+        if badge.pressed(BUTTON_DOWN):
+            apps.move_vertical(1)
+        if badge.pressed(BUTTON_UP):
+            apps.move_vertical(-1)
 
-    ui.draw_background()
+        if badge.pressed(BUTTON_SELECT):
+            if apps.active is apps.achievements_tile:
+                apps.open_picker()
+            elif apps.active.path is None:
+                viewer = Viewer(apps.active, apps.scroll, tilt)
+            else:
+                restore()
+                return apps.active.path
 
-    screen.font = title_font
-    ui.draw_header()
+    active = apps.active
+    if viewer is None and celebration is None and active.path is None and active is not apps.achievements_tile:
+        prefetch(active.slug, apps.changed_at)
+    if opening is None and viewer is None and celebration is None:
+        apps.load_photos(badge.ticks - apps.changed_at >= IDLE_MS)
 
-    # draw menu apps
-    apps.draw_icons()
+    if viewer is not None and viewer.covering:
+        viewer.draw()
+        return None
 
-    # draw label for active menu icon
-    screen.font = label_font
-    apps.draw_label()
+    if mona is not None:
+        mona.look_at(*(celebration.look_target() if celebration is not None else apps.active_centre()))
+        mona.prepare(opening.mona_lift() if opening else 0.0)
 
-    # draw hints for the active page
-    apps.draw_pagination()
+    if celebration is not None and celebration.covering:
+        tilt.update()
+        celebration.draw_back(tilt)
+        if mona is not None:
+            mona.render()
+        celebration.draw_front()
+        return None
 
-    if alpha <= MAX_ALPHA:
-        screen.pen = color.rgb(0, 0, 0, 255 - alpha)
-        screen.rectangle(screen.clip)
-        alpha += 30
+    ribbon_hidden = 0.0
+    if opening is not None:
+        level = opening.background_level()
+        if level > 0:
+            screen.pen = color.rgb(level, level, level)
+            screen.clear()
+        ribbon_hidden = opening.ribbon_hidden()
+
+    tilt.update()
+    apps.draw(tilt, opening, viewer.target() if viewer is not None else None)
+    ui.draw_status(apps.active_index, len(apps), ribbon_hidden)
+    message = picker.message() if picker is not None and picker.is_open else None
+    if message is not None:
+        draw_marquee(*message)
+    elif picker is not None and picker.is_open:
+        ui.draw_title(picker.title(), picker.changed_at, ribbon_hidden)
+    else:
+        ui.draw_title(apps.active.name, apps.changed_at, ribbon_hidden)
+
+    if celebration is not None:
+        celebration.draw_back(tilt)
+
+    if mona is not None:
+        mona.render()
+
+    if celebration is not None:
+        celebration.draw_front()
+
+    if viewer is not None:
+        viewer.draw()
+
+    if fade < 255:
+        screen.pen = color.rgb(0, 0, 0, 255 - fade)
+        screen.rectangle(0, 0, screen.width, screen.height)
+        fade += FADE_STEP
+
+    if opening is None and fade >= 255:
+        resume_sparkle()
 
     return None
 
-# "on_exit" will be called if callable, else returned verbatim by `launch`
+
 on_exit = run(update).result
