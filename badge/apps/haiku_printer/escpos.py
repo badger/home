@@ -103,6 +103,29 @@ def status_request(kind=STATUS_PRINTER):
     return DLE + b"\x04" + bytes((kind,))
 
 
+def status_byte(reply):
+    """Return the first real-time status byte in ``reply``, or None.
+
+    Status bytes always have bit 1 and bit 4 set and bits 0 and 7 clear. That
+    skips unsolicited ``\xfcOK`` notifications and the MC206H ``\xfe#`` prefix.
+    """
+    for value in reply or b"":
+        if value & 0x93 == 0x12:
+            return value
+    return None
+
+
+def status_problem(printer_status, paper_status):
+    """Describe why the printer can't print, or return None when ready."""
+    if printer_status is None or paper_status is None:
+        return "Printer not responding"
+    if paper_status & 0x60:
+        return "Printer is out of paper"
+    if printer_status & 0x08:
+        return "Printer is offline"
+    return None
+
+
 def raster(path):
     """Yield GS v 0 commands for a packed 1bpp raster file, in short bands."""
     with open(path, "rb") as source:
@@ -193,6 +216,7 @@ class Printer:
         self.budget = 0
         self.sent = 0
         self.total = 0
+        self.cancelled = False
 
     @property
     def busy(self):
@@ -208,6 +232,7 @@ class Printer:
         self.budget = CHUNK
         self.sent = 0
         self.total = total
+        self.cancelled = False
 
     def pump(self, elapsed_ms):
         if not self.busy:
@@ -232,6 +257,21 @@ class Printer:
 
     def cancel(self):
         """Finish the command in flight, then eject what has printed."""
-        if self.busy:
+        if self.busy and not self.cancelled:
+            self.cancelled = True
             self.chunks = iter((feed(4), align(LEFT)))
             self.total = self.sent + len(self.pending) + 5
+
+    def drain(self, timeout_ms=3000, step_ms=20, sleep=None):
+        """Cancel, then block until the in-flight command is sent (bounded)."""
+        if sleep is None:
+            import time
+            sleep = time.sleep_ms
+        self.cancel()
+        waited = 0
+        while self.pump(step_ms):
+            if waited >= timeout_ms:
+                return False
+            sleep(step_ms)
+            waited += step_ms
+        return True

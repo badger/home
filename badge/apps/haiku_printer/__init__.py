@@ -67,20 +67,28 @@ class HaikuStore:
             return self.numbers[index], self.parse(source.readline())
 
 
-def check_printer(port):
-    """Return None when ready, otherwise a short problem description."""
+def query_status(port, kind):
     while port.any():
         port.read()
-    port.write(escpos.status_request(escpos.STATUS_PAPER))
+    port.write(escpos.status_request(kind))
     deadline = time.ticks_add(time.ticks_ms(), STATUS_WAIT_MS)
-    while not port.any() and time.ticks_diff(deadline, time.ticks_ms()) > 0:
+    reply = b""
+    while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+        if port.any():
+            reply += port.read()
+            status = escpos.status_byte(reply)
+            if status is not None:
+                return status
         time.sleep_ms(10)
-    reply = port.read(1)
-    if not reply:
-        return "Printer not responding"
-    if reply[0] & 0x60:
-        return "Printer is out of paper"
     return None
+
+
+def check_printer(port):
+    """Return None when ready, otherwise a short problem description."""
+    return escpos.status_problem(
+        query_status(port, escpos.STATUS_PRINTER),
+        query_status(port, escpos.STATUS_PAPER),
+    )
 
 
 def timestamp():
@@ -197,6 +205,9 @@ def start_print():
 
 def finish_print():
     global mode, message_until
+    if printer.cancelled:
+        mode = SHOWING
+        return
     saved["last"] = current[0]
     saved["printed"] += 1
     State.save("haiku_printer", saved)
@@ -329,6 +340,11 @@ def update():
 
 
 def on_exit():
+    # Never leave the printer waiting for the rest of a raster command.
+    if printer.busy:
+        printer.drain()
+    if hasattr(uart, "flush"):
+        uart.flush()
     uart.deinit()
 
 

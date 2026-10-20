@@ -126,6 +126,42 @@ class PrinterTests(unittest.TestCase):
             pass
         self.assertNotIn(b"never", uart.data)
         self.assertTrue(uart.data.endswith(escpos.feed(4) + escpos.align(escpos.LEFT)))
+        self.assertTrue(printer.cancelled)
+        printer.start([b"next"], 4)
+        self.assertFalse(printer.cancelled)
+
+    def test_drain_finishes_in_flight_command(self):
+        uart = FakeUart()
+        printer = escpos.Printer(uart)
+        printer.start([b"x" * 500, b"never"], 505)
+        printer.pump(20)
+        self.assertTrue(printer.drain(sleep=lambda ms: None))
+        self.assertFalse(printer.busy)
+        self.assertNotIn(b"never", uart.data)
+        self.assertTrue(uart.data.startswith(b"x" * 500))
+
+    def test_drain_gives_up_on_stalled_uart(self):
+        class Stalled:
+            def write(self, data):
+                return 0
+
+        printer = escpos.Printer(Stalled())
+        printer.start([b"x" * 100], 100)
+        self.assertFalse(printer.drain(timeout_ms=100, sleep=lambda ms: None))
+
+
+class StatusTests(unittest.TestCase):
+    def test_status_byte_skips_notifications_and_prefix(self):
+        self.assertEqual(escpos.status_byte(b"\xfcOK\x12"), 0x12)
+        self.assertEqual(escpos.status_byte(b"\xfe#\x12"), 0x12)
+        self.assertEqual(escpos.status_byte(b"\xfcOK"), None)
+        self.assertEqual(escpos.status_byte(b""), None)
+
+    def test_status_problem(self):
+        self.assertIsNone(escpos.status_problem(0x12, 0x12))
+        self.assertEqual(escpos.status_problem(None, 0x12), "Printer not responding")
+        self.assertEqual(escpos.status_problem(0x12, 0x72), "Printer is out of paper")
+        self.assertEqual(escpos.status_problem(0x1A, 0x12), "Printer is offline")
 
 
 if __name__ == "__main__":
