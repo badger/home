@@ -39,8 +39,10 @@ badge/
 An app directory is discovered when it contains `__init__.py` or
 `__init__.mpy`. The menu copied from the 2026-10-08 firmware builds vector
 icons from its `icons.py` table and can load optional per-app animations from
-`menu/anim/`; it does not require an `icon.png`. Keep a 24x24 `icon.png` on new
-apps for compatibility with older menus and other tooling.
+`menu/anim/`. Apps without a built-in vector icon show their own `icon.png`
+(any square PNG, scaled to the tile with bilinear filtering; a 24x24 PNG is the
+minimum and a larger one such as 48x48 looks sharper), so every new app should
+include one.
 
 Use an explicit application directory so local modules and relative assets
 resolve correctly:

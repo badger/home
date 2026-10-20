@@ -30,8 +30,8 @@ by that badge's firmware (including `badgeware.link`, `hints`, `missing_details`
 simulator. Some apps need Wi-Fi, badge-link peers, configured profile details,
 or hardware-specific firmware services.
 
-The pulled apps did not include per-app `icon.png` files. The menu generates
-vector icons from `menu/icons.py` and loads optional animations from
-`menu/anim/`. Existing PNG icons are retained for older menus and other
-tooling. These files are part of the deployable `badge/` tree, but pulling
+The menu generates vector icons from `menu/icons.py` for known apps and loads
+optional animations from `menu/anim/`. Any other app is shown with its own
+`icon.png`, drawn scaled into the menu tile. Add one to every app. These files
+are part of the deployable `badge/` tree, but pulling
 them into the repository did not write anything to the physical badge.
