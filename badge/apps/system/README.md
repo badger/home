@@ -1,5 +1,7 @@
 # System
 
+View the badge's time and battery status and sync its clock over Wi-Fi.
+
 A small status + settings screen for the badge.
 
 - **Clock** — current local time and date.

@@ -1,5 +1,7 @@
 # Copilot
 
+Monitor your GitHub Copilot coding sessions on the badge with an animated Agent Buddy.
+
 Your **GitHub Copilot Agent Buddy** on the Universe 2026 badge, adapted from
 [Dan Wahlin's Agent Buddy](https://github.com/DanWahlin/agent-buddy).
 The badge monitors real coding sessions through **Agent Buddy's existing
