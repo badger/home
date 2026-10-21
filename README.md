@@ -28,6 +28,11 @@ connects over Wi-Fi to Dan Wahlin's existing Agent Buddy daemon for real session
 states, active-agent indicators, and usage. Only the badge-side client is
 included; it requires the October 2026 firmware and also offers an offline demo.
 
+The [AgentViz app](./badge/apps/agentviz/README.md) puts live session tracks,
+recent-event replay, subagent activity, and statistics on the 2026 badge.
+Its small local host bridge reuses Jay Parikh's actual AgentViz parsers and
+forwards only bounded activity metadata over Wi-Fi, not prompts or transcripts.
+
 See the [archived 2025 drawing examples](./badge25/badgerware/examples/README.md). The
 [2026 camera app](./badge/apps/camera/README.md) adds an ESP32-CAM Wi-Fi viewfinder,
 1600 x 1200 SD photography, rotation, and a last-15 photo gallery. Its companion

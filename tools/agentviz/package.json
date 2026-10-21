@@ -1,0 +1,12 @@
+{
+  "name": "universe-agentviz-bridge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node bridge.mjs",
+    "test": "node --test bridge.test.mjs"
+  },
+  "dependencies": {
+    "esbuild": "0.28.2"
+  }
+}
