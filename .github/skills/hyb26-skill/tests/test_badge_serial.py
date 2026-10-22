@@ -70,6 +70,30 @@ class BadgeSerialTests(unittest.TestCase):
     def test_default_candidates_include_badger(self):
         self.assertIn("BADGER", {path.name for path in badge_serial.default_candidates()})
 
+    def test_eject_posix_raises_only_if_still_mounted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            mount = Path(temp)
+
+            def failing(args, **kwargs):
+                return subprocess.CompletedProcess(args, 1, stdout="", stderr="busy")
+
+            with self.assertRaises(badge_serial.SerialError):
+                badge_serial.eject_posix(mount, failing)
+        badge_serial.eject_posix(
+            Path(tempfile.gettempdir()) / "hyb26-no-such-badger", failing
+        )
+
+    def test_wait_until_gone(self):
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertFalse(badge_serial.wait_until_gone(Path(temp), 0))
+        self.assertTrue(
+            badge_serial.wait_until_gone(Path(tempfile.gettempdir()) / "hyb26-no-such-badger", 0)
+        )
+
+    def test_eject_without_badger_fails_cleanly(self):
+        missing = Path(tempfile.gettempdir()) / "hyb26-no-such-badger"
+        self.assertEqual(badge_serial.main(["eject", "--mount", str(missing)]), 1)
+
     def test_device_snippets_compile(self):
         compile(badge_serial.INFO_CODE, "info", "exec")
         compile(badge_serial.DISK_MODE_CODE, "disk", "exec")

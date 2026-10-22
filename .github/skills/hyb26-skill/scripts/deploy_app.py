@@ -180,7 +180,7 @@ def deploy(
         if staging_root.exists() and not any(staging_root.iterdir()):
             staging_root.rmdir()
 
-    print("Deployment complete. Eject BADGER safely; reset the badge if it does not restart.")
+    print("Deployment complete. Eject with `badge_serial.py eject`; reset the badge if it does not restart.")
     return destination
 
 

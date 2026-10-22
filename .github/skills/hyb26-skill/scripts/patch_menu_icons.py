@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         mount = find_mount(args.mount)
         menu = find_menu(mount)
         if apply(menu, args.write, mount / ".badge-app-backups") == "written":
-            print("Eject BADGER safely; reset the badge if it does not restart.")
+            print("Eject with `badge_serial.py eject`; reset the badge if it does not restart.")
     except (OSError, RuntimeError, UnicodeDecodeError, PatchError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

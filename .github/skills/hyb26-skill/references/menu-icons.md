@@ -42,7 +42,7 @@ or search `BADGER/apps/menu/app.py` (or `BADGER/system/apps/menu/app.py`) for
 
    BADGER is found automatically; pass `--mount /path/to/BADGER` (Windows:
    `--mount E:\`) if it is somewhere else.
-3. Eject BADGER. The badge restarts into the patched menu (press RESET if not).
+3. Eject BADGER (`badge_serial.py eject`). The badge restarts into the patched menu (press RESET if not).
 
 The tool only edits `apps/menu/app.py`, is safe to rerun (it detects an
 already patched menu), saves the original to

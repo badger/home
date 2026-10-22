@@ -82,7 +82,8 @@ skill folder (`python` on Windows).
 - Copies only `my-app`, never `secrets.py`.
 - Requires explicit replacement and preserves a backup outside `system/apps`.
 - Enters USB Disk Mode from the computer when the badge is on the menu.
-- Gives safe eject, HOME, persistence, and feature-specific test steps.
+- Gives safe eject (`badge_serial.py eject`), HOME, persistence, and
+  feature-specific test steps.
 
 ## Unsupported hardware assumption
 

@@ -5,12 +5,14 @@ Subcommands:
   info       Print firmware, app list, and whether the menu loads icon.png.
   repl       Open the interactive MicroPython REPL (Ctrl-] exits).
   disk-mode  Reboot the badge into USB Disk Mode and wait for BADGER.
+  eject      Flush and eject BADGER, then wait for the badge to restart.
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -131,20 +133,149 @@ def disk_mode(
     return wait_for_mount(wait, candidates)
 
 
+# The badge reboots as soon as it receives the eject request, so the final
+# eject IOCTL can fail because the device has already gone. Windows Explorer
+# reports this as "An error occurred while ejecting"; the data is already safe.
+WINDOWS_GONE_ERRORS = {2, 3, 21, 433, 1167}
+
+
+def eject_windows(mount: Path) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = (
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    )
+    kernel32.DeviceIoControl.argtypes = (
+        wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+    )
+    invalid = wintypes.HANDLE(-1).value
+    drive = mount.drive.rstrip("\\")
+    if not drive:
+        raise SerialError(f"{mount} is not a drive letter; eject it from Explorer.")
+    handle = kernel32.CreateFileW(
+        f"\\\\.\\{drive}", 0xC0000000, 0x3, None, 3, 0, None  # RW, share RW, OPEN_EXISTING
+    )
+    if handle in (None, invalid):
+        raise SerialError(f"Could not open {drive} (error {ctypes.get_last_error()}).")
+    returned = wintypes.DWORD()
+
+    def ioctl(code: int) -> int:
+        ok = kernel32.DeviceIoControl(handle, code, None, 0, None, 0, ctypes.byref(returned), None)
+        return 0 if ok else ctypes.get_last_error()
+
+    try:
+        kernel32.FlushFileBuffers(handle)
+        for _ in range(10):
+            error = ioctl(0x00090018)  # FSCTL_LOCK_VOLUME
+            if error == 0:
+                break
+            time.sleep(0.5)
+        else:
+            raise SerialError(
+                f"{drive} is in use (error {error}). Close Explorer windows, editors, "
+                "or terminals open on BADGER and try again."
+            )
+        error = ioctl(0x00090020)  # FSCTL_DISMOUNT_VOLUME
+        if error and error not in WINDOWS_GONE_ERRORS:
+            raise SerialError(f"Could not dismount {drive} (error {error}).")
+        error = ioctl(0x002D4808)  # IOCTL_STORAGE_EJECT_MEDIA
+        if error and error not in WINDOWS_GONE_ERRORS:
+            raise SerialError(f"Could not eject {drive} (error {error}).")
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def eject_posix(mount: Path, run: Runner = subprocess.run) -> None:
+    if sys.platform == "darwin":
+        command = ["diskutil", "eject", str(mount)]
+    elif shutil.which("udisksctl") and shutil.which("findmnt"):
+        source = run(
+            ["findmnt", "-n", "-o", "SOURCE", "--target", str(mount)],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        command = ["udisksctl", "unmount", "-b", source] if source else ["umount", str(mount)]
+    else:
+        command = ["umount", str(mount)]
+    if hasattr(os, "sync"):
+        os.sync()
+    result = run(command, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0 and mount.is_dir():
+        detail = (result.stderr or result.stdout or "").strip()
+        raise SerialError(f"`{' '.join(command)}` failed: {detail}")
+
+
+def wait_until_gone(mount: Path, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while mount.is_dir():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+    return True
+
+
+def eject(mount_arg: Path | None, wait: float) -> int:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from deploy_app import find_mount
+
+    mount = find_mount(mount_arg)
+    print(f"Ejecting BADGER at {mount}...")
+    if os.name == "nt":
+        eject_windows(mount)
+    else:
+        eject_posix(mount)
+    if not wait_until_gone(mount, wait):
+        print(
+            f"{mount} is still mounted. Eject it from your file manager, "
+            "then press RESET if the badge does not restart.",
+            file=sys.stderr,
+        )
+        return 1
+    print("BADGER ejected safely.")
+    try:
+        mpremote = mpremote_command()
+    except SerialError:
+        print("The badge should restart into the menu; press RESET if it does not.")
+        return 0
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            print(f"Badge restarted on {find_port(mpremote)}.")
+            return 0
+        except (SerialError, OSError, subprocess.SubprocessError):
+            time.sleep(1)
+    print("The badge has not reappeared over USB serial yet; press RESET if the screen is blank.")
+    return 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("command", choices=("port", "info", "repl", "disk-mode"))
+    parser.add_argument("command", choices=("port", "info", "repl", "disk-mode", "eject"))
     parser.add_argument("--port", help="Serial port; defaults to `mpremote devs` lookup")
     parser.add_argument(
-        "--wait", type=float, default=30, help="Seconds to wait for BADGER (disk-mode)"
+        "--mount", type=Path, help="BADGER volume to eject; defaults to auto-detect"
+    )
+    parser.add_argument(
+        "--wait", type=float, default=30,
+        help="Seconds to wait for BADGER to appear (disk-mode) or disappear (eject)",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.command == "eject":
+        try:
+            return eject(args.mount, args.wait)
+        except (SerialError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
     try:
         mpremote = mpremote_command()
         port = args.port or find_port(mpremote)

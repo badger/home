@@ -16,8 +16,8 @@ A real badge is always the preferred test. Commands and serial details are in
    `BADGER/.badge-app-backups`).
 6. If the menu should show the app's `icon.png`, run `patch_menu_icons.py`
    once per badge ([menu-icons.md](menu-icons.md)).
-7. Eject BADGER and wait for it to disappear. The badge restarts into the
-   menu; press RESET if it does not.
+7. Eject: `badge_serial.py eject` (flushes, ejects, and waits for the badge
+   to restart). The badge restarts into the menu; press RESET if it does not.
 
 If both `apps` and `system/apps` exist, pass `--mount` pointing at the folder
 whose direct child is the intended `apps`. Keep the cable connected while

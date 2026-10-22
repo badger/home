@@ -44,6 +44,7 @@ python3 "$scripts/badge_serial.py" disk-mode
 python3 "$scripts/patch_menu_icons.py"
 python3 "$scripts/deploy_app.py" badge/apps/my_app
 python3 "$scripts/deploy_app.py" badge/apps/my_app --write
+python3 "$scripts/badge_serial.py" eject
 ```
 
 Windows (PowerShell):
@@ -58,6 +59,7 @@ python "$scripts\badge_serial.py" disk-mode
 python "$scripts\patch_menu_icons.py"
 python "$scripts\deploy_app.py" badge\apps\my_app
 python "$scripts\deploy_app.py" badge\apps\my_app --write
+python "$scripts\badge_serial.py" eject
 ```
 
 `deploy_app.py` and `patch_menu_icons.py` preview by default; add `--write`
@@ -116,7 +118,10 @@ firmware is too old for remote switching; use the double-tap.
 
 `BADGER/apps` (or `BADGER/system/apps` on some firmware) is `/system/apps` on
 the device. Never copy apps to the `RP2350` drive; that is the firmware
-bootloader. Eject BADGER and wait for it to disappear; the badge normally
+bootloader. Eject with `badge_serial.py eject`, which flushes, ejects, and
+waits for the badge to come back. Windows Explorer's "error occurred while
+ejecting" message is harmless: the badge reboots as soon as it gets the eject
+request. If ejecting by hand, wait for BADGER to disappear; the badge normally
 restarts into the menu by itself (press RESET if it does not).
 
 ## Custom menu icons

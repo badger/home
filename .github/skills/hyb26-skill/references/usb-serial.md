@@ -80,7 +80,11 @@ If `powman` lacks `reset_into_msc`, the firmware is too old for options 1-3.
 - `deploy_app.py` previews and copies one app, excluding hidden files,
   caches, bytecode, and `secrets.py`.
 - Do not use the `RP2350` drive; it is the firmware bootloader.
-- Eject (Finder, `diskutil eject /Volumes/BADGER`, Linux `udisksctl unmount`,
-  or Windows "Eject") and wait for the volume to disappear. The badge
-  normally restarts into the menu by itself; press RESET if it does not.
+- Eject with `badge_serial.py eject` (or Finder, `diskutil eject /Volumes/BADGER`,
+  Linux `udisksctl unmount`, or Windows "Eject") and wait for the volume to
+  disappear. The badge restarts into the menu by itself; press RESET if not.
+- Windows Explorer often reports "An error occurred while ejecting 'BADGER'".
+  The badge reboots the instant it receives the eject request, so Windows loses
+  the device before the request completes. Files are already flushed and the
+  message is harmless; `badge_serial.py eject` avoids it.
 - Confirm: `mpremote connect PORT fs ls :/system/apps/<name>`.
