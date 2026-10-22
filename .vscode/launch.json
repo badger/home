@@ -84,12 +84,12 @@
             }
         },
         {
-            "name": "Badge App: flappy",
+            "name": "Badge App: flappy_mona",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/simulator/badge_simulator.py",
             "args": [
-                "badge/apps/flappy"
+                "badge/apps/flappy_mona"
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",

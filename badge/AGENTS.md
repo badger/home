@@ -312,7 +312,7 @@ Use these current 2026 examples:
 | `apps/input_test/` | Capacitive input, physical input, direction, IMU, HIRES |
 | `apps/menu/` | Launcher return values, pagination, transforms |
 | `apps/plucky_cluck/` | Frame-rate-independent game loop and sprites |
-| `apps/flappy/` | Ported 2025 game using the 2026 API |
+| `apps/flappy_mona/` | Ported 2025 game using the 2026 API |
 | `apps/gallery/` | Image loading and navigation |
 | `apps/sense/` | External Qw/ST I2C sensor use |
 | `apps/demos/` | Graphics, brush, text, and transform techniques |
