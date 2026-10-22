@@ -22,18 +22,9 @@ They do not model the 2026 graphics and input APIs.
 
 ## Examples
 
-The [Copilot Agent Buddy](./badge/apps/Copilot/README.md) is a coding-session
-monitor for the Universe 2026 badge. It uses the original Copilot character and
-connects over Wi-Fi to Dan Wahlin's existing Agent Buddy daemon for real session
-states, active-agent indicators, and usage. Only the badge-side client is
-included; it requires the October 2026 firmware and also offers an offline demo.
-
-See the [archived 2025 drawing examples](./badge25/badgerware/examples/README.md). The
-[2026 camera app](./badge/apps/camera/README.md) adds an ESP32-CAM Wi-Fi viewfinder,
-1600 x 1200 SD photography, rotation, and a last-15 photo gallery. Its companion
-[ESP32-CAM project](./esp32-cam/README.md) includes board purchase links, firmware
-source, build/flash scripts, and installation instructions. This example requires
-the October 2026 firmware, not the archived 2025 firmware.
+The [Apps](./badge/apps/) is folder contains all the applications that ship on the badge along
+with others from the stock Pimoroni Tufty 2350 badge the GitHub Universe badge is based on. It 
+also contains a number of community submitted applications for you to experiment with.
 
 ## Pimoroni and Badgeware resources
 
