@@ -75,11 +75,14 @@ connected badge and copy files or apps.
 
 ## Skills for building 2026 apps
 
-Two HYB26 skills in `.github/` help you build apps for the GitHub Universe 2026 badge.
-Use the [Mac edition](./.github/hyb26-skill-mac/SKILL.md) on macOS.
-Use the [Windows edition](./.github/hyb26-skill-windows/SKILL.md) on Windows.
-Both editions help you create, check, debug, and copy apps to your badge.
-Each skill includes setup instructions, examples, and tools to get started.
+The [`hyb26-skill`](./.github/skills/hyb26-skill/SKILL.md) Copilot skill helps
+you create, check, debug, and install apps on your badge from macOS, Linux, or
+Windows. Copilot picks it up automatically in this repository. It covers
+`mpremote` and the REPL, switching the badge into USB Disk Mode from your
+computer, enabling custom `icon.png` menu icons on stock badges, and the
+[badger.github.io simulator](https://badger.github.io/editor). See its
+[README](./.github/skills/hyb26-skill/README.md) to install it for other
+projects.
 
 ## Creating a 2026 app
 
