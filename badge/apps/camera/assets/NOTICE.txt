@@ -1,0 +1,11 @@
+camera.svg, camera-wireless.svg and their rasterized PNG derivatives:
+Material Design Icons by Pictogrammers, licensed under Apache License 2.0.
+Source: https://github.com/Templarian/MaterialDesign
+https://pictogrammers.com/library/mdi/icon/camera/
+https://pictogrammers.com/library/mdi/icon/camera-wireless/
+Changes: white fill; rasterized for the badge display.
+See LICENSE-MDI.txt for the license.
+
+mona.png:
+Transparent crop of the existing repository's 3D Mona portrait,
+badge/apps/gallery/images/mona.png. No new character artwork.

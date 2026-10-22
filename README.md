@@ -20,6 +20,12 @@ people using the previous badge.
 The legacy simulator and Badgeware API documentation are under `badge25/`.
 They do not model the 2026 graphics and input APIs.
 
+## Examples
+
+The [Apps](./badge/apps/) is folder contains all the applications that ship on the badge along
+with others from the stock Pimoroni Tufty 2350 badge the GitHub Universe badge is based on. It 
+also contains a number of community submitted applications for you to experiment with.
+
 ## Pimoroni and Badgeware resources
 
 - [Tufty 2350 product page and specifications](https://shop.pimoroni.com/products/tufty-2350)
@@ -191,6 +197,9 @@ The Wi-Fi template is [`badge/secrets.py`](./badge/secrets.py). Keep committed
 values empty and configure credentials only on the device.
 
 ## Contributing
+
+We welcome contributions! If you've created a new app or improved an existing
+one, please consider submitting a pull request.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md). New development should target the
 2026 runtime under `badge/`; only compatibility fixes for the older hardware

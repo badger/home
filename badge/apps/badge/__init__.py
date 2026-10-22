@@ -1,220 +1,391 @@
-import json
 import os
-import sys
+import gc
+import json
+import math
+import random
 
-APP_DIRS = ("/remote/apps/badge", "/system/apps/badge", "/apps/badge", "/badge")
-APP_DIR = next(path for path in APP_DIRS if is_dir(path))
-os.chdir(APP_DIR)
-sys.path.insert(0, APP_DIR)
-
-import requests
-import secrets
+import fetch
+import machine
+import missing_details
 import wifi
+from badgeware import link as badgelink
 
+try:
+    import secrets
+except ImportError:
+    secrets = None
+
+badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
-small_font = font.sins
-large_font = font.nope
 
-USERNAME = getattr(secrets, "GITHUB_USERNAME", "")
-TOKEN = getattr(secrets, "GITHUB_TOKEN", "")
-CACHE_FILE = "/state/github-badge.json"
-AVATAR_FILE = "/state/github-badge-avatar.png"
+phosphor = color.rgb(211, 250, 55, 150)
+white = color.rgb(235, 245, 255)
+faded = color.rgb(235, 245, 255, 100)
+spinner = color.rgb(211, 250, 55, 50)
+black = color.rgb(0, 0, 0)
 
-BACKGROUND = color.rgb(13, 17, 23)
-FOREGROUND = color.rgb(240, 246, 252)
-MUTED = color.rgb(139, 148, 158)
-GREEN = color.rgb(46, 160, 67)
-BLUE = color.rgb(88, 166, 255)
-RED = color.rgb(248, 81, 73)
+mona_sans = missing_details.mona_sans()
 
-profile = None
-contributions = None
-avatar = None
-status = "Loading cache..."
-refresh_requested = True
+HANDLE_SIZE = 28
+NAME_SIZE = 16
+VALUE_SIZE = 28
+LABEL_SIZE = 14
+NUDGE_SIZE = 17
+NUDGE_RECT = (176, 70, 136, 150)
 
+CONTRIB_URL = "https://github.com/{user}.contribs"
+USER_AVATAR = "https://wsrv.nl/?url=https://github.com/{user}.png&w=150&output=png"
+DETAILS_URL = "https://api.github.com/users/{user}"
 
-def headers():
-    result = {"User-Agent": "GitHub-Universe-Badge"}
-    if TOKEN:
-        result["Authorization"] = "Bearer " + TOKEN
-    return result
+CACHE_DIR = "/state"
+USER_FILE = f"{CACHE_DIR}/badge_user.json"
+CONTRIB_FILE = f"{CACHE_DIR}/badge_contribs.json"
+AVATAR_FILE = f"{CACHE_DIR}/badge_avatar.png"
 
-
-def request_json(url):
-    response = requests.get(url, headers=headers())
-    try:
-        return response.json()
-    finally:
-        response.close()
+HEADERS = {"User-Agent": "GitHub Universe Badge 2026"}
+TOKEN = str(getattr(secrets, "GITHUB_TOKEN", "") or "").strip()
 
 
-def download(url, path):
-    response = requests.get(url, headers=headers())
-    try:
-        with open(path, "wb") as destination:
-            destination.write(response.content)
-    finally:
-        response.close()
+def headers_for(url):
+    if TOKEN and url.startswith("https://api.github.com/"):
+        headers = dict(HEADERS)
+        headers["Authorization"] = "Bearer " + TOKEN
+        return headers
+    return HEADERS
+
+RETRY_MS = 30000
+
+fetch.AsyncFetch.MAX_HEADER_BYTES = 8192
+
+GRAPH_WEEKS = 53
+GRAPH_DAYS = 7
+TILE_SIZE = 33
+TILE_STEP = 37
+GRAPH_TOP = (240 - GRAPH_DAYS * TILE_STEP) // 2
+PARALLAX_SHIFT = 8
+AVATAR_SIZE = 150
+
+try:
+    os.mkdir(CACHE_DIR)
+except OSError:
+    pass
 
 
-def load_cache():
-    global profile, contributions, avatar, status, refresh_requested
-    try:
-        with open(CACHE_FILE, "r") as cached:
-            data = json.load(cached)
-        profile = data.get("profile")
-        contributions = data.get("contributions")
-        if file_exists(AVATAR_FILE):
-            avatar = image.load(AVATAR_FILE)
-        status = "SELECT to refresh"
-        refresh_requested = False
-    except (OSError, ValueError):
-        status = "No cached GitHub data"
+class Tilt:
+    GRAVITY = 16384.0
+    SMOOTH_MS = 120
+    RECENTRE_MS = 2800
+
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+        self.rest_z = None
+        self.last_ticks = None
+
+    def update(self):
+        ax, _, az = badge.imu()[:3]
+        now = badge.ticks
+        dt = min(now - self.last_ticks, 200) if self.last_ticks is not None else 0
+        self.last_ticks = now
+        smooth = 1 - math.exp(-dt / self.SMOOTH_MS)
+        recentre = 1 - math.exp(-dt / self.RECENTRE_MS)
+        if self.rest_z is None:
+            self.rest_z = az
+        self.rest_z += (az - self.rest_z) * recentre
+        target_x = max(-1.0, min(1.0, -ax / self.GRAVITY * 2))
+        target_y = max(-1.0, min(1.0, (az - self.rest_z) / self.GRAVITY * 2))
+        self.x += (target_x - self.x) * smooth
+        self.y += (target_y - self.y) * smooth
 
 
-def save_cache():
-    with open(CACHE_FILE, "w") as cached:
-        json.dump({"profile": profile, "contributions": contributions}, cached)
+tilt = Tilt()
 
 
-def refresh():
-    global profile, contributions, avatar, status
-
-    if not USERNAME:
-        status = "Set GITHUB_USERNAME in secrets.py"
-        return
-    if not wifi.connect():
-        status = "Connecting to Wi-Fi..."
-        return
-
-    status = "Downloading profile..."
-    profile = request_json("https://api.github.com/users/" + USERNAME)
-
-    status = "Downloading contributions..."
-    contributions = request_json("https://github.com/%s.contribs" % USERNAME)
-
-    avatar_url = profile.get("avatar_url")
-    if avatar_url:
-        status = "Downloading avatar..."
-        download("https://wsrv.nl/?url=%s&w=96&h=96&output=png" % avatar_url, AVATAR_FILE)
-        avatar = image.load(AVATAR_FILE)
-
-    save_cache()
-    status = "Updated - SELECT to refresh"
+def fake_number():
+    return random.randint(10000, 99999)
 
 
-def contribution_count():
-    if isinstance(contributions, dict):
-        for key in ("total_contributions", "total", "totalContributions", "contributions"):
-            value = contributions.get(key)
-            if isinstance(value, int):
-                return value
-    if isinstance(contributions, list):
-        return sum(item.get("count", 0) for item in contributions if isinstance(item, dict))
-    return None
+def placeholder_if_none(text):
+    if text:
+        return text
+    random.seed(badge.ticks // 100)
+    chars = "!\"£$%^&*()_+-={}[]:@~;'#<>?,./\\|"
+    return "".join(random.choice(chars) for _ in range(20))
 
 
-def draw_contributions():
-    if not isinstance(contributions, dict):
-        return
-    weeks = contributions.get("weeks") or []
-    colors = (
-        color.rgb(22, 27, 34),
-        color.rgb(14, 68, 41),
-        color.rgb(0, 109, 50),
-        color.rgb(38, 166, 65),
-        color.rgb(57, 211, 83),
-    )
-    offset = int((badge.ticks / 150) % max(1, len(weeks)))
-    for x in range(53):
-        week = weeks[(x + offset) % len(weeks)] if weeks else {}
-        days = week.get("contribution_days") or []
-        for y in range(min(7, len(days))):
-            level = clamp(int(days[y].get("level", 0)), 0, 4)
-            screen.pen = colors[level]
-            screen.shape(shape.rectangle(x * 3 + 1, y * 3 + 1, 2, 2))
+class Download:
+    def __init__(self, url, file, force_update):
+        self.file = file
+        self.temp_file = file + ".tmp"
+        self.request = None
+        if force_update or not file_exists(file):
+            self.request = fetch.url(url, headers=headers_for(url)).to(self.temp_file)
 
-
-def center_text(text, y):
-    width, _ = screen.measure_text(text)
-    screen.text(text, (screen.width - width) / 2, y)
-
-
-def has_unsupported_chars(text):
-    if not text:
+    def ready(self):
+        if self.request is None:
+            return True
+        if self.request:
+            os.rename(self.temp_file, self.file)
+            self.request = None
+            return True
         return False
-    try:
-        return any(ord(char) > 255 for char in text)
-    except (TypeError, AttributeError):
-        return True
+
+    @property
+    def state(self):
+        if self.request is None:
+            return None
+        return self.request.state
+
+    @property
+    def error(self):
+        if self.request is None:
+            return None
+        return self.request.error
 
 
-def draw():
-    screen.pen = BACKGROUND
-    screen.clear()
-    draw_contributions()
+class User:
+    levels = [
+        color.rgb(10, 13, 17),
+        color.rgb(1, 29, 11),
+        color.rgb(12, 54, 23),
+        color.rgb(23, 80, 33),
+        color.rgb(43, 105, 50),
+    ]
 
-    if profile is None:
-        screen.font = large_font
-        screen.pen = FOREGROUND
-        center_text("GITHUB BADGE", 28)
-        screen.font = small_font
-        screen.pen = MUTED
-        center_text(status, 58)
-        center_text("Configure badge/secrets.py", 75)
-        return
+    def __init__(self, handle):
+        self.handle = handle
+        self.tile = shape.rounded_rectangle(0, 0, TILE_SIZE, TILE_SIZE, 4)
+        self.update()
 
-    if avatar:
-        screen.blit(avatar, rect(8, 8, 48, 48))
+    def update(self, force_update=False):
+        self.name = None
+        self.followers = None
+        self.contribs = None
+        self.contribution_data = None
+        self.repos = None
+        self.avatar = None
+        self._download = None
+        self._force_update = force_update
+        self._error = None
+        self._retry_at = 0
+        self.missing = []
 
-    screen.font = large_font
-    screen.pen = FOREGROUND
-    name = profile.get("name") or profile.get("login") or USERNAME
-    if has_unsupported_chars(name):
-        name = profile.get("login") or USERNAME
-    screen.text(name, 62, 9)
-    screen.font = small_font
-    screen.pen = BLUE
-    screen.text("@" + profile.get("login", USERNAME), 62, 27)
-    screen.pen = MUTED
-    screen.text((profile.get("company") or "")[:20], 62, 42)
+    def load_user_data(self):
+        with open(USER_FILE, "r") as f:
+            data = json.load(f)
+        if data["login"].lower() != self.handle.lower():
+            self.update(True)
+            return
+        self.name = data["name"] or data["login"]
+        self.handle = data["login"]
+        self.followers = data["followers"]
+        self.repos = data["public_repos"]
+        del data
+        gc.collect()
 
-    screen.pen = color.rgb(22, 27, 34)
-    screen.shape(shape.rounded_rectangle(7, 62, 146, 39, 5))
-    screen.pen = FOREGROUND
-    screen.text("REPOS", 15, 69)
-    screen.text("FOLLOWERS", 58, 69)
-    screen.text("CONTRIBS", 111, 69)
-    screen.font = large_font
-    screen.pen = GREEN
-    screen.text(str(profile.get("public_repos", 0)), 15, 84)
-    screen.pen = BLUE
-    screen.text(str(profile.get("followers", 0)), 65, 84)
-    screen.pen = RED
-    count = contribution_count()
-    screen.text("-" if count is None else str(count), 116, 84)
+    def load_contrib_data(self):
+        with open(CONTRIB_FILE, "r") as f:
+            data = json.load(f)
+        self.contribs = data["total_contributions"]
+        self.contribution_data = [[0 for _ in range(GRAPH_WEEKS)] for _ in range(GRAPH_DAYS)]
+        for week_index, week in enumerate(data["weeks"][:GRAPH_WEEKS]):
+            for day, contribution in enumerate(week["contribution_days"][:GRAPH_DAYS]):
+                self.contribution_data[day][week_index] = contribution["level"]
+        del data
+        gc.collect()
 
-    screen.font = small_font
-    screen.pen = MUTED
-    screen.text(status, 8, 107)
+    def load_avatar(self):
+        self.avatar = image.load(AVATAR_FILE)
+
+    def next_download(self):
+        if self.name is None:
+            return "fetching user data...", DETAILS_URL, USER_FILE, self.load_user_data
+        if self.contribs is None:
+            return "fetching contribs...", CONTRIB_URL, CONTRIB_FILE, self.load_contrib_data
+        if self.avatar is None:
+            return "fetching avatar...", USER_AVATAR, AVATAR_FILE, self.load_avatar
+        return None
+
+    def fail(self, error):
+        print(f"Badge: {error}")
+        self._error = error
+        self._retry_at = badge.ticks + RETRY_MS
+        self._download = None
+
+    def fetch_step(self):
+        if self._error:
+            if badge.ticks < self._retry_at:
+                return "fetch failed, retrying..."
+            self._error = None
+
+        pending = self.next_download()
+        if pending is None:
+            return None
+
+        label, url, file, load = pending
+
+        if self._download is None or self._download.file != file:
+            if self._force_update or not file_exists(file):
+                self.missing = missing_details.missing("WIFI_SSID")
+                if self.missing:
+                    return label
+            self._download = Download(url.format(user=self.handle), file, self._force_update)
+
+        if self._download.ready():
+            self._download = None
+            try:
+                load()
+            except (OSError, ValueError, KeyError) as e:
+                os.remove(file)
+                self.fail(e)
+            return label
+
+        if self._download.error:
+            self.fail(self._download.error)
+            return label
+
+        return self._download.state if self._download.state not in ("Idle", "Fetching") else label
+
+    @property
+    def loaded(self):
+        return self.name is not None
+
+    @property
+    def failed(self):
+        return self._error is not None
+
+    def draw_stat(self, title, value, x, y):
+        screen.font = mona_sans
+        screen.pen = white if value else faded
+        if value is not None:
+            text = str(value)
+        elif self.failed:
+            text = "-"
+        else:
+            text = str(fake_number())
+        screen.text(text, x, y, VALUE_SIZE)
+        screen.pen = phosphor
+        screen.text(title, x, y + VALUE_SIZE + 2, LABEL_SIZE)
+
+    def draw_graph(self):
+        graph_width = GRAPH_WEEKS * TILE_STEP
+        travel = (graph_width - screen.width) / 2
+        offset_x = int(-math.sin(badge.ticks / 5000) * travel + travel + tilt.x * PARALLAX_SHIFT)
+        offset_y = GRAPH_TOP - int(tilt.y * PARALLAX_SHIFT)
+
+        for y in range(GRAPH_DAYS):
+            for x in range(GRAPH_WEEKS):
+                pos_x = x * TILE_STEP - offset_x
+                if pos_x + TILE_SIZE < 0 or pos_x > screen.width:
+                    continue
+                level = self.contribution_data[y][x] if self.contribution_data else 1
+                screen.pen = User.levels[level]
+                self.tile.transform = mat3().translate(pos_x, y * TILE_STEP + offset_y)
+                screen.shape(self.tile)
+
+    def draw_avatar(self):
+        if self.avatar:
+            screen.blit(self.avatar, rect(10, 74, AVATAR_SIZE, AVATAR_SIZE))
+            return
+
+        squircle = shape.squircle(0, 0, 20, 5)
+        screen.pen = spinner
+        for i in range(4):
+            mul = math.sin(badge.ticks / 1000) * 14000
+            squircle.transform = mat3().translate(85, 149).rotate((badge.ticks + i * mul) / 40).scale(1 + i / 1.3)
+            screen.shape(squircle)
+
+    def draw(self, status):
+        self.draw_graph()
+
+        screen.font = mona_sans
+        screen.pen = white
+        center_text(status or self.handle, 4, HANDLE_SIZE)
+
+        screen.pen = phosphor
+        center_text(placeholder_if_none(self.name), 36, NAME_SIZE)
+
+        self.draw_stat("followers", self.followers, 176, 66)
+        self.draw_stat("contribs", self.contribs, 176, 124)
+        self.draw_stat("repos", self.repos, 176, 182)
+
+        self.draw_avatar()
+
+
+def center_text(text, y, size):
+    w, _ = screen.measure_text(text, font_size=size)
+    if w > screen.width - 16:
+        size = size * (screen.width - 16) / w
+        w = screen.width - 16
+    screen.text(text, screen.width / 2 - w / 2, y, size)
+
+
+def setting(key):
+    return str(getattr(secrets, key, "") or "").strip()
+
+
+def linkedin_label(url):
+    if not url:
+        return ""
+    path = url.split("://")[-1]
+    if path.startswith("www."):
+        path = path[4:]
+    return path.rstrip("/")
+
+
+handle = setting("GITHUB_USERNAME")
+contact_name = setting("CONTACT_NAME")
+linkedin = linkedin_label(setting("CONTACT_LINKEDIN"))
+user = User(handle)
+badge_id = bytes(machine.unique_id())[:badgelink.ID_LEN]
+
+
+def draw_simple(status):
+    user.draw_graph()
+    screen.font = mona_sans
+    screen.pen = white
+    center_text(contact_name or handle or linkedin, 4, HANDLE_SIZE)
+    details = []
+    if handle and contact_name:
+        details.append("@" + handle)
+    if linkedin and (contact_name or handle):
+        details.append(linkedin)
+    screen.pen = phosphor
+    for index, line in enumerate(details):
+        center_text(line, 36 + index * 18, NAME_SIZE)
+    badgelink.draw_identicon(screen, badge_id, 10, 74, AVATAR_SIZE)
+
+    if not handle:
+        nudge = "Add your GitHub username in Settings or visit Hack Your Badge to show your stats"
+    elif user.failed and wifi.failure():
+        nudge = "Couldn't connect to WiFi. Visit the Hack Your Badge station to get your GitHub stats"
+    elif user.missing or user.failed:
+        nudge = "Visit the Hack Your Badge station to get your GitHub stats"
+    else:
+        nudge = status or "connecting to GitHub..."
+    screen.pen = white
+    screen.text(nudge, rect(*NUDGE_RECT), NUDGE_SIZE, align=(LEFT, TOP))
 
 
 def update():
-    global refresh_requested, status
+    tilt.update()
 
-    if badge.pressed(BUTTON_SELECT):
-        refresh_requested = True
+    screen.pen = black
+    screen.clear()
 
-    if refresh_requested:
-        refresh_requested = False
-        try:
-            refresh()
-        except (OSError, ValueError, KeyError) as error:
-            status = "Update failed: %s" % error
+    if not handle and not contact_name and not linkedin:
+        missing_details.show([], user.draw_graph, ("your name, GitHub username,", "and LinkedIn stub"))
+        return
 
-    draw()
+    both_held = badge.held(BUTTON_LEFT) and badge.held(BUTTON_RIGHT)
+    if handle and both_held and (badge.pressed(BUTTON_LEFT) or badge.pressed(BUTTON_RIGHT)):
+        user.update(True)
+
+    status = user.fetch_step() if handle else None
+    if user.loaded:
+        user.draw(status)
+    else:
+        draw_simple(status)
 
 
-load_cache()
 run(update)

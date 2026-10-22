@@ -1,0 +1,15 @@
+name: Validate app READMEs
+
+on:
+  pull_request:
+    paths:
+      - "badge/apps/**"
+      - ".github/scripts/validate_app_readmes.py"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check every app has a valid README description
+        run: python .github/scripts/validate_app_readmes.py badge/apps
