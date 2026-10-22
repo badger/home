@@ -129,6 +129,7 @@ SHADE = color.rgb(0, 0, 0, 170)
 
 badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
+screen.fill_rule = image.EVEN_ODD  # startup/menu leave NON_ZERO, which fills glyph counters
 mona = font.load("/system/assets/fonts/MonaSans-Medium.af")
 screen.font = mona
 
