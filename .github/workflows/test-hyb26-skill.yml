@@ -1,0 +1,23 @@
+name: Test hyb26-skill
+
+on:
+  pull_request:
+    paths:
+      - ".github/skills/hyb26-skill/**"
+      - "badge/apps/menu/app.py"
+      - ".github/scripts/validate_app_readmes.py"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run skill tool tests
+        working-directory: .github/skills/hyb26-skill
+        run: python -m unittest discover -s tests -v
