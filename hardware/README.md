@@ -37,6 +37,9 @@ For connecting to a physical badge, inspecting its filesystem, using the
 MicroPython REPL, and copying apps, see
 [`USB_SERIAL.md`](./USB_SERIAL.md).
 
+For driving an ESC/POS thermal receipt printer from the Qw/ST port as a UART,
+see [`THERMAL_PRINTER.md`](./THERMAL_PRINTER.md).
+
 ## System overview
 
 | Function | Device or circuit |

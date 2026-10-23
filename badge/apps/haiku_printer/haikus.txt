@@ -1,0 +1,256 @@
+A merge conflict blooms / two branches, one ancestor / rebase, start again
+Green checks line the page / the pull request waits for you / approve, merge, go home
+It works on my box / the container disagrees / ship the laptop then
+Null pointer at dawn / a stack trace unwinds for miles / coffee, then the fix
+Off by one again / the loop ran one time too far / less than, not equal
+Tabs or spaces, friend? / the linter has already / chosen for us both
+Deploy on Friday / the pager sleeps beside me / no weekend for me
+Recursion calls out / recursion calls out again / base case, bring me home
+Copilot suggests / a function I almost wrote / tab, and it is done
+The build is still red / I changed only a comment / flaky tests, I swear
+git blame shows my name / a commit from long ago / I forgive myself
+Semicolon lost / the compiler finds it fast / one char, ten errors
+Cherry blossoms fall / like branches pruned after merge / main stays clean and bright
+A pull request waits / three reviewers, zero words / looks good to me, ship
+Hello, world, I said / the terminal answered back / and so it began
+Stack Overflow knows / the question I could not ask / closed as duplicate
+Rubber duck listens / I explain my code to it / the bug confesses
+Two spaces or four / the argument never ends / the tab key just smiles
+Naming things is hard / I call this one data two / then helper, then thing
+Legacy code hums / written by someone named me / five long years ago
+Merge to main at last / the octocat waves its arms / all its arms at once
+Commit message reads / fixed stuff, as it always does / future me despairs
+Infinite loop spins / the fan begins to whisper / Control C, at last
+Dark mode at midnight / the cursor blinks like a star / one more bug, then sleep
+Open source garden / kind strangers fix my typos / I plant one for them
+The README file says / installation is simple / it was not simple
+Four oh four, not found / the page wandered off somewhere / like my train of thought
+Undefined is not / a function, the browser sighs / neither am I, friend
+Dependency tree / a tower of tiny blocks / one leaf holds it up
+The CI is green / I do not trust it at all / I run it again
+Morning standup call / yesterday I fixed a bug / today, its cousin
+Small commits, often / like rain on a spring garden / history grows green
+Force push to main branch / all of us hold our breath now / reflog, save us all
+A regex is born / it matches everything now / including my soul
+Sixteen browser tabs / each one a Stack Overflow / none of them the fix
+The coffee is cold / the code review is still warm / forty-two comments
+Pair programming dance / one types while the other thinks / then we trade places
+Version one point oh / shipped with a known bug or two / patch notes coming soon
+Spinning wheel of load / a promise not yet resolved / await, await, wait
+Unit tests pass now / I mocked out the world itself / reality fails
+Kernel panic hits / white text scrolls by in a blur / reboot, and we pray
+Old code, commented / left for some future someone / delete it, be brave
+Keyboard clicks at night / mechanical thunderstorm / my roommate awakes
+Docs written at last / the code changed by the next day / docs, out of date now
+Three weeks of searching / the bug, a single typo / one letter, one fix
+Quiet server room / the fans hum a lullaby / uptime, ninety days
+Hotfix in the night / shipped right out to production / rolled back by sunrise
+Clean code, they told me / short functions and clear names / mine are long and vague
+Filed my first issue / a maintainer said thank you / my heart was so full
+First pull request sent / my hands shaking at the keys / merged, I am a dev
+Stars on my repo / one more than yesterday's none / I tell my mother
+Fork it, change it, ship / the beauty of open source / everyone's code, ours
+Callback in callback / a pyramid made of doom / promises save us
+Memory leak grows / slowly, like a quiet tide / the heap overflows
+Garbage collector / sweeps away unused objects / an autumn leaf rake
+Segfault at runtime / the pointer wandered too far / core dumped, like my dreams
+Binary sunset / ones and zeros fade to dusk / the screen dims to sleep
+Select all users / the database groans aloud / add a where clause, please
+Drop table, oh no / production was the target / backups, are you there?
+Code review comment / just a nit, but forty times / nits become a tree
+The intern ships code / on day one to production / everyone applauds
+Ten thousand line diff / reviewer scrolls, then approves / looks good to me, sure
+Branch named final two / then final final for real / then just call it main
+The cloud, they call it / someone else's computer / rented by the hour
+Kubernetes pods / pop up like mushrooms in spring / then crash loop backoff
+Indent the YAML / one space too many, and then / the deploy is gone
+Docker image grows / layer upon layer stacked / two gigs for hello
+Microservice field / one service to say hello / ten to say goodbye
+Monolith stands tall / like an ancient mountain range / nobody dares touch
+The algorithm / big O of n squared, sadly / the input grows large
+Binary search tree / half the forest every step / found it, log of n
+Hash map, quick and kind / every key finds its own home / collisions aside
+Linked list, one by one / each node points to the next one / walking to the end
+A stack of plates waits / last one in is first one out / push, then pop, then push
+Queue at the coffee / first in first out, as is fair / but someone cuts in
+Bubble sort, so slow / swapping pairs across the list / still, it gets there, friend
+Quicksort's pivot set / divide the list and conquer / sorted, swift and neat
+Floating point betrays / zero point one plus point two / point three, almost so
+Int overflow strikes / the counter wraps to minus / high score, negative
+Epoch time ticks on / nineteen seventy began / all our clocks at once
+Time zones, daylight time / the meeting starts at what hour? / UTC, always
+One emoji sent / breaks the legacy parser / a smile, then a crash
+Password is password / the security team weeps / rotate it, they plead
+Secrets in the code / committed for all to see / revoke, rotate, sigh
+Two factor prompt waits / my phone is in the kitchen / I walk, it times out
+Dependabot knocks / a patch for a library / merge, and sleep sound now
+Actions workflow runs / on every push, every branch / minutes melt like snow
+Codespace in the cloud / my laptop fan, silent now / the browser does all
+Issue number one / opened in two thousand eight / still open today
+Good first issue tag / a newcomer finds the way / welcome, friend, come in
+Sponsor button glows / coffee for the maintainer / the project lives on
+Universe arrives / builders gather by the bay / Fort Mason hums loud
+San Francisco fog / rolls over the Golden Gate / and over my code
+A badge on my chest / it blinks and plays little games / it prints poems too
+Conference wifi / sixteen hundred devices / one tiny packet
+Swag bag in my hand / stickers for the laptop lid / no room left at all
+Keynote lights go dark / a demo on the big screen / please, live demo, work
+Hallway track is best / strangers show off side projects / a new friend, a fork
+Mona waves hello / the octocat at the booth / hugs for everyone
+Copilot, my friend / finishes my sentences / and my for loops too
+I type a comment / Copilot writes the function / I take all the praise
+Agent mode engaged / it opens a pull request / while I eat my lunch
+Prompts written with care / the model reads every word / mostly, it listens
+It called a function / that never existed once / confident and wrong
+Context window full / it forgot the start of things / remind it again
+Vim, how do I quit? / colon q and a bang mark / freedom at long last
+Editor wars rage / emacs, vim, and nano too / VS Code watches
+Light theme in the dark / my eyes are burning brightly / dark mode, save me now
+Post-it notes stuck on / the edge of my monitor / my passwords, all there
+Standing desk at rest / I sit there eight hours a day / it judges me, still
+Bug report arrives / steps to reproduce: unknown / works fine on my end
+Heisenbug appears / only when nobody looks / add a print, it's gone
+Print debugging, yes / console log on every line / here, here two, here three
+Breakpoint set with care / the program stops, I step in / time freezes for me
+Catch all exceptions / pass, and pretend all is well / the logs stay silent
+Logs at three AM / a wall of red error text / the pager screams loud
+Incident review / we write it down, without blame / the cause: DNS
+Rollback button pressed / the old version stands again / safe for one more night
+Feature flag flipped on / one percent of users see / the brand new button
+Test A or test B / the blue button won the day / by point one percent
+Pixel off by one / the designer notices / from across the room
+Center the div, please / flexbox, grid, margin auto / it moved to the left
+Important, it says / exclamation in the style / specificity
+A new framework drops / I learned the last one last week / start again, again
+Node modules folder / heavier than a black hole / light cannot escape
+Python spaces count / indentation is the law / the colon, the key
+Borrow checker frowns / you cannot have two of these / lifetimes, ownership
+Go, if err not nil / return err, return err, and / return err once more
+Java factory / factory of factories / abstract singleton
+Star star, pointer, star / a constellation of refs / memory, adrift
+Assembly language / add, move, compare, jump, jump / the metal listens
+COBOL still runs banks / written before I was born / it will outlive me
+Lisp parentheses / closing, closing, closing, close / a forest of arcs
+Haskell monads drift / a burrito, some explain / I am still confused
+TypeScript, any type / the compiler looks away / types, a suggestion
+Ruby, elegant / everything is an object / even nil, it seems
+Bash script one-liner / pipe to grep to sed to awk / nobody can read
+Permission denied / I add sudo, it obeys / with great power, care
+Remove recursive / force, from root, I press enter / silence, then regret
+Green text on black screen / the cursor waits patiently / type, and it obeys
+Control Z again / undo the last hour of work / redo it, then sigh
+Copy, paste, and run / from a forum post in two / thousand twelve, it works
+Forgot to save it / the power flickers, then dies / autosave, my friend
+Git stash holds my work / like a squirrel's winter nuts / where did I put it?
+Detached HEAD state, lost / floating free from any branch / checkout, find your way
+Squash the commits down / twelve small messages become / one tidy story
+Bisect, good or bad / halving history to find / the commit that broke
+Cherry pick one fix / from a branch of tangled work / sweet, and only that
+Gitignore forgot / node modules now committed / the repo is huge
+Tag the release now / version two point zero ships / changelog written fast
+Major, minor, patch / a breaking change in a patch / semver weeps softly
+Merge queue, single file / each pull request waits its turn / patient, like a line
+Code owners pinged now / the review request goes out / to a vacation
+Markdown, simple text / a hash becomes a heading / two stars make words bold
+Thumbs up on the post / a rocket and a party / the release went out
+A question is asked / the community replies / within the hour, wow
+A gist, small and shared / a snippet saved for later / later never comes
+My profile README / a contribution graph glows / green squares like a field
+One year streak of green / one commit on every day / even at the beach
+Secret scanning wakes / a token found in the push / blocked before it's late
+CodeQL looks deep / finds the injection hiding / patched before the dawn
+Autofix suggests / a patch for the bug it found / I click and accept
+GitHub Pages site / my portfolio goes live / free, and on the web
+Kanban columns flow / to do, in progress, and done / done stays empty, sad
+Milestone due today / ninety percent done for weeks / the last ten take years
+Just two days, I said / three weeks later, still coding / estimates are dreams
+This meeting could be / a short email, or a chat / or nothing at all
+Headphones on, in flow / the world fades, only code stays / then a chat message
+Hours pass like seconds / the function writes itself now / I forgot to eat
+Refactor the mess / tiny functions, clear names now / tests still green, I smile
+Technical debt grows / interest paid in late nights / someday we will pay
+TODO, fix later / written in two thousand ten / it is later now
+Magic number here / forty-two, nobody knows / why it must be so
+Spaghetti code, served / goto here and goto there / tangled, yet it runs
+Design patterns book / I apply them everywhere / hello world, abstract
+Optimized the loop / saved a microsecond there / took a week to do
+Benchmarks look so fast / on my machine, warm and fresh / production, not so
+Latency creeps up / every hop a little wait / packets cross the sea
+Load balancer shares / requests evenly across / servers, side by side
+Add an index here / the query flies like a bird / a full scan no more
+Migration runs late / the schema changes in place / fingers crossed, it holds
+Backups every night / never tested, never checked / until the day comes
+Five nines, we promised / then the cloud region went down / four nines, maybe three
+Status page is green / while the whole site is on fire / all systems normal
+On call rotation / my phone buzzes at dinner / dessert can wait, sure
+Runbook step one says / see step two, which says see one / I improvise now
+Caching and naming / the two hard problems, they say / plus off by one, three
+Race condition waits / one lock and two hungry threads / deadlock, both stand still
+Mutex held too long / the other threads line up tall / patience, like a queue
+Async all the way / the event loop spins and spins / never block the thread
+Thread pool full of work / each worker takes one more job / the queue never ends
+Pure function, so calm / same input, same output, peace / no side effects here
+Immutable state / nothing changes, all is new / a fresh copy made
+A global value / everyone can change it now / chaos, everywhere
+Single source of truth / three copies in three places / which one is the truth?
+Config file, YAML / JSON, TOML, or INI / all in one repo
+Environment vars / set in prod but not in test / undefined, again
+Localhost works great / the staging server says no / the port is blocked, sigh
+The firewall says no / the packet turned at the gate / open port, please, now
+DNS, it was / it is always DNS / even when it's not
+Certificate gone / expired at midnight, unseen / renew it, and sleep
+HTTPS / a small padlock in the bar / trust, in one green glyph
+API returns / two hundred, OK, but with / an error inside
+REST or GraphQL? / the debate goes on and on / curl just sends the bytes
+Too many requests / come back in an hour, it says / I wait, sip some tea
+Webhook fires at once / the payload lands like a bird / the bot replies fast
+Cron job runs at night / nobody remembers why / nobody dares stop
+Script runs once a year / on the first day of the year / it fails every time
+Leap year comes around / February twenty-nine / the date math explodes
+Unicode, so vast / every script and every glyph / and a pile of poo
+Tab completion helps / I type two letters and press / the shell knows my mind
+Alias for git / g c o for checkout, now / my fingers fly fast
+Dotfiles, all in git / my whole setup, saved for good / new laptop, same me
+Terminal prompt glows / with a branch name and a time / and a tiny cat
+Ten years of a shell / history holds every step / control R, recall
+Sprinkle in some tests / like salt on a summer stew / the bugs taste the brine
+Test driven, red first / then green, then refactor, calm / the cycle goes on
+Coverage report / one hundred percent of lines / zero of the paths
+Snapshot updated / I pressed u without a look / the bug, now approved
+End to end test runs / a robot clicks each button / then times out at last
+Mocks returning mocks / a test of nothing at all / it passes, of course
+Integration day / the pieces all meet at last / none of them fit, sigh
+Retro board is full / what went well and what did not / more pizza, next time
+Sprint planning begins / story points for everything / thirteen, then it's eight
+Velocity chart / a line goes up, then goes down / like the stock market
+Product owner asks / can we add just one more thing? / the sprint ends today
+User story reads / as a user, I want this / I want sleep, myself
+Built accessible / alt text for every image / everyone belongs
+Screen reader reads out / button, button, button, link / labels, please, add them
+Contrast is too low / gray text on a grayer field / nobody can read
+Responsive layout / phone, tablet, and desktop too / the fridge, coming soon
+Mobile first, they said / I designed it for my phone / my thumb is a god
+Infinite scroll down / the footer runs from my grasp / like a mirage, there
+Cookies banner blooms / accept all, or manage them / I just want to read
+Loading spinner turns / a tiny circle of hope / ten seconds, then blank
+A tiny badge glows / on a lanyard round my neck / it runs Python too
+Press the A button / the little screen comes alive / a haiku appears
+Thermal printer hums / warm paper curls from the slot / a poem for you
+Receipt paper prints / a haiku and a QR / tuck it in your bag
+Wires, four of them / from the badge to the printer / TX, RX, ground
+Ninety-six hundred / baud, bytes march in single file / patient, they arrive
+Escape, at sign, then / the printer wakes, resets clean / ready for the words
+Solder smoke rising / the iron hot in my hand / one more joint, it glows
+LED blinks once / the hello world of hardware / I cheer like a child
+Microcontroller / tiny brain on purple board / runs on a LiPo
+Pull-up resistor / holds the line high, patiently / until it is pressed
+Voltage, five or three / check twice before you connect / the magic smoke waits
+Oscilloscope glows / a square wave dances in green / the clock keeps its time
+Cat on the keyboard / committed one hundred lines / meow, merge, purr, ship, nap
+Weekend side project / it will only take a day / three years, and counting
+Domain name purchased / for a project not yet built / one more renewal
+Hackathon at night / pizza and energy drinks / a demo at dawn
+Mentor, patient, kind / answers the same question twice / and smiles at both times
+Code is poetry / written for humans to read / and machines to run
+Last line of the day / commit, push, and close the lid / tomorrow, more code
+Universe ends now / see you next year by the bay / keep on shipping, friends
