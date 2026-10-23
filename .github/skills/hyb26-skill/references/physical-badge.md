@@ -14,10 +14,17 @@ A real badge is always the preferred test. Commands and serial details are in
 5. Preview, then copy: `deploy_app.py badge/apps/<name>`, then `--write`.
    Add `--replace` to update an existing app (backup kept in
    `BADGER/.badge-app-backups`).
-6. If the menu should show the app's `icon.png`, run `patch_menu_icons.py`
-   once per badge ([menu-icons.md](menu-icons.md)).
+6. Verify the app icon before ejecting:
+   - Confirm the installed app directory contains the newly created
+     `icon.png`, and that it is square.
+   - Run `badge_serial.py info` or check for `ICON_FILE` in the installed
+     menu. If custom icons are unsupported, preview and then apply
+     `patch_menu_icons.py` once per badge ([menu-icons.md](menu-icons.md)).
 7. Eject: `badge_serial.py eject` (flushes, ejects, and waits for the badge
    to restart). The badge restarts into the menu; press RESET if it does not.
+8. Open the app tile and visually confirm that the newly created icon is
+   displayed instead of the default icon. A valid PNG or a successful copy is
+   not enough to claim that the badge displays it.
 
 If both `apps` and `system/apps` exist, pass `--mount` pointing at the folder
 whose direct child is the intended `apps`. Keep the cable connected while
@@ -51,8 +58,9 @@ and `secrets.py`, and refuses `menu` and `startup`.
 
 - App missing from menu: check `/system/apps/<name>/__init__.py` exists
   (`mpremote connect PORT fs ls :/system/apps/<name>`), then reset.
-- Default icon instead of `icon.png`: built-in apps keep their own icon;
-  otherwise apply the menu patch and check the PNG is valid and square.
+- Default icon instead of the app's icon: built-in apps keep their own icon;
+  check the installed PNG, confirm menu support, apply the menu patch if
+  needed, restart, and visually check the tile again.
 - `OSError: 30` / `EROFS` copying over serial: `/system` is read-only there;
   use USB Disk Mode.
 - Port busy: close Thonny, Web Serial tabs, `screen`, and other `mpremote`s.

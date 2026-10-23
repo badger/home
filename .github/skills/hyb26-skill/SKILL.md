@@ -134,6 +134,15 @@ is missing, put the badge in USB Disk Mode and run `patch_menu_icons.py`, which
 applies [Gadgetoid's menu icon patch](https://gist.github.com/Gadgetoid/f72b85e6efe603bd02b2b730bbc40356)
 with a backup. Details: [references/menu-icons.md](references/menu-icons.md).
 
+For every physical deployment, verify the icon end to end. Before copying,
+confirm the app's `icon.png` is the newly created app icon, is square, and is
+at least 24x24. After copying, confirm that same file exists in the installed
+app directory on BADGER. Check that the installed menu supports custom icons;
+if it does not, preview and apply `patch_menu_icons.py` before ejecting. After
+the badge restarts, open the menu and visually confirm that the app tile shows
+the app's icon instead of the default icon. Do not claim the icon works from
+file checks alone.
+
 ## Design and build
 
 Reduce the request to screens/states, controls, assets, saved data, timing,
@@ -176,6 +185,9 @@ References: [app-contract.md](references/app-contract.md),
 3. Deploy to the physical badge through USB Disk Mode, reset, and exercise
    every screen, control, HOME/re-open, saved state, and failure case
    ([references/physical-badge.md](references/physical-badge.md)).
+   Include the end-to-end icon check: verify the installed app icon, verify
+   menu support or apply the menu patch, and visually confirm the tile after
+   restart.
 4. To debug crashes, attach without resetting (`mpremote connect PORT resume
    repl`), open the app on the badge, and read the printed traceback. Probe
    APIs interactively with `exec`/`eval`.
