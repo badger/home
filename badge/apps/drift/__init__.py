@@ -29,9 +29,11 @@ HATCH = 2
 IMU_GRAVITY = 16384.0
 TILT_ACCEL = 900.0       # px/s^2 per g of tilt change
 BASELINE_TAU = 3.0       # seconds for "level" to catch up with a held tilt
-DRAG = 0.55              # per second; low so motion keeps floating momentum
+DRAG = 0.45              # per second; low so motion keeps floating momentum
 MAX_SPEED = 260.0
-WANDER = 9.0             # px/s^2 of ambient drift
+WANDER = 16.0            # px/s^2 of ambient drift
+JOSTLE_RATE = 0.6        # random nudges per square per second
+JOSTLE_KICK = 26.0       # px/s nudge for a mid-sized square
 RESTITUTION = 0.9
 WALL_RESTITUTION = 0.85
 BURST = 140.0
@@ -56,7 +58,7 @@ class Square:
         self.vx = random.uniform(-12, 12)
         self.vy = random.uniform(-12, 12)
         self.phase = random.uniform(0, 2 * math.pi)
-        self.freq = random.uniform(0.12, 0.3)
+        self.freq = random.uniform(0.2, 0.45)
         # Smaller squares feel lighter and react more to tilt.
         self.response = 0.55 + 10.0 / size
         self.glow = 0.0
@@ -106,13 +108,19 @@ def build():
             if place(sq, bodies):
                 bodies.append(sq)
 
-    # Tiny specks drift behind the squares for depth and never collide.
+    # Tiny specks drift behind the squares for depth. They ignore the squares
+    # but are kept clear of the logo so none are ever hidden behind it.
     specks = []
     for _ in range(26):
         rgb = random.choice((WHITE, LAVENDER, VIOLET, INDIGO))
         sq = Square(random.choice((3, 4, 4, 5, 6)), FILL, rgb)
-        sq.x = random.uniform(4, W - 4)
-        sq.y = random.uniform(4, H - 4)
+        while True:
+            sq.x = random.uniform(4, W - 4)
+            sq.y = random.uniform(4, H - 4)
+            dx = sq.x - LOGO_X
+            dy = sq.y - LOGO_Y
+            if dx * dx + dy * dy > (LOGO_R + sq.h + 4) ** 2:
+                break
         sq.vx *= 0.5
         sq.vy *= 0.5
         sq.response = 0.35
@@ -256,6 +264,12 @@ def integrate(sq, t, dt, ax, ay, damp):
     wy = math.cos(t * sq.freq * 0.8 + sq.phase * 1.7) * WANDER
     wx += cushion(sq.x, sq.h, W)
     wy += cushion(sq.y, sq.h, H)
+    if random.random() < JOSTLE_RATE * dt:
+        # Smaller squares get knocked about more than big ones.
+        kick = JOSTLE_KICK * random.uniform(0.5, 1.0) * min(2.0, 12.0 / sq.h)
+        angle = random.uniform(0, 2 * math.pi)
+        sq.vx += math.cos(angle) * kick
+        sq.vy += math.sin(angle) * kick
     sq.vx = (sq.vx + (ax * sq.response + wx) * dt) * damp
     sq.vy = (sq.vy + (ay * sq.response + wy) * dt) * damp
 
@@ -338,6 +352,24 @@ def repel(a, b, dx, dy, gap, dt):
     a.vy -= ny * push * a.inv_mass
     b.vx += nx * push * b.inv_mass
     b.vy += ny * push * b.inv_mass
+
+
+def keep_off_logo(sq):
+    dx = sq.x - LOGO_X
+    dy = sq.y - LOGO_Y
+    clear = LOGO_R + sq.h * 1.42 + 1
+    d2 = dx * dx + dy * dy
+    if d2 >= clear * clear:
+        return
+    dist = math.sqrt(d2) or 1.0
+    nx = dx / dist
+    ny = dy / dist
+    sq.x = LOGO_X + nx * clear
+    sq.y = LOGO_Y + ny * clear
+    vn = sq.vx * nx + sq.vy * ny
+    if vn < 0:
+        sq.vx -= (1 + RESTITUTION) * vn * nx
+        sq.vy -= (1 + RESTITUTION) * vn * ny
 
 
 def hit_logo(sq, dt):
@@ -443,6 +475,7 @@ def update():
 
     for sq in specks:
         integrate(sq, t, dt, ax, ay, damp)
+        keep_off_logo(sq)
     for sq in bodies:
         integrate(sq, t, dt, ax, ay, damp)
 
