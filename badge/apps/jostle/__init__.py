@@ -51,10 +51,16 @@ SETTLE_DRAG = 3.0        # extra drag once a square has bounced off the far wall
 LOCK_TIME = 1.0          # seconds for survivors to glide into their slots
 LAYOUT_MARGIN = 10
 LAYOUT_COLUMNS = (30, 76)
-FLOW_SPACING = 4         # px between flow-line dots
-FLOW_GROUP = 5           # dots per dash; the last one is left blank
+FLOW_DASH = 5            # px length of each flow-line dash
+FLOW_PERIOD = 9          # px from the start of one dash to the next
 FLOW_SPEED = 28.0        # px/s the dashes travel along a line
 REVEAL_SPEED = 320.0     # px/s a flow line grows out of its square
+FLOW_DIM = 0.5           # flow-line brightness relative to its square
+FLOW_BRIGHT = 0.9        # brightness of the highlighted flow lines
+PULSE_SPEED = 170.0      # px/s a bright pulse travels along a line
+PULSE_LENGTH = 16
+PULSE_GAP = (1.5, 7.0)   # seconds between pulses on a line
+DEFOCUS_RATE = 1.6       # how quickly specks blur while the logo is docked
 
 AMBIENT, LAUNCH, SCATTER_OUT, LOCK, FLOW, RETURN = range(6)
 OUT = 1                  # ghost states: flying off screen / coming back on
@@ -132,7 +138,7 @@ def build():
     # Tiny specks drift behind the squares for depth. They ignore the squares
     # but are kept clear of the logo so none are ever hidden behind it.
     specks = []
-    for _ in range(26):
+    for _ in range(18):
         rgb = random.choice((WHITE, LAVENDER, VIOLET, INDIGO))
         sq = Square(random.choice((3, 4, 4, 5, 6)), FILL, rgb)
         while True:
@@ -235,13 +241,8 @@ flows = []
 
 bodies, specks = build()
 
-backdrop = image(W, H)
-backdrop.pen = BG
-backdrop.clear()
-backdrop.pen = GRID_DOT
-for gy in range(4, H, 8):
-    for gx in range(4, W, 8):
-        backdrop.rectangle(gx, gy, 1, 1)
+# An 8x8 pattern brush paints the dot grid in one fill, far faster than a blit.
+backdrop = brush.pattern(GRID_DOT, BG, (0, 0, 0, 0, 0b00001000, 0, 0, 0))
 
 hatch = brush.pattern(color.rgb(LAVENDER[0], LAVENDER[1], LAVENDER[2], 170), color.rgb(0, 0, 0, 0), (
     0b10101010,
@@ -252,6 +253,28 @@ hatch = brush.pattern(color.rgb(LAVENDER[0], LAVENDER[1], LAVENDER[2], 170), col
     0b00000000,
     0b10101010,
     0b00000000))
+
+
+
+def bokeh(rgb, size=15):
+    # A soft gaussian dot used to draw out-of-focus specks.
+    sprite = image(size, size)
+    sprite.pen = color.rgb(0, 0, 0, 0)
+    sprite.clear()
+    c = (size - 1) / 2
+    for y in range(size):
+        for x in range(size):
+            a = int(255 * math.exp(-((x - c) ** 2 + (y - c) ** 2) * 4.5 / (c * c)))
+            if a:
+                sprite.pen = color.rgb(rgb[0], rgb[1], rgb[2], a)
+                sprite.rectangle(x, y, 1, 1)
+    return sprite
+
+
+bokeh_sprites = {}
+for rgb in (WHITE, LAVENDER, VIOLET, INDIGO):
+    bokeh_sprites[rgb] = bokeh(rgb)
+defocus = 0.0
 
 baseline = None
 was_upside_down = None
@@ -419,6 +442,8 @@ def hit_logo(sq, dt):
     # The logo is a circle with infinite mass: only the square moves.
     global logo_glow
     h = sq.h
+    if abs(sq.x - logo_x) > LOGO_R + h + SPACE or abs(sq.y - LOGO_Y) > LOGO_R + h + SPACE:
+        return
     cx = min(max(logo_x, sq.x - h), sq.x + h)
     cy = min(max(LOGO_Y, sq.y - h), sq.y + h)
     dx = cx - logo_x
@@ -541,7 +566,7 @@ def settle(sq, dt):
 
 
 class Flow:
-    def __init__(self, sq, index):
+    def __init__(self, sq, index, bright):
         sx = sq.x + side * (sq.h + 4)
         sy = sq.y
         ex = logo_x - side * LOGO_R * 0.9
@@ -571,10 +596,17 @@ class Flow:
             px, py = x, y
         self.lut = lut
         self.length = len(lut) // 2
-        self.pen = color.rgb(sq.rgb[0] // 2, sq.rgb[1] // 2, sq.rgb[2] // 2)
+        r, g, b = sq.rgb
+        self.bright = bright
+        k = FLOW_BRIGHT if bright else FLOW_DIM
+        self.pen = color.rgb(int(r * k), int(g * k), int(b * k))
+        self.pulse_pen = color.rgb((r + 255 * 2) // 3, (g + 255 * 2) // 3, (b + 255 * 2) // 3)
+        self.trail_pen = color.rgb((r + 255) // 2, (g + 255) // 2, (b + 255) // 2, 140)
         self.sign = 1 if (index // 2 + index) % 2 == 0 else -1
-        self.phase = random.uniform(0, FLOW_SPACING * FLOW_GROUP)
+        self.phase = random.uniform(0, FLOW_PERIOD)
         self.delay = index * 0.05
+        self.pulse = None
+        self.next_pulse = self.delay + random.uniform(1.0, PULSE_GAP[1])
 
 
 def start_flow(t):
@@ -584,7 +616,12 @@ def start_flow(t):
     for sq in keepers:
         sq.x, sq.y = sq.tx, sq.ty
         sq.vx = sq.vy = 0.0
-    flows = [Flow(sq, i) for i, sq in enumerate(keepers)]
+    # A random handful of lines are highlighted (always at least two).
+    count = len(keepers)
+    picks = [random.random() < 0.4 for _ in keepers]
+    while count and sum(picks) < min(2, count):
+        picks[random.randrange(count)] = True
+    flows = [Flow(sq, i, picks[i]) for i, sq in enumerate(keepers)]
     mode = FLOW
     mode_t = t
 
@@ -605,24 +642,48 @@ def start_return(t):
     mode_t = t
 
 
-def draw_flows(t):
-    period = FLOW_SPACING * FLOW_GROUP
+def draw_flows(t, dt):
+    global logo_glow
     since = t - mode_t
+    step = FLOW_DASH * 2
     for f in flows:
         reach = (since - f.delay) * REVEAL_SPEED
         if reach <= 0:
             continue
-        limit = min(f.length - 1, reach)
+        length = f.length
+        limit = int(min(length - 1, reach)) - FLOW_DASH
         lut = f.lut
         screen.pen = f.pen
-        d = (t * FLOW_SPEED * f.sign + f.phase) % period - period
-        j = 0
-        while d <= limit:
-            if d >= 0 and j % FLOW_GROUP != FLOW_GROUP - 1:
-                i = int(d) * 2
-                screen.rectangle(lut[i] - 1, lut[i + 1] - 1, 2, 2)
-            d += FLOW_SPACING
-            j += 1
+        for i in range(int(t * FLOW_SPEED * f.sign + f.phase) % FLOW_PERIOD * 2, limit * 2, FLOW_PERIOD * 2):
+            screen.line(lut[i], lut[i + 1], lut[i + step], lut[i + step + 1], 2)
+
+        if reach < length:
+            continue
+        if f.pulse is None:
+            if since >= f.next_pulse:
+                f.pulse = 0.0
+            continue
+        # The pulse travels the same way as the line's dashes and lights up
+        # the logo when it arrives there.
+        f.pulse += PULSE_SPEED * dt
+        head = f.pulse
+        if head - PULSE_LENGTH * 2 >= length:
+            f.pulse = None
+            gap = random.uniform(PULSE_GAP[0], PULSE_GAP[1])
+            f.next_pulse = since + (gap * 0.6 if f.bright else gap)
+            if f.sign > 0:
+                logo_glow = max(logo_glow, 0.45)
+            continue
+        tail = head - PULSE_LENGTH
+        for a, b, pen, width in ((tail - PULSE_LENGTH, tail, f.trail_pen, 2), (tail, head, f.pulse_pen, 3)):
+            a = max(0, int(a))
+            b = min(length - 1, int(b))
+            if b <= a:
+                continue
+            if f.sign < 0:
+                a, b = length - 1 - b, length - 1 - a
+            screen.pen = pen
+            screen.line(lut[a * 2], lut[a * 2 + 1], lut[b * 2], lut[b * 2 + 1], width)
 
 
 def tint(rgb, glow, alpha=255):
@@ -653,12 +714,20 @@ def draw_square(sq):
 
 def draw_speck(sq, t):
     twinkle = 0.55 + 0.45 * math.sin(t * 1.3 + sq.phase * 3)
-    screen.pen = tint(sq.rgb, 0, int(70 + 150 * twinkle))
-    screen.rectangle(int(sq.x - sq.h), int(sq.y - sq.h), sq.s, sq.s)
+    alpha = 70 + 150 * twinkle
+    if defocus < 1:
+        screen.pen = tint(sq.rgb, 0, int(alpha * (1 - defocus)))
+        screen.rectangle(int(sq.x - sq.h), int(sq.y - sq.h), sq.s, sq.s)
+    if defocus > 0:
+        # Specks swell into dim, soft bokeh while the logo is off to one side.
+        r = sq.h * (1.2 + 1.8 * defocus) + 1
+        screen.alpha = int(alpha * defocus * 0.5)
+        screen.blit(bokeh_sprites[sq.rgb], rect(int(sq.x - r), int(sq.y - r), int(r * 2), int(r * 2)))
+        screen.alpha = 255
 
 
 def update():
-    global logo_glow, logo_x, logo_vx, mode
+    global logo_glow, logo_x, logo_vx, mode, defocus
     dt = min(badge.ticks_delta / 1000, 0.05)
     t = badge.ticks / 1000
 
@@ -727,25 +796,42 @@ def update():
             if since > 0.6 and (settled or since > 2.0):
                 start_lock(t)
 
+        # The first pass finds nearby pairs; later passes only revisit those.
+        near = []
         count = len(active)
-        for step_dt in (dt, 0, 0):
-            for i in range(count):
-                a = active[i]
-                for j in range(i + 1, count):
-                    collide(a, active[j], step_dt)
-                hit_logo(a, step_dt)
+        for i in range(count):
+            a = active[i]
+            ax_, ay_, ah = a.x, a.y, a.h + SPACE
+            for j in range(i + 1, count):
+                b = active[j]
+                reach = ah + b.h
+                if abs(b.x - ax_) < reach and abs(b.y - ay_) < reach:
+                    near.append((a, b))
+                    collide(a, b, dt)
+            hit_logo(a, dt)
+        for _ in range(2):
+            for a, b in near:
+                collide(a, b, 0)
+            for a in active:
+                hit_logo(a, 0)
     logo_glow = max(0.0, logo_glow - dt * 2.5)
+    if mode == AMBIENT or mode == RETURN:
+        defocus = max(0.0, defocus - dt * DEFOCUS_RATE)
+    else:
+        defocus = min(1.0, defocus + dt * DEFOCUS_RATE)
 
-    screen.blit(backdrop, vec2(0, 0))
     screen.antialias = image.OFF
+    screen.pen = backdrop
+    screen.clear()
     for sq in specks:
         draw_speck(sq, t)
     if flows:
-        draw_flows(t)
+        draw_flows(t, dt)
     screen.antialias = image.X4
     logo.transform = mat3().translate(logo_x, LOGO_Y)
     screen.pen = tint(LOGO_RGB, logo_glow)
     screen.shape(logo)
+    screen.antialias = image.X2
     for sq in bodies:
         if not sq.gone:
             draw_square(sq)
