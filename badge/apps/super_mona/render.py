@@ -167,9 +167,9 @@ class Renderer:
                     index = 5
             sprite = MOBS[index]
             if e.state == "dead":
-                screen.blit(sprite, rect(x, y + TILE, TILE, -TILE))
+                screen.blit(sprite, rect(x, y, TILE, -TILE))
             elif flip:
-                screen.blit(sprite, rect(x + TILE, y, -TILE, TILE))
+                screen.blit(sprite, rect(x, y, -TILE, TILE))
             else:
                 screen.blit(sprite, vec2(x, y))
 
@@ -201,7 +201,7 @@ class Renderer:
         x = int(p.x) - 5 - cam
         y = int(p.y + p.h) - 16
         if p.facing < 0:
-            screen.blit(sprite, rect(x + 16, y, -16, 16))
+            screen.blit(sprite, rect(x, y, -16, 16))
         else:
             screen.blit(sprite, vec2(x, y))
 
