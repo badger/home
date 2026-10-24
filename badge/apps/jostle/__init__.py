@@ -1,4 +1,4 @@
-APP_DIR = "/system/apps/drift"
+APP_DIR = "/system/apps/jostle"
 
 import math
 import os
