@@ -32,13 +32,13 @@ BASELINE_TAU = 3.0       # seconds for "level" to catch up with a held tilt
 DRAG = 0.55              # per second; low so motion keeps floating momentum
 MAX_SPEED = 260.0
 WANDER = 9.0             # px/s^2 of ambient drift
-RESTITUTION = 0.55
-WALL_RESTITUTION = 0.6
+RESTITUTION = 0.9
+WALL_RESTITUTION = 0.85
 BURST = 140.0
 WALL_MARGIN = 26.0       # soft cushion that eases squares back off the edges
 WALL_PUSH = 70.0
-SPACE = 16.0             # personal space kept between neighbouring squares
-SPACE_PUSH = 80.0
+SPACE = 5.0              # personal space kept between neighbouring squares
+SPACE_PUSH = 30.0
 LOGO_SIZE = 0.15         # logo radius as a fraction of screen width
 LOGO_RGB = (210, 206, 245)
 
@@ -285,7 +285,7 @@ def integrate(sq, t, dt, ax, ay, damp):
         if sq.vy > 0:
             sq.vy = -sq.vy * WALL_RESTITUTION
 
-    sq.glow = max(0.0, sq.glow - dt * 1.6)
+    sq.glow = max(0.0, sq.glow - dt * 3.5)
 
 
 def collide(a, b, dt):
@@ -372,13 +372,13 @@ def hit_logo(sq, dt):
     if vn < 0:
         sq.vx -= (1 + RESTITUTION) * vn * nx
         sq.vy -= (1 + RESTITUTION) * vn * ny
-        flash = min(1.0, -vn / 70)
+        flash = min(1.0, -vn / 35)
         sq.glow = max(sq.glow, flash)
         logo_glow = max(logo_glow, flash * 0.8)
 
 
 def bump(a, b, speed):
-    flash = min(1.0, speed / 70)
+    flash = min(1.0, speed / 35)
     a.glow = max(a.glow, flash)
     b.glow = max(b.glow, flash)
 
@@ -447,13 +447,13 @@ def update():
         integrate(sq, t, dt, ax, ay, damp)
 
     count = len(bodies)
-    for step_dt in (dt, 0):
+    for step_dt in (dt, 0, 0):
         for i in range(count):
             a = bodies[i]
             for j in range(i + 1, count):
                 collide(a, bodies[j], step_dt)
             hit_logo(a, step_dt)
-    logo_glow = max(0.0, logo_glow - dt * 1.2)
+    logo_glow = max(0.0, logo_glow - dt * 2.5)
 
     screen.blit(backdrop, vec2(0, 0))
     screen.antialias = image.OFF
