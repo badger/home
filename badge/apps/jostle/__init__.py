@@ -43,6 +43,22 @@ SPACE = 5.0              # personal space kept between neighbouring squares
 SPACE_PUSH = 30.0
 LOGO_SIZE = 0.15         # logo radius as a fraction of screen width
 LOGO_RGB = (210, 206, 245)
+LOGO_EDGE = 6            # gap between the docked logo and the screen edge
+LOGO_ACCEL = 1400.0      # px/s^2 as the logo launches to a side
+SCATTER = 240.0          # px/s kick away from the docked logo
+ESCAPE_PULL = 400.0      # px/s^2 that carries escaping squares off screen
+SETTLE_DRAG = 3.0        # extra drag once a square has bounced off the far wall
+LOCK_TIME = 1.0          # seconds for survivors to glide into their slots
+LAYOUT_MARGIN = 10
+LAYOUT_COLUMNS = (30, 76)
+FLOW_SPACING = 4         # px between flow-line dots
+FLOW_GROUP = 5           # dots per dash; the last one is left blank
+FLOW_SPEED = 28.0        # px/s the dashes travel along a line
+REVEAL_SPEED = 320.0     # px/s a flow line grows out of its square
+
+AMBIENT, LAUNCH, SCATTER_OUT, LOCK, FLOW, RETURN = range(6)
+OUT = 1                  # ghost states: flying off screen / coming back on
+IN = 2
 
 
 class Square:
@@ -64,6 +80,11 @@ class Square:
         self.glow = 0.0
         self.corner = max(1, size * 0.24)
         self.line = max(2, round(size * 0.12))
+        self.ghost = None
+        self.gone = False
+        self.bounced = False
+        self.tx = 0.0
+        self.ty = 0.0
 
 
 def overlaps(a, x, y, items, gap):
@@ -200,11 +221,17 @@ LOGO_Y = H / 2
 LOGO_R = W * LOGO_SIZE
 
 logo_points = array("f", LOGO_OUTLINE)
-for k in range(0, len(logo_points), 2):
-    logo_points[k] = LOGO_X + logo_points[k] * LOGO_R
-    logo_points[k + 1] = LOGO_Y + logo_points[k + 1] * LOGO_R
+for k in range(len(logo_points)):
+    logo_points[k] *= LOGO_R
 logo = shape.custom(logo_points)
+logo_x = LOGO_X
+logo_vx = 0.0
 logo_glow = 0.0
+
+mode = AMBIENT
+mode_t = 0.0
+side = 1
+flows = []
 
 bodies, specks = build()
 
@@ -262,7 +289,15 @@ def cushion(p, h, size):
 def integrate(sq, t, dt, ax, ay, damp):
     wx = math.sin(t * sq.freq + sq.phase) * WANDER
     wy = math.cos(t * sq.freq * 0.8 + sq.phase * 1.7) * WANDER
-    wx += cushion(sq.x, sq.h, W)
+    free_x = sq.ghost is not None
+    if free_x:
+        if sq.ghost == OUT:
+            wx -= side * ESCAPE_PULL
+        else:
+            # Pull returning squares back on screen from whichever side.
+            wx += ESCAPE_PULL * 0.5 if sq.x < W / 2 else -ESCAPE_PULL * 0.5
+    else:
+        wx += cushion(sq.x, sq.h, W)
     wy += cushion(sq.y, sq.h, H)
     if random.random() < JOSTLE_RATE * dt:
         # Smaller squares get knocked about more than big ones.
@@ -282,12 +317,20 @@ def integrate(sq, t, dt, ax, ay, damp):
     sq.y += sq.vy * dt
 
     h = sq.h
-    if sq.x < h:
+    if free_x:
+        if sq.ghost == OUT:
+            if sq.x < -h - 2 or sq.x > W + h + 2:
+                sq.gone = True
+        elif h <= sq.x <= W - h:
+            sq.ghost = None
+    elif sq.x < h:
         sq.x = h
+        sq.bounced = True
         if sq.vx < 0:
             sq.vx = -sq.vx * WALL_RESTITUTION
     elif sq.x > W - h:
         sq.x = W - h
+        sq.bounced = True
         if sq.vx > 0:
             sq.vx = -sq.vx * WALL_RESTITUTION
     if sq.y < h:
@@ -355,7 +398,7 @@ def repel(a, b, dx, dy, gap, dt):
 
 
 def keep_off_logo(sq):
-    dx = sq.x - LOGO_X
+    dx = sq.x - logo_x
     dy = sq.y - LOGO_Y
     clear = LOGO_R + sq.h * 1.42 + 1
     d2 = dx * dx + dy * dy
@@ -364,25 +407,25 @@ def keep_off_logo(sq):
     dist = math.sqrt(d2) or 1.0
     nx = dx / dist
     ny = dy / dist
-    sq.x = LOGO_X + nx * clear
+    sq.x = logo_x + nx * clear
     sq.y = LOGO_Y + ny * clear
-    vn = sq.vx * nx + sq.vy * ny
+    vn = (sq.vx - logo_vx) * nx + sq.vy * ny
     if vn < 0:
         sq.vx -= (1 + RESTITUTION) * vn * nx
         sq.vy -= (1 + RESTITUTION) * vn * ny
 
 
 def hit_logo(sq, dt):
-    # The logo is an anchored circle with infinite mass: only the square moves.
+    # The logo is a circle with infinite mass: only the square moves.
     global logo_glow
     h = sq.h
-    cx = min(max(LOGO_X, sq.x - h), sq.x + h)
+    cx = min(max(logo_x, sq.x - h), sq.x + h)
     cy = min(max(LOGO_Y, sq.y - h), sq.y + h)
-    dx = cx - LOGO_X
+    dx = cx - logo_x
     dy = cy - LOGO_Y
     dist = math.sqrt(dx * dx + dy * dy)
     if dist == 0:
-        dx = sq.x - LOGO_X
+        dx = sq.x - logo_x
         dy = sq.y - LOGO_Y
         dist = math.sqrt(dx * dx + dy * dy) or 1.0
         gap = -(LOGO_R + h)
@@ -398,9 +441,15 @@ def hit_logo(sq, dt):
             sq.vx += nx * push
             sq.vy += ny * push
         return
+    if logo_vx:
+        # A moving logo ploughs squares aside rather than pinning them to a wall.
+        ny += 0.6 if sq.y >= LOGO_Y else -0.6
+        d = math.sqrt(nx * nx + ny * ny)
+        nx /= d
+        ny /= d
     sq.x -= nx * gap
     sq.y -= ny * gap
-    vn = sq.vx * nx + sq.vy * ny
+    vn = (sq.vx - logo_vx) * nx + sq.vy * ny
     if vn < 0:
         sq.vx -= (1 + RESTITUTION) * vn * nx
         sq.vy -= (1 + RESTITUTION) * vn * ny
@@ -426,6 +475,154 @@ def burst():
             push = BURST * sq.response * 0.6
             sq.vx += dx / d * push
             sq.vy += dy / d * push
+
+
+def launch_logo(direction, t):
+    global mode, mode_t, side, logo_vx
+    side = direction
+    logo_vx = 0.0
+    mode = LAUNCH
+    mode_t = t
+
+
+def scatter(t):
+    # The docked logo's jolt throws everything to the far side; every other
+    # square (by size) escapes off screen and the rest bounce back.
+    global mode, mode_t, logo_glow
+    ranked = sorted(bodies, key=lambda sq: -sq.s)
+    for i, sq in enumerate(ranked):
+        sq.ghost = OUT if i % 2 else None
+        sq.bounced = False
+        if sq.ghost:
+            speed = SCATTER * random.uniform(1.0, 1.1)
+        else:
+            speed = SCATTER * random.uniform(0.6, 0.85)
+        sq.vx = -side * speed
+        sq.vy = sq.vy * 0.5 + random.uniform(-50, 50)
+        if side * (sq.x - logo_x) > 0:
+            # Squeeze squares caught behind the logo out above or below it.
+            sq.vy += 90 if sq.y >= LOGO_Y else -90
+        sq.glow = max(sq.glow, 0.6)
+    for sq in specks:
+        sq.vx -= side * random.uniform(60, 140)
+    logo_glow = 1.0
+    mode = SCATTER_OUT
+    mode_t = t
+
+
+def start_lock(t):
+    global mode, mode_t
+    keepers = [sq for sq in bodies if sq.ghost is None]
+    keepers.sort(key=lambda sq: sq.y)
+    for c in range(2):
+        column = keepers[c::2]
+        if not column:
+            continue
+        total = sum(sq.s for sq in column)
+        gap = (H - 2 * LAYOUT_MARGIN - total) / len(column)
+        y = LAYOUT_MARGIN + gap / 2
+        x = LAYOUT_COLUMNS[c]
+        for sq in column:
+            sq.ty = y + sq.h
+            y += sq.s + gap
+            tx = x + random.uniform(-5, 5)
+            sq.tx = tx if side > 0 else W - tx
+    mode = LOCK
+    mode_t = t
+
+
+def settle(sq, dt):
+    k = 1 - math.exp(-8 * dt)
+    sq.vx += ((sq.tx - sq.x) * 5 - sq.vx) * k
+    sq.vy += ((sq.ty - sq.y) * 5 - sq.vy) * k
+    sq.x += sq.vx * dt
+    sq.y += sq.vy * dt
+    sq.glow = max(0.0, sq.glow - dt * 3.5)
+
+
+class Flow:
+    def __init__(self, sq, index):
+        sx = sq.x + side * (sq.h + 4)
+        sy = sq.y
+        ex = logo_x - side * LOGO_R * 0.9
+        ey = LOGO_Y + (sy - LOGO_Y) * 0.12
+        span = abs(ex - sx)
+        c1x = sx + side * span * 0.55
+        c2x = ex - side * span * 0.45
+
+        # Resample the curve at 1 px steps so dashes can slide along it.
+        lut = array("h")
+        px, py = sx, sy
+        travelled = 0.0
+        next_d = 0.0
+        steps = 48
+        for i in range(1, steps + 1):
+            u = i / steps
+            v = 1 - u
+            x = v * v * v * sx + 3 * v * v * u * c1x + 3 * v * u * u * c2x + u * u * u * ex
+            y = (v * v * v + 3 * v * v * u) * sy + (3 * v * u * u + u * u * u) * ey
+            seg = math.sqrt((x - px) * (x - px) + (y - py) * (y - py))
+            while seg > 0 and next_d <= travelled + seg:
+                f = (next_d - travelled) / seg
+                lut.append(int(px + (x - px) * f))
+                lut.append(int(py + (y - py) * f))
+                next_d += 1
+            travelled += seg
+            px, py = x, y
+        self.lut = lut
+        self.length = len(lut) // 2
+        self.pen = color.rgb(sq.rgb[0] // 2, sq.rgb[1] // 2, sq.rgb[2] // 2)
+        self.sign = 1 if (index // 2 + index) % 2 == 0 else -1
+        self.phase = random.uniform(0, FLOW_SPACING * FLOW_GROUP)
+        self.delay = index * 0.05
+
+
+def start_flow(t):
+    global mode, mode_t, flows
+    keepers = [sq for sq in bodies if sq.ghost is None]
+    keepers.sort(key=lambda sq: sq.y)
+    for sq in keepers:
+        sq.x, sq.y = sq.tx, sq.ty
+        sq.vx = sq.vy = 0.0
+    flows = [Flow(sq, i) for i, sq in enumerate(keepers)]
+    mode = FLOW
+    mode_t = t
+
+
+def start_return(t):
+    global mode, mode_t, flows
+    flows = []
+    for sq in bodies:
+        if sq.ghost == OUT:
+            # Escaped squares drift back in from the side they left.
+            sq.gone = False
+            sq.ghost = IN
+            sq.x = -sq.h - 2 if side > 0 else W + sq.h + 2
+            sq.y = random.uniform(sq.h, H - sq.h)
+            sq.vx = side * random.uniform(60, 120)
+            sq.vy = random.uniform(-20, 20)
+    mode = RETURN
+    mode_t = t
+
+
+def draw_flows(t):
+    period = FLOW_SPACING * FLOW_GROUP
+    since = t - mode_t
+    for f in flows:
+        reach = (since - f.delay) * REVEAL_SPEED
+        if reach <= 0:
+            continue
+        limit = min(f.length - 1, reach)
+        lut = f.lut
+        screen.pen = f.pen
+        d = (t * FLOW_SPEED * f.sign + f.phase) % period - period
+        j = 0
+        while d <= limit:
+            if d >= 0 and j % FLOW_GROUP != FLOW_GROUP - 1:
+                i = int(d) * 2
+                screen.rectangle(lut[i] - 1, lut[i + 1] - 1, 2, 2)
+            d += FLOW_SPACING
+            j += 1
 
 
 def tint(rgb, glow, alpha=255):
@@ -461,42 +658,97 @@ def draw_speck(sq, t):
 
 
 def update():
-    global logo_glow
+    global logo_glow, logo_x, logo_vx, mode
     dt = min(badge.ticks_delta / 1000, 0.05)
     t = badge.ticks / 1000
 
-    if badge.pressed(BUTTON_SELECT):
-        burst()
+    if mode == AMBIENT:
+        if badge.pressed(BUTTON_SELECT):
+            burst()
+        elif badge.pressed(BUTTON_LEFT):
+            launch_logo(-1, t)
+        elif badge.pressed(BUTTON_RIGHT):
+            launch_logo(1, t)
+    elif mode == FLOW:
+        back = BUTTON_LEFT if side > 0 else BUTTON_RIGHT
+        if badge.pressed(BUTTON_SELECT) or badge.pressed(back):
+            start_return(t)
 
     tx, ty = read_tilt(dt)
     ax = tx * TILT_ACCEL
     ay = ty * TILT_ACCEL
     damp = math.exp(-DRAG * dt)
 
+    if mode == LAUNCH:
+        logo_vx += side * LOGO_ACCEL * dt
+        logo_x += logo_vx * dt
+        dock = W - LOGO_R - LOGO_EDGE if side > 0 else LOGO_R + LOGO_EDGE
+        if side * (logo_x - dock) >= 0:
+            logo_x = dock
+            logo_vx = 0.0
+            scatter(t)
+    elif mode == RETURN:
+        k = 1 - math.exp(-6 * dt)
+        logo_vx += ((LOGO_X - logo_x) * 5 - logo_vx) * k
+        logo_x += logo_vx * dt
+        if abs(LOGO_X - logo_x) < 0.5 and abs(logo_vx) < 4:
+            logo_x = LOGO_X
+            logo_vx = 0.0
+            mode = AMBIENT
+
     for sq in specks:
         integrate(sq, t, dt, ax, ay, damp)
         keep_off_logo(sq)
-    for sq in bodies:
-        integrate(sq, t, dt, ax, ay, damp)
 
-    count = len(bodies)
-    for step_dt in (dt, 0, 0):
-        for i in range(count):
-            a = bodies[i]
-            for j in range(i + 1, count):
-                collide(a, bodies[j], step_dt)
-            hit_logo(a, step_dt)
+    if mode == LOCK or mode == FLOW:
+        for sq in bodies:
+            if sq.ghost is None:
+                if mode == LOCK:
+                    settle(sq, dt)
+            elif not sq.gone:
+                integrate(sq, t, dt, ax, ay, damp)
+        if mode == LOCK and t - mode_t > LOCK_TIME:
+            start_flow(t)
+    else:
+        active = [sq for sq in bodies if not sq.gone]
+        for sq in active:
+            integrate(sq, t, dt, ax, ay, damp)
+        if mode == SCATTER_OUT:
+            extra = math.exp(-SETTLE_DRAG * dt)
+            settled = True
+            for sq in active:
+                if sq.ghost is None:
+                    if sq.bounced:
+                        sq.vx *= extra
+                        sq.vy *= extra
+                    else:
+                        settled = False
+            since = t - mode_t
+            if since > 0.6 and (settled or since > 2.0):
+                start_lock(t)
+
+        count = len(active)
+        for step_dt in (dt, 0, 0):
+            for i in range(count):
+                a = active[i]
+                for j in range(i + 1, count):
+                    collide(a, active[j], step_dt)
+                hit_logo(a, step_dt)
     logo_glow = max(0.0, logo_glow - dt * 2.5)
 
     screen.blit(backdrop, vec2(0, 0))
     screen.antialias = image.OFF
     for sq in specks:
         draw_speck(sq, t)
+    if flows:
+        draw_flows(t)
     screen.antialias = image.X4
+    logo.transform = mat3().translate(logo_x, LOGO_Y)
     screen.pen = tint(LOGO_RGB, logo_glow)
     screen.shape(logo)
     for sq in bodies:
-        draw_square(sq)
+        if not sq.gone:
+            draw_square(sq)
 
 
 run(update)
