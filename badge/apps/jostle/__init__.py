@@ -6,7 +6,10 @@ from array import array
 import random
 import sys
 
-os.chdir(APP_DIR)
+try:
+    os.chdir(APP_DIR)
+except OSError:
+    pass  # the browser simulator runs apps from a different folder
 sys.path.insert(0, APP_DIR)
 
 badge.mode(HIRES | VSYNC)
