@@ -143,7 +143,7 @@ function deployPrompt(app) {
         `Deploy the \`${app}\` app from \`badge/apps/${app}\` to the GitHub Universe badge that is connected over USB.`,
         "Follow the repository instructions: read `hardware/USB_SERIAL.md` (especially \"Installing an app\") and `badge/AGENTS.md` before touching the badge.",
         "Use `mpremote devs` to find the badge port, then only explicit `mpremote connect <port> ...` commands, one at a time (never run serial commands concurrently).",
-        `\`/system\` is read-only over the serial REPL, so put the badge into USB mass-storage mode, copy \`badge/apps/${app}\` to \`/system/apps/${app}\` on the BADGER volume, eject it, reset the badge, and verify with \`mpremote connect <port> fs ls :/system/apps/${app}\`.`,
+        `\`/system\` is read-only over the serial REPL, so put the badge into USB mass-storage mode (\`mpremote connect <port> exec "import powman; powman.reset_into_msc()"\` works without touching the badge), copy \`badge/apps/${app}\` into \`apps/\` on the BADGER volume (its root is the badge's \`/system\`), eject it, reset the badge, and verify with \`mpremote connect <port> fs ls :/system/apps/${app}\`.`,
         "If no badge is connected or a step needs me to press buttons on the badge, tell me exactly what to do.",
     ].join("\n");
 }

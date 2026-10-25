@@ -240,18 +240,23 @@ mpremote connect "$PORT" fs cp local.py :/system/apps/my_app/local.py
 
 Use the badge's USB mass-storage mode for a persistent deployment:
 
-1. Double-tap the badge reset control, or launch the built-in **Mass Storage**
-   app on firmware whose startup script handles `WAKE_DOUBLETAP`.
+1. Double-tap the badge reset control, launch the built-in **Mass Storage**
+   app on firmware whose startup script handles `WAKE_DOUBLETAP`, or run
+   `mpremote connect "$PORT" exec "import powman; powman.reset_into_msc()"`
+   (the serial connection drops with a `Device not configured` error as the
+   badge reboots; that is expected).
 2. Wait for the badge filesystem to appear as a USB volume.
-3. Copy the complete app directory into `system/apps/` on that volume.
-4. Replace `system/main.py` only when changing startup behavior.
+3. Copy the complete app directory into `apps/` on that volume. The `BADGER`
+   volume root is the badge's `/system` directory, so `apps/` there is
+   `/system/apps/` on the badge.
+4. Replace `main.py` (the badge's `/system/main.py`) only when changing startup behavior.
 5. Eject the volume cleanly and reset the badge.
 
 On macOS, for example:
 
 ```bash
-BADGE_VOLUME="/Volumes/<badge-volume-name>"
-cp -R badge/apps/my_app "$BADGE_VOLUME/system/apps/"
+BADGE_VOLUME="/Volumes/BADGER"
+cp -R badge/apps/my_app "$BADGE_VOLUME/apps/"
 diskutil eject "$BADGE_VOLUME"
 ```
 
