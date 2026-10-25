@@ -41,9 +41,19 @@ The agent can drive the canvas with `invoke_canvas_action`:
 | --- | --- | --- |
 | `load_app` | `{ "app": "snake" }` | Switch to another app |
 | `reload` | `{ "restart_runtime"?: true }` | Rerun now (normally automatic) |
-| `get_output` | `{ "lines"?: 80 }` | Status and recent console output, including tracebacks |
-| `press` | `{ "button": "select", "duration_ms"?: 120 }` | Press `up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu` (or `a`/`b`/`c`) |
-| `screenshot` | — | Save the badge screen as a PNG and return its path |
+| `get_output` | `{ "lines"?: 80, "since"?: cursor }` | Status (running, crashed, fps, frames, resolution, orientation, backlight), recent output and the last error mapped to `badge/apps/...:line` |
+| `press` | `{ "button": "select", "duration_ms"?: 120 }` | Press `up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu` (or `a`/`b`/`c`); combine with `"a+b"` |
+| `screenshot` | `{ "label"?: "title" }` | Save the badge screen as a PNG and return its path |
+| `exec` | `{ "code": "score", "timeout_ms"?: 5000 }` | Run MicroPython in the running app's globals (a REPL); expressions return their repr |
+| `wait_for` | `{ "pattern"?: "regex", "frames"?: 30, "until_crash"?: true, "timeout_ms"?: 5000, "since"?: cursor }` | Wait for output, rendered frames or a crash instead of sleeping |
+| `run_script` | `{ "steps": [...], "restart"?: true }` | Scripted test: `press`, `wait_ms`, `screenshot`, `exec`, `wait_for` and `rotate` steps, stopping on a crash |
+| `rotate` | `{ "upside_down"?: true }` | Turn the badge upside down (or toggle) |
+| `check_app` | `{ "app"?: "snake" }` | Pre-flight checks: `__init__.py`, 24x24 `icon.png`, README rules from CI, 2025 API usage and committed secrets |
+
+A good debugging loop is `check_app`, then `run_script` (or `wait_for`) to
+exercise the app, then `error.location` from the result to find the failing
+line, fix it, and repeat; the canvas reloads on save. Keep the canvas visible
+while testing: a hidden panel pauses the simulator.
 
 The simulator approximates the badge firmware, so test on real hardware before
 you open a pull request.

@@ -57,8 +57,9 @@ deploy an app:
 
 1. Open (or `load_app`) the requested app in the canvas before touching a
    physical badge.
-2. Check it yourself with `get_output` and `screenshot`, and fix any
-   tracebacks or obvious rendering problems.
+2. Check it yourself: `check_app`, then `run_script` or `wait_for` to exercise
+   it, `get_output` (its `error.location` points at the failing repo line),
+   `screenshot` and `exec`. Fix any tracebacks or obvious rendering problems.
 3. End your reply by reminding the user that the app is running in the Badge
    Simulator, and that when they are happy with it they can press the canvas
    **Deploy** button to install it on their connected badge.
@@ -69,10 +70,16 @@ available (for example, in the Copilot CLI).
 
 - It reruns the app automatically whenever files in `badge/apps/<app>` change,
   so save edits and check the result without reopening it.
-- Use `invoke_canvas_action` to verify behavior: `get_output` returns console
-  output and tracebacks, `screenshot` returns a PNG path to view, `press`
-  presses a badge button (`up`, `down`, `left`, `right`, `select`, `home`,
-  `back`, `menu`), `load_app` switches apps and `reload` reruns.
+- Use `invoke_canvas_action` to verify behavior: `get_output` returns status,
+  console output and the last error mapped to `badge/apps/...:line`,
+  `screenshot` returns a PNG path to view, `press` presses a badge button
+  (`up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu`, or combos
+  such as `"a+b"`), `exec` runs MicroPython in the running app's globals,
+  `wait_for` waits for output, frames or a crash, `run_script` runs a scripted
+  sequence of presses, waits, screenshots and checks, `rotate` turns the badge
+  upside down, `check_app` runs pre-flight checks (icon, README, 2025 APIs,
+  secrets), `load_app` switches apps and `reload` reruns. See
+  `.github/extensions/badge-simulator/README.md` for inputs.
 - The canvas **Deploy** button sends a request to install the app on the
   connected badge. Handle it by following `hardware/USB_SERIAL.md`
   ("Installing an app", including "Menu icon patch"): always use USB

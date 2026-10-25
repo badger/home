@@ -16,6 +16,8 @@ type ServerEvent =
   | { type: 'screenshot'; id: string }
   | { type: 'press'; bit: number; ms: number }
   | { type: 'restart' }
+  | { type: 'exec'; id: string; code: string }
+  | { type: 'rotate'; value?: boolean }
 
 const appRoot = '/system/apps'
 const $ = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T>(selector)!
@@ -31,11 +33,56 @@ const deployButton = $<HTMLButtonElement>('[data-deploy]')
 const reloadButton = $<HTMLButtonElement>('[data-reload]')
 const keys = [...document.querySelectorAll<HTMLButtonElement>('[data-button]')]
 
+// Runs agent-supplied MicroPython (the canvas `exec` action) and brackets its
+// output with markers so the extension can return it. Expressions print their
+// repr like the REPL; statements run with exec().
+const execHelper = `
+def _sim_exec(tag, code, scope):
+    print("[sim-exec:%s:begin]" % tag)
+    ok = True
+    try:
+        try:
+            result = eval(code, scope)
+        except SyntaxError:
+            exec(code, scope)
+        else:
+            if result is not None:
+                print(repr(result))
+    except Exception as e:
+        ok = False
+        sys.print_exception(e)
+    finally:
+        print("[sim-exec:%s:%s]" % (tag, "ok" if ok else "error"))
+`
+const execFile = '/tmp/_sim_exec.py'
+
 // Mirrors badge/main.py for a single app: run it, and when HOME is pressed run
 // its on_exit hook and start it again (there is no menu in this canvas).
 function launcher(target: string) {
   return `
-import builtins, machine, sys, time, badgeware
+import builtins, machine, os, sys, time, badgeware
+${execHelper}
+_exec_scope = {}
+
+def _service_exec():
+    try:
+        with open(${JSON.stringify(execFile)}) as f:
+            src = f.read()
+    except OSError:
+        return
+    try:
+        os.remove(${JSON.stringify(execFile)})
+    except OSError:
+        pass
+    tag, _, code = src.partition("\\n")
+    app = sys.modules.get(_target)
+    scope = _exec_scope
+    if app is not None:
+        try:
+            scope = app.__dict__
+        except AttributeError:
+            _exec_scope["app"] = app
+    _sim_exec(tag, code, scope)
 
 class _ReturnHome(BaseException):
     pass
@@ -55,6 +102,7 @@ def _exit_app():
 
 def _poll():
     global _armed
+    _service_exec()
     _native_poll()
     if _armed and badge.pressed(BUTTON_HOME):
         _armed = False
@@ -111,9 +159,15 @@ function request(payload: AppPayload) {
     const text = path.endsWith('.py') && file.text !== null ? simulationSource(file.text) : file.text
     return { name: `${target}/${path}`, content: fileBytes({ ...file, text }) }
   })
-  const program = `import editor_support\nimport sys\nsys.path[:0] = ["/system/lib", "/lib", "/system"]\n${firmwareCompat}\n${launcher(target)}`
-  return { program, files }
+  return { program: `${prelude}\n${launcher(target)}`, files }
 }
+
+const prelude = `import editor_support\nimport sys\nsys.path[:0] = ["/system/lib", "/lib", "/system"]\n${firmwareCompat}`
+
+// Used when no app loop is polling (the app crashed or the runtime is idle):
+// run the snippet as a standalone program instead.
+const standaloneExec = (id: string, code: string) =>
+  `${prelude}\n${execHelper}\n_sim_exec(${JSON.stringify(id)}, ${JSON.stringify(code)}, {"__name__": "__main__"})\n`
 
 // ---- console + log forwarding ---------------------------------------------
 const lines: string[] = []
@@ -129,10 +183,13 @@ function flushLog() {
   pendingLog = []
   void post('/api/log', { lines: batch })
 }
+let inExec = false
 function log(text: string) {
   for (const line of text.split('\n')) {
-    lines.push(line)
     pendingLog.push(line)
+    const marker = /^\[sim-exec:[\w-]+:(begin|ok|error)\]$/.exec(line)
+    if (marker) { inExec = marker[1] === 'begin'; continue }
+    if (!inExec) lines.push(line)
   }
   while (lines.length > 400) lines.shift()
   output.textContent = lines.join('\n')
@@ -201,6 +258,11 @@ document.addEventListener('visibilitychange', () => { input.clear(); worker?.pos
 // ---- worker lifecycle ---------------------------------------------------------
 let current: AppPayload | null = null
 let ready = false
+let running = false
+let frames = 0
+const clientId = Math.random().toString(36).slice(2)
+let framesAtLastStat = 0
+let backlight = 1
 
 function run(payload: AppPayload) {
   current = payload
@@ -221,12 +283,15 @@ function run(payload: AppPayload) {
 function startWorker() {
   worker?.terminate()
   ready = false
+  running = false
   const next = new Worker('/simulator/micropython.worker.js', { type: 'module' })
   worker = next
   next.onerror = event => { event.preventDefault(); log(`[simulator] Worker error: ${event.message}`); setStatus('Simulator error', 'error') }
   next.onmessage = ({ data }) => {
     if (next !== worker) return
     if (typeof data.stdout === 'string') log(data.stdout)
+    if (data.running) running = true
+    if (data.completed) running = false
     if (data.bootError) { log(`[simulator] ${data.bootError}`); setStatus('Simulator failed to boot', 'error') }
     if (data.failed) setStatus(`${current?.app ?? 'App'} crashed — see output`, 'error')
     if (data.stuck) { log('[simulator] App did not stop; restarting the runtime.'); startWorker() }
@@ -241,8 +306,10 @@ function startWorker() {
       if (screen.width !== width || screen.height !== height) { screen.width = width; screen.height = height }
       screen.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0)
       model.updateFrame()
+      frames++
       root.dataset.framed = 'true'
     }
+    if (data.backlight !== undefined) backlight = data.backlight
     if (data.backlight !== undefined) model.setBacklight(Math.max(0.15, Math.min(1, data.backlight)))
   }
 }
@@ -264,6 +331,29 @@ async function loadApp() {
   run(payload)
 }
 
+function execCode(id: string, code: string) {
+  if (!worker || !ready) {
+    log(`[sim-exec:${id}:begin]`)
+    log('Simulator runtime is not ready yet.')
+    log(`[sim-exec:${id}:error]`)
+    return
+  }
+  if (running) {
+    worker.postMessage({ file: { name: execFile, code: `${id}\n${code}` } })
+  } else {
+    worker.postMessage({ program: standaloneExec(id, code), files: [] })
+    setStatus('Ran code in the simulator (app stopped; reload to restart it)', 'stopped')
+  }
+}
+
+window.setInterval(() => {
+  void post('/api/stats', {
+    client: clientId, fps: frames - framesAtLastStat, frames, width: screen.width, height: screen.height,
+    running, paused: document.hidden, rotated, backlight,
+  })
+  framesAtLastStat = frames
+}, 1000)
+
 // ---- server events ------------------------------------------------------------
 function capture(id: string) {
   const body: Record<string, string> = { id, screen: screen.toDataURL('image/png') }
@@ -278,6 +368,8 @@ function connect() {
     else if (event.type === 'reload') void loadApp()
     else if (event.type === 'restart') startWorker()
     else if (event.type === 'screenshot') capture(event.id)
+    else if (event.type === 'exec') execCode(event.id, event.code)
+    else if (event.type === 'rotate') { if (event.value === undefined || event.value !== rotated) rotateButton.click() }
     else if (event.type === 'press') {
       input.set(`agent:${event.bit}`, event.bit, true)
       window.setTimeout(() => input.set(`agent:${event.bit}`, event.bit, false), event.ms)
