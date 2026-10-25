@@ -1,0 +1,102 @@
+/* Uses the Copilot app canvas theme tokens so the simulator follows the app's
+   light/dark theme. Fallbacks apply when opened outside the app. */
+:root {
+  color-scheme: light dark;
+  --sim-bg: var(--background-color-default, #ffffff);
+  --sim-fg: var(--text-color-default, #1f2328);
+  --sim-muted: var(--text-color-muted, #59636e);
+  --sim-border: var(--border-color-default, #d1d9e0);
+  --sim-accent: var(--true-color-blue, #0969da);
+  --sim-accent-muted: var(--true-color-blue-muted, rgba(9, 105, 218, 0.12));
+  --sim-danger: var(--true-color-red, #d1242f);
+  --sim-focus: var(--color-focus-outline, #0969da);
+  --sim-surface: color-mix(in srgb, var(--sim-fg) 4%, var(--sim-bg));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-mode="light"]) {
+    --sim-bg: var(--background-color-default, #0d1117);
+    --sim-fg: var(--text-color-default, #f0f6fc);
+    --sim-muted: var(--text-color-muted, #9198a1);
+    --sim-border: var(--border-color-default, #3d444d);
+    --sim-accent: var(--true-color-blue, #4493f8);
+    --sim-accent-muted: var(--true-color-blue-muted, rgba(68, 147, 248, 0.15));
+  }
+}
+:root[data-color-mode="light"] { color-scheme: light; }
+:root[data-color-mode="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--sim-bg);
+  color: var(--sim-fg);
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: var(--text-body-medium, 14px);
+  line-height: var(--leading-body-medium, 20px);
+  overflow: hidden;
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+#sim { display: flex; flex-direction: column; height: 100%; outline: none; }
+
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--sim-border); }
+.app-picker select {
+  max-width: 180px; height: 30px; padding: 0 8px; border-radius: 6px;
+  border: 1px solid var(--sim-border); background: var(--sim-bg); color: var(--sim-fg); font: inherit;
+}
+.status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sim-muted); font-size: 12px; }
+#sim[data-run-state="error"] .status { color: var(--sim-danger); }
+#sim[data-run-state="running"] .status, #sim[data-run-state="deploying"] .status { color: var(--sim-fg); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--sim-border); border-radius: 6px; background: var(--sim-bg); color: var(--sim-fg);
+  font: inherit; font-size: 12px; font-weight: var(--font-weight-semibold, 600); cursor: pointer;
+  transition: background-color 120ms, border-color 120ms;
+}
+.btn:hover:not(:disabled) { background: var(--sim-surface); border-color: var(--sim-accent); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn:focus-visible, .key:focus-visible, select:focus-visible { outline: 2px solid var(--sim-focus); outline-offset: 1px; }
+.btn.icon { width: 30px; padding: 0; }
+.btn.primary { background: var(--sim-accent); border-color: var(--sim-accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--sim-accent) 85%, #000); }
+.btn.tool[aria-pressed="true"] { color: var(--sim-accent); border-color: var(--sim-accent); background: var(--sim-accent-muted); }
+
+.stage { position: relative; flex: 1; min-height: 200px; overflow: hidden; }
+.view-tools { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 2; display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.view-tools .btn { background: color-mix(in srgb, var(--sim-bg) 85%, transparent); backdrop-filter: blur(4px); }
+.zoom { position: absolute; right: 8px; bottom: 8px; z-index: 2; display: flex; flex-direction: column; gap: 6px; }
+.zoom .btn { background: color-mix(in srgb, var(--sim-bg) 85%, transparent); }
+.model { position: absolute; inset: 0; }
+.model > canvas:not([data-screen]) { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+.model > canvas:not([data-screen]):focus-visible { outline: 2px solid var(--sim-focus); outline-offset: -2px; }
+.model [data-screen] { display: none; }
+#sim[data-model="flat"] .model [data-screen] {
+  display: block; position: absolute; inset: 0; margin: auto; width: min(100% - 32px, (100vh - 220px) * 4 / 3); height: auto;
+  aspect-ratio: 4 / 3; image-rendering: pixelated; border-radius: 6px; border: 1px solid var(--sim-border);
+}
+#sim[data-model="flat"] .view-tools [data-model-screen], #sim[data-model="flat"] .view-tools [data-model-full], #sim[data-model="flat"] .zoom { display: none; }
+.model-status { position: absolute; inset: auto 16px 12px; margin: 0; text-align: center; color: var(--sim-muted); font-size: 12px; pointer-events: none; }
+
+.keys { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; padding: 8px 10px; border-top: 1px solid var(--sim-border); }
+.key-group { display: flex; gap: 6px; }
+.key {
+  display: grid; place-items: center; width: 40px; height: 36px; border-radius: 6px; border: 1px solid var(--sim-border);
+  background: transparent; color: var(--sim-fg); cursor: pointer; touch-action: none; user-select: none;
+}
+.key svg { width: 18px; height: 18px; }
+.key:hover { border-color: var(--sim-accent); background: var(--sim-surface); }
+.key[data-pressed="true"] { color: var(--sim-accent); border-color: var(--sim-accent); background: var(--sim-accent-muted); transform: translateY(1px); }
+
+.output { border-top: 1px solid var(--sim-border); font-size: 12px; }
+.output summary { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; cursor: pointer; color: var(--sim-muted); list-style: none; }
+.output summary::before { content: "▸"; margin-right: 6px; }
+.output[open] summary::before { content: "▾"; }
+.output summary { justify-content: flex-start; }
+.output .link { margin-left: auto; border: 0; background: none; color: var(--sim-muted); cursor: pointer; font: inherit; }
+.output .link:hover { color: var(--sim-fg); }
+.output pre {
+  margin: 0; height: 140px; overflow: auto; padding: 0 10px 8px; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11px; line-height: 16px; color: var(--sim-muted);
+}

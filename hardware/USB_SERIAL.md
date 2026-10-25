@@ -240,18 +240,23 @@ mpremote connect "$PORT" fs cp local.py :/system/apps/my_app/local.py
 
 Use the badge's USB mass-storage mode for a persistent deployment:
 
-1. Double-tap the badge reset control, or launch the built-in **Mass Storage**
-   app on firmware whose startup script handles `WAKE_DOUBLETAP`.
+1. Double-tap the badge reset control, launch the built-in **Mass Storage**
+   app on firmware whose startup script handles `WAKE_DOUBLETAP`, or run
+   `mpremote connect "$PORT" exec "import powman; powman.reset_into_msc()"`
+   (the serial connection drops with a `Device not configured` error as the
+   badge reboots; that is expected).
 2. Wait for the badge filesystem to appear as a USB volume.
-3. Copy the complete app directory into `system/apps/` on that volume.
-4. Replace `system/main.py` only when changing startup behavior.
+3. Copy the complete app directory into `apps/` on that volume. The `BADGER`
+   volume root is the badge's `/system` directory, so `apps/` there is
+   `/system/apps/` on the badge.
+4. Replace `main.py` (the badge's `/system/main.py`) only when changing startup behavior.
 5. Eject the volume cleanly and reset the badge.
 
 On macOS, for example:
 
 ```bash
-BADGE_VOLUME="/Volumes/<badge-volume-name>"
-cp -R badge/apps/my_app "$BADGE_VOLUME/system/apps/"
+BADGE_VOLUME="/Volumes/BADGER"
+cp -R badge/apps/my_app "$BADGE_VOLUME/apps/"
 diskutil eject "$BADGE_VOLUME"
 ```
 
@@ -261,8 +266,35 @@ After the badge returns to serial mode, verify the remote directory:
 mpremote connect "$PORT" fs ls :/system/apps/my_app
 ```
 
+Finish with a hard reboot so the badge leaves mass-storage mode and the REPL
+(and any test or mounted-host session) and starts normally at the menu:
+
+```bash
+mpremote connect "$PORT" reset
+```
+
 Avoid overwriting `/system/main.py`, the menu, shared assets, or other system
 files unless that is the explicit purpose of the change.
+
+### Menu icon patch
+
+The stock 2026-10-08 menu only draws its built-in vector icons, so a new app
+appears with the generic default icon. This repository's
+`badge/apps/menu/app.py` is the stock file plus a small patch that draws an
+app's own `icon.png` when the menu has no built-in icon for it. Check the
+badge before installing an app, while it is still in serial mode:
+
+```bash
+mpremote connect "$PORT" exec "print('load_picture' in open('/system/apps/menu/app.py').read())"
+```
+
+If it prints `False`, copy the patched file during the same mass-storage
+session as the app. Copy only `app.py`; the rest of the menu (compiled
+modules, animations, awards and photos) already matches the firmware:
+
+```bash
+cp badge/apps/menu/app.py "$BADGE_VOLUME/apps/menu/app.py"
+```
 
 ## Running code without installing it
 
