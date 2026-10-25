@@ -269,6 +269,12 @@ without checking the hardware reference and existing firmware behavior.
 
 ## Testing in the Badge Simulator canvas
 
+In the GitHub Copilot app, test in the simulator first: when asked to build,
+run or deploy an app, open it in the Badge Simulator canvas, check it, and remind
+the user to press the canvas **Deploy** button when they are ready to install it
+on the badge. Deploy directly only when asked to skip the simulator, the request
+came from the Deploy button, or the canvas is unavailable.
+
 Before deploying, run the app in the Badge Simulator canvas
 (`.github/extensions/badge-simulator/`). Open it with `open_canvas`,
 `canvasId: "badge-simulator"` and `input: { "app": "<app folder>" }`. It reruns

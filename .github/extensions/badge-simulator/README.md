@@ -30,6 +30,11 @@ call `open_canvas` with `canvasId: "badge-simulator"` and
 `input: { "app": "<folder under badge/apps>" }`. You can also choose an app
 from the drop-down in the canvas.
 
+The repository's Copilot instructions make the simulator the default: when
+you ask Copilot to build, run or deploy an app, it opens the app here first,
+checks it, and reminds you to press **Deploy** when you're ready to install it
+on your badge.
+
 The agent can drive the canvas with `invoke_canvas_action`:
 
 | Action | Input | Purpose |

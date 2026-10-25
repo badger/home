@@ -50,6 +50,23 @@ changing or testing an app, open it beside the conversation with
 `open_canvas` using `canvasId: "badge-simulator"` and
 `input: { "app": "<folder under badge/apps>" }`.
 
+**Simulator first in the GitHub Copilot app.** When the `badge-simulator`
+canvas is available (it is listed under available canvases in the GitHub
+Copilot app), prefer it whenever the user asks to create, change, run, try or
+deploy an app:
+
+1. Open (or `load_app`) the requested app in the canvas before touching a
+   physical badge.
+2. Check it yourself with `get_output` and `screenshot`, and fix any
+   tracebacks or obvious rendering problems.
+3. End your reply by reminding the user that the app is running in the Badge
+   Simulator, and that when they are happy with it they can press the canvas
+   **Deploy** button to install it on their connected badge.
+
+Deploy to hardware directly only when the user explicitly asks to skip the
+simulator, the request came from the Deploy button, or the canvas is not
+available (for example, in the Copilot CLI).
+
 - It reruns the app automatically whenever files in `badge/apps/<app>` change,
   so save edits and check the result without reopening it.
 - Use `invoke_canvas_action` to verify behavior: `get_output` returns console

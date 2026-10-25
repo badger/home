@@ -140,7 +140,7 @@ function selectApp(inst, app) {
 
 function deployPrompt(app) {
     return [
-        `Deploy the \`${app}\` app from \`badge/apps/${app}\` to the GitHub Universe badge connected over USB, using USB mass storage.`,
+        `Deploy the \`${app}\` app from \`badge/apps/${app}\` to the GitHub Universe badge connected over USB, using USB mass storage. This request came from the Badge Simulator **Deploy** button, so the user has already tested it in the simulator; deploy to the hardware now.`,
         "",
         "Before touching the badge, read and follow the repository instructions: `hardware/USB_SERIAL.md` (all of \"Installing an app\", including \"Menu icon patch\") and `badge/AGENTS.md` (\"Working with a connected badge\"). They take precedence over this summary.",
         "",
