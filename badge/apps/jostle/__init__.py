@@ -16,6 +16,8 @@ badge.mode(HIRES | VSYNC)
 
 W = screen.width
 H = screen.height
+MAX_STEP = 0.07   # longest physics step (s); slower frames are split
+MAX_FRAME = 0.25  # longest frame simulated, so a stall doesn't explode
 
 BG = color.rgb(9, 8, 15)
 GRID_DOT = color.rgb(26, 24, 40)
@@ -729,23 +731,8 @@ def draw_speck(sq, t):
         screen.alpha = 255
 
 
-def update():
+def step(t, dt):
     global logo_glow, logo_x, logo_vx, mode, defocus
-    dt = min(badge.ticks_delta / 1000, 0.05)
-    t = badge.ticks / 1000
-
-    if mode == AMBIENT:
-        if badge.pressed(BUTTON_SELECT):
-            burst()
-        elif badge.pressed(BUTTON_LEFT):
-            launch_logo(-1, t)
-        elif badge.pressed(BUTTON_RIGHT):
-            launch_logo(1, t)
-    elif mode == FLOW:
-        back = BUTTON_LEFT if side > 0 else BUTTON_RIGHT
-        if badge.pressed(BUTTON_SELECT) or badge.pressed(back):
-            start_return(t)
-
     tx, ty = read_tilt(dt)
     ax = tx * TILT_ACCEL
     ay = ty * TILT_ACCEL
@@ -823,13 +810,37 @@ def update():
     else:
         defocus = min(1.0, defocus + dt * DEFOCUS_RATE)
 
+
+
+def update():
+    frame_dt = min(badge.ticks_delta / 1000, MAX_FRAME)
+    t = badge.ticks / 1000
+
+    if mode == AMBIENT:
+        if badge.pressed(BUTTON_SELECT):
+            burst()
+        elif badge.pressed(BUTTON_LEFT):
+            launch_logo(-1, t)
+        elif badge.pressed(BUTTON_RIGHT):
+            launch_logo(1, t)
+    elif mode == FLOW:
+        back = BUTTON_LEFT if side > 0 else BUTTON_RIGHT
+        if badge.pressed(BUTTON_SELECT) or badge.pressed(back):
+            start_return(t)
+
+    # Split long frames into short physics steps so no simulated time is lost.
+    steps = max(1, math.ceil(frame_dt / MAX_STEP))
+    dt = frame_dt / steps
+    for _ in range(steps):
+        step(t, dt)
+
     screen.antialias = image.OFF
     screen.pen = backdrop
     screen.clear()
     for sq in specks:
         draw_speck(sq, t)
     if flows:
-        draw_flows(t, dt)
+        draw_flows(t, frame_dt)
     screen.antialias = image.X4
     logo.transform = mat3().translate(logo_x, LOGO_Y)
     screen.pen = tint(LOGO_RGB, logo_glow)
