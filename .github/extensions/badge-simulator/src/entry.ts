@@ -4,6 +4,7 @@
 import { BadgeInput, initBadgeKeyboard } from '@site/lib/badge-editor-input'
 import { createBadgeModelController } from '@site/lib/badge-editor-model-controller'
 import { initBadgeModel } from '@site/lib/badge-editor-model'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { initBadgeMotion } from '@site/lib/badge-motion'
 import { fileBytes, projectFile, simulationSource } from '@site/lib/badge-editor-project'
 import { firmwareCompat } from '@site/lib/badge-firmware-compat'
@@ -203,6 +204,18 @@ function setStatus(text: string, state = '') {
 }
 
 // ---- 3D model ---------------------------------------------------------------
+// The Universe 2026 badge has its USB-C socket on the left edge; the site model
+// places it on the right, so mirror those parts across the board's centre.
+const parseAsync = GLTFLoader.prototype.parseAsync
+GLTFLoader.prototype.parseAsync = async function (...args: Parameters<typeof parseAsync>) {
+  const gltf = await parseAsync.apply(this, args)
+  gltf.scene.traverse(object => {
+    if (!/^usb-?c/i.test(object.name)) return
+    object.position.x = -object.position.x
+    object.scale.x = -object.scale.x
+  })
+  return gltf
+}
 const controls = {
   screen: $<HTMLButtonElement>('[data-model-screen]'),
   full: $<HTMLButtonElement>('[data-model-full]'),
