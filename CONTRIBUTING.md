@@ -47,6 +47,11 @@ The simulator under `badge25/simulator/` models the Universe 2025 runtime and
 is not a reliable validator for 2026 apps. Test on Universe 2026 hardware,
 including both physical orientations and the capacitive controls.
 
+For fast iteration before testing on hardware, use the
+[Badge Simulator canvas](./.github/extensions/badge-simulator/README.md) in the
+GitHub Copilot app. It runs your app on the badger.github.io 3D simulator,
+reloads on every save, and its **Deploy** button installs the app on your badge.
+
 Pimoroni also publishes a
 [desktop Badgeware Simulator](https://github.com/pimoroni/badgeware-simulator)
 and a
