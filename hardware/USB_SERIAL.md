@@ -266,6 +266,13 @@ After the badge returns to serial mode, verify the remote directory:
 mpremote connect "$PORT" fs ls :/system/apps/my_app
 ```
 
+Finish with a hard reboot so the badge leaves mass-storage mode and the REPL
+(and any test or mounted-host session) and starts normally at the menu:
+
+```bash
+mpremote connect "$PORT" reset
+```
+
 Avoid overwriting `/system/main.py`, the menu, shared assets, or other system
 files unless that is the explicit purpose of the change.
 

@@ -277,7 +277,8 @@ the app whenever a file in `badge/apps/<app>` changes. Use the
 check tracebacks, rendering and input. Its **Deploy** button asks Copilot to
 install the app on the connected badge over USB mass storage, following
 "Installing an app" in the USB serial guide, which includes applying the menu
-icon patch when the badge's menu lacks it. The simulator
+icon patch when the badge's menu lacks it, then reboots the badge back to the
+menu with `mpremote connect <port> reset`. The simulator
 approximates the firmware, so confirm on hardware, in both orientations.
 
 ## Working with a connected badge

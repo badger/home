@@ -60,7 +60,8 @@ changing or testing an app, open it beside the conversation with
   connected badge. Handle it by following `hardware/USB_SERIAL.md`
   ("Installing an app", including "Menu icon patch"): always use USB
   mass-storage mode for `/system/apps/<app>`, apply the patched menu `app.py`
-  when the badge's menu lacks it, and run one `mpremote` command at a time.
+  when the badge's menu lacks it, run one `mpremote` command at a time, and
+  finish with `mpremote connect <port> reset` so the badge reboots to the menu.
 - The simulator approximates the firmware; still test on real hardware.
 
 When porting a 2025 app, preserve behavior and assets but explicitly translate

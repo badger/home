@@ -149,6 +149,7 @@ function deployPrompt(app) {
         "3. Put the badge into USB mass-storage mode with `mpremote connect <port> exec \"import powman; powman.reset_into_msc()\"` (the serial error as it reboots is expected) and wait for the `BADGER` volume. Its root is the badge's `/system`.",
         `4. Copy the whole \`badge/apps/${app}\` directory into \`apps/\` on the volume (replacing any old copy), remove any \`.DS_Store\` or \`._*\` files, and confirm it matches with \`diff -rq\`. If step 2 showed the menu is unpatched, also copy \`badge/apps/menu/app.py\` to \`apps/menu/app.py\`. Do not change other system files.`,
         `5. Eject the volume, wait for the serial port to return, reset the badge, and verify with \`mpremote connect <port> fs ls :/system/apps/${app}\`.`,
+        "6. Finally reboot the badge with `mpremote connect <port> reset` so it is out of mass-storage, REPL, and any test mode and back at the normal menu. Report success only after this reboot.",
         "",
         "Do not use `mpremote fs cp` or `mpremote mount` to install into `/system`; it is read-only over serial. If no badge is connected or a step needs me to press buttons on the badge, tell me exactly what to do.",
     ].join("\n");
