@@ -1,0 +1,40 @@
+Install HYB26-skill
+
+IN THIS REPOSITORY
+
+Nothing to install. Copilot discovers .github/skills/hyb26-skill when you work
+in a badger/home checkout. Tools run from .github/skills/hyb26-skill/scripts.
+
+PERSONAL INSTALL (any project)
+
+1. Install Python 3.10 or newer and check it:
+       python3 --version          (Windows: python --version)
+
+2. From this skill folder run:
+       sh ./install-skill.sh      (macOS / Linux)
+       .\install-skill.ps1        (Windows PowerShell)
+
+3. The skill is copied to ~/.copilot/skills/hyb26-skill. Check with:
+       copilot skill list
+   In an open CLI session use /skills reload, or restart it. Rerun the
+   installer to update; unrelated files are kept.
+
+4. Install mpremote to talk to a badge:
+       python3 -m pip install mpremote     (Windows: python -m pip install mpremote)
+   Use a virtual environment if the system Python refuses packages.
+
+5. Open your badge project folder (a plain folder is fine) before asking
+   Copilot to build an app. Do not use the skill folder as the project.
+
+CHECK THE RESULT
+
+Ask Copilot:
+       Use hyb26-skill to explain how to put my badge into USB Disk Mode and
+       show my app's icon in the menu. Do not change any files.
+
+The answer should mention badge_serial.py disk-mode (or
+powman.reset_into_msc()), the Mass Storage app, double-tapping RESET, and
+patch_menu_icons.py for menus that ignore icon.png.
+
+For VS Code or another Copilot client, check its supported skill locations in
+its documentation and reload it before running the same prompt.
