@@ -267,6 +267,17 @@ Important application-facing facts:
 Prefer firmware APIs and `machine.Pin.board` aliases. Never use numeric GPIOs
 without checking the hardware reference and existing firmware behavior.
 
+## Testing in the Badge Simulator canvas
+
+Before deploying, run the app in the Badge Simulator canvas
+(`.github/extensions/badge-simulator/`). Open it with `open_canvas`,
+`canvasId: "badge-simulator"` and `input: { "app": "<app folder>" }`. It reruns
+the app whenever a file in `badge/apps/<app>` changes. Use the
+`get_output`, `screenshot`, `press`, `load_app` and `reload` canvas actions to
+check tracebacks, rendering and input. Its **Deploy** button asks Copilot to
+install the app on the connected badge using the steps below. The simulator
+approximates the firmware, so confirm on hardware, in both orientations.
+
 ## Working with a connected badge
 
 The badge exposes a MicroPython USB serial interface. Use `mpremote` and follow

@@ -42,6 +42,26 @@ The repository targets the **GitHub Universe 2026 badge** by default.
   mass-storage mode to deploy under `/system/apps/`. Inspect state under
   `:/state/`, and reset after copying so the normal startup path is exercised.
 
+## Testing apps in the Badge Simulator canvas
+
+This repository ships a **Badge Simulator** canvas in
+`.github/extensions/badge-simulator/` (see its `README.md`). When creating,
+changing or testing an app, open it beside the conversation with
+`open_canvas` using `canvasId: "badge-simulator"` and
+`input: { "app": "<folder under badge/apps>" }`.
+
+- It reruns the app automatically whenever files in `badge/apps/<app>` change,
+  so save edits and check the result without reopening it.
+- Use `invoke_canvas_action` to verify behavior: `get_output` returns console
+  output and tracebacks, `screenshot` returns a PNG path to view, `press`
+  presses a badge button (`up`, `down`, `left`, `right`, `select`, `home`,
+  `back`, `menu`), `load_app` switches apps and `reload` reruns.
+- The canvas **Deploy** button sends a request to install the app on the
+  connected badge. Handle it with `hardware/USB_SERIAL.md` ("Installing an
+  app"): USB mass-storage mode for `/system/apps/<app>`, one `mpremote`
+  command at a time.
+- The simulator approximates the firmware; still test on real hardware.
+
 When porting a 2025 app, preserve behavior and assets but explicitly translate
 the graphics, input, timing, orientation, lifecycle, and state APIs. Use
 `badge/apps/input_test/`, `badge/apps/demos/` and `badge/apps/flappy_mona/` as primary references.

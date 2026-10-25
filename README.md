@@ -117,6 +117,14 @@ including `badge`, `screen`, `image`, `font`, `color`, `shape`, `brush`,
 helpers. Inspect the apps in [`badge/apps/`](./badge/apps/) for working
 patterns.
 
+### Badge Simulator canvas
+
+If you use the GitHub Copilot app, this repository includes a **Badge
+Simulator** canvas that loads automatically. Ask Copilot to "open the Badge
+Simulator for my_app": your app runs on a 3D badge beside the chat and reloads
+every time you save. **Deploy** asks Copilot to install it on a connected badge.
+See [`.github/extensions/badge-simulator/`](./.github/extensions/badge-simulator/README.md).
+
 ### Input and orientation
 
 ```python
