@@ -44,6 +44,7 @@ The agent can drive the canvas with `invoke_canvas_action`:
 | `get_output` | `{ "lines"?: 80, "since"?: cursor }` | Status (running, crashed, fps, frames, resolution, orientation, backlight), recent output and the last error mapped to `badge/apps/...:line` |
 | `press` | `{ "button": "select", "duration_ms"?: 120 }` | Press `up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu` (or `a`/`b`/`c`); combine with `"a+b"` |
 | `screenshot` | `{ "label"?: "title" }` | Save the badge screen as a PNG and return its path |
+| `record` | `{ "duration_ms"?: 3000, "fps"?: 15, "steps"?: [...], "restart"?: true, "video"?: true, "save_frames"?: true }` | Record the screen while optional `run_script` steps run. Writes an animated GIF, a labelled contact-sheet PNG of evenly spaced frames, and optionally MP4/WebM video and per-frame PNGs. Returns their paths, `distinct_frames` and `longest_static_ms` |
 | `exec` | `{ "code": "score", "timeout_ms"?: 5000 }` | Run MicroPython in the running app's globals (a REPL); expressions return their repr |
 | `wait_for` | `{ "pattern"?: "regex", "frames"?: 30, "until_crash"?: true, "timeout_ms"?: 5000, "since"?: cursor }` | Wait for output, rendered frames or a crash instead of sleeping |
 | `run_script` | `{ "steps": [...], "restart"?: true }` | Scripted test: `press`, `wait_ms`, `screenshot`, `exec`, `wait_for` and `rotate` steps, stopping on a crash |
@@ -52,7 +53,9 @@ The agent can drive the canvas with `invoke_canvas_action`:
 
 A good debugging loop is `check_app`, then `run_script` (or `wait_for`) to
 exercise the app, then `error.location` from the result to find the failing
-line, fix it, and repeat; the canvas reloads on save. Keep the canvas visible
+line, fix it, and repeat; the canvas reloads on save. To check motion or
+animation, `record` the interaction and view the contact sheet; the GIF or
+video is ready to attach to a pull request. Keep the canvas visible
 while testing: a hidden panel pauses the simulator.
 
 The simulator approximates the badge firmware, so test on real hardware before
@@ -63,7 +66,11 @@ you open a pull request.
 `extension.mjs` starts a loopback HTTP server for each canvas. The server
 hosts `web/`, sends the app's files to the page, and pushes reload events when
 they change. The page (`web/simulator.js`) runs the badge's MicroPython WASM
-runtime in a web worker and draws frames on the 3D model.
+runtime in a web worker and draws frames on the 3D model. Recordings stream
+changed frames from the page to the extension, and `media.mjs` encodes the GIF
+and PNGs without dependencies. Video comes from the browser's `MediaRecorder`.
+Screenshots and recordings are written to the session's
+`files/badge-simulator/` folder.
 
 The runtime (about 6 MB: WASM, simulator filesystem and badge model) is
 downloaded from the badger.github.io revision in `web/BUILD_INFO.json` the

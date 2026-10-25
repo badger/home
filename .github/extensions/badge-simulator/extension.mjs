@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinSession, createCanvas } from "@github/copilot-sdk/extension";
+import { contactSheet, encodeGif, encodePng } from "./media.mjs";
 
 const extDir = dirname(fileURLToPath(import.meta.url));
 const webDir = join(extDir, "web");
@@ -102,6 +103,15 @@ function readBody(req) {
 }
 const json = (res, status, body) => { res.writeHead(status, { "Content-Type": mime[".json"], "Cache-Control": "no-store" }); res.end(JSON.stringify(body)); };
 
+function readRaw(req, limit) {
+    return new Promise((resolveBody, reject) => {
+        const chunks = [];
+        let size = 0;
+        req.on("data", (c) => { size += c.length; if (size <= limit) chunks.push(c); });
+        req.on("end", () => resolveBody(size <= limit ? Buffer.concat(chunks) : null));
+        req.on("error", reject);
+    });
+}
 function broadcast(inst, event) {
     const data = `data: ${JSON.stringify(event)}\n\n`;
     for (const client of inst.clients) client.write(data);
@@ -257,6 +267,7 @@ async function handle(inst, req, res) {
         if (path === "/events") {
             res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
             res.write(": connected\n\n");
+            res.clientId = url.searchParams.get("client") ?? "";
             inst.clients.add(res);
             notify(inst);
             const ping = setInterval(() => res.write(": ping\n\n"), 25000);
@@ -269,6 +280,16 @@ async function handle(inst, req, res) {
             const dir = join(appsDir(inst.root), inst.app);
             if (!existsSync(join(dir, "__init__.py"))) return json(res, 404, { error: `badge/apps/${inst.app}/__init__.py not found` });
             return json(res, 200, { app: inst.app, revision: inst.revision, files: appFiles(dir) });
+        }
+        if (req.method === "POST" && path === "/api/record-frame") {
+            const rec = inst.recordings.get(url.searchParams.get("id"));
+            const frame = await readRaw(req, 4 * 1024 * 1024);
+            const width = Number(url.searchParams.get("w")), height = Number(url.searchParams.get("h"));
+            if (rec && frame && frame.length === width * height * 4) {
+                if (rec.bytes + frame.length > recordingByteLimit) rec.truncated = true;
+                else { rec.bytes += frame.length; rec.frames.push({ t: Number(url.searchParams.get("t")), width, height, data: new Uint8Array(frame) }); }
+            }
+            return json(res, 200, { ok: true });
         }
         if (req.method === "POST") {
             const body = await readBody(req);
@@ -289,6 +310,10 @@ async function handle(inst, req, res) {
             if (path === "/api/screenshot") {
                 const pending = inst.screenshots.get(body.id);
                 if (pending) { inst.screenshots.delete(body.id); pending(body.screen); }
+                return json(res, 200, { ok: true });
+            }
+            if (path === "/api/record-done") {
+                inst.recordings.get(body.id)?.finish?.(body);
                 return json(res, 200, { ok: true });
             }
             if (path === "/api/deploy") {
@@ -321,7 +346,7 @@ async function startInstance(ctx) {
     const inst = {
         root, app: null, revision: 0, status: "Starting", state: "", log: [], logBase: 0,
         stats: null, statsAt: 0, waiters: new Set(), execs: new Map(), execCurrent: null,
-        clients: new Set(), statsBy: new Map(), screenshots: new Map(), watcher: null, reloadTimer: null, server: null, url: "",
+        clients: new Set(), statsBy: new Map(), screenshots: new Map(), recordings: new Map(), watcher: null, reloadTimer: null, server: null, url: "",
     };
     const remembered = loadLastApp();
     if (remembered && listApps(root).includes(remembered)) inst.app = remembered;
@@ -381,6 +406,89 @@ async function doScreenshot(inst, label) {
     const file = join(dir, `${inst.app ?? "screen"}${slug}-${Date.now()}.png`);
     writeFileSync(file, Buffer.from(String(dataUrl).replace(/^data:image\/png;base64,/, ""), "base64"));
     return { path: file, app: inst.app };
+}
+// Recordings go to one client (preferring a visible one) so frames aren't duplicated.
+function recordingClient(inst) {
+    const clients = [...inst.clients];
+    const live = clients.filter((c) => { const s = inst.statsBy.get(c.clientId); return s && !s.paused; });
+    return live.at(-1) ?? clients.at(-1);
+}
+const recordingByteLimit = 256 * 1024 * 1024;
+async function doRecord(inst, input = {}) {
+    await requireClient(inst);
+    if (input.restart) { doReload(inst, false); await waitForRun(inst); }
+    const steps = Array.isArray(input.steps) ? input.steps : [];
+    const fps = Math.max(1, Math.min(30, Number(input.fps ?? 15) || 15));
+    const durationMs = clampMs(input.duration_ms, steps.length ? 0 : 3000);
+    const id = Math.random().toString(36).slice(2);
+    const client = recordingClient(inst);
+    const rec = { frames: [], bytes: 0, truncated: false, finish: null };
+    inst.recordings.set(id, rec);
+    const send = (event) => client.write(`data: ${JSON.stringify(event)}\n\n`);
+    const since = cursorOf(inst);
+    const started = Date.now();
+    send({ type: "record-start", id, fps, video: Boolean(input.video), scale: Number(input.scale) || 0 });
+    let script, done;
+    try {
+        if (steps.length) script = await runScript(inst, { steps, stop_on_crash: input.stop_on_crash });
+        const remaining = durationMs - (Date.now() - started);
+        if (remaining > 0) await sleep(remaining);
+    } finally {
+        done = await new Promise((ok) => {
+            const timer = setTimeout(() => ok({ error: "Timed out waiting for the canvas to finish the recording" }), 30000);
+            rec.finish = (body) => { clearTimeout(timer); ok(body); };
+            send({ type: "record-stop", id });
+        });
+        inst.recordings.delete(id);
+    }
+    const elapsed = Math.max(Number(done.duration_ms) || 0, Date.now() - started);
+    const result = { app: inst.app, sample_fps: fps, duration_ms: elapsed, ...(script ? { steps: script.steps } : {}) };
+    if (done.error) result.error = done.error;
+    const frames = rec.frames.sort((a, b) => a.t - b.t);
+    if (!frames.length) {
+        result.error ??= "No frames were captured. Keep the Badge Simulator panel visible (a hidden canvas pauses) and make sure the app is running.";
+        return { ...snapshot(inst), ...result, output: linesSince(inst, since).slice(-80).join("\n") };
+    }
+    const { width, height } = frames[0];
+    const usable = frames.filter((f) => f.width === width && f.height === height);
+    const end = Math.max(elapsed, usable.at(-1).t + 1000 / fps);
+    usable.forEach((f, i) => { f.delayMs = (usable[i + 1]?.t ?? end) - f.t; });
+    const scale = Math.max(1, Math.min(4, Number(input.scale) || (width >= 320 ? 1 : 2)));
+
+    const dir = join(session.workspacePath ?? cacheDir, "files", "badge-simulator");
+    mkdirSync(dir, { recursive: true });
+    const slug = input.label ? `-${String(input.label).replace(/[^\w-]+/g, "_").slice(0, 40)}` : "";
+    const base = join(dir, `${inst.app ?? "screen"}${slug}-${Date.now()}`);
+
+    const sheetCount = Math.max(1, Math.min(48, Number(input.sheet_frames) || 12));
+    const picks = [];
+    for (let k = 0; k < sheetCount; k++) {
+        const target = sheetCount === 1 ? 0 : (k * (end - 1)) / (sheetCount - 1);
+        const frame = usable.findLast((f) => f.t <= target) ?? usable[0];
+        if (picks.at(-1) !== frame) picks.push(frame);
+    }
+    writeFileSync(`${base}-sheet.png`, contactSheet(width, height, picks, { scale: width >= 320 ? 1 : 2 }));
+    result.contact_sheet = `${base}-sheet.png`;
+    if (input.gif !== false) { writeFileSync(`${base}.gif`, encodeGif(width, height, usable, scale)); result.gif = `${base}.gif`; }
+    if (done.video?.data) {
+        const ext = String(done.video.mime).includes("mp4") ? "mp4" : "webm";
+        writeFileSync(`${base}.${ext}`, Buffer.from(done.video.data, "base64"));
+        result.video = `${base}.${ext}`;
+    } else if (input.video) result.video_error = done.video_error ?? "The browser could not record video";
+    if (input.save_frames) {
+        mkdirSync(`${base}-frames`, { recursive: true });
+        usable.forEach((f, i) => writeFileSync(join(`${base}-frames`, `${String(i + 1).padStart(4, "0")}-${Math.round(f.t)}ms.png`), encodePng(width, height, f.data)));
+        result.frames_dir = `${base}-frames`;
+    }
+    const holds = usable.map((f) => f.delayMs);
+    Object.assign(result, {
+        width, height, scale, distinct_frames: usable.length, rendered_frames: done.rendered_frames,
+        longest_static_ms: Math.round(Math.max(...holds)),
+        sheet_times_ms: picks.map((f) => Math.round(f.t)),
+        ...(usable.length < frames.length ? { skipped_resized_frames: frames.length - usable.length } : {}),
+        ...(rec.truncated ? { truncated: "Stopped storing frames after 256 MB; use a lower fps or shorter duration." } : {}),
+    });
+    return { ...snapshot(inst), ...result, output: linesSince(inst, since).slice(-80).join("\n") };
 }
 async function doExec(inst, input) {
     await requireClient(inst);
@@ -633,6 +741,27 @@ session = await joinSession({
                         required: ["steps"],
                     },
                     handler: (ctx) => runScript(instanceFor(ctx), ctx.input),
+                },
+                {
+                    name: "record",
+                    description: "Record the simulated badge screen as an animated GIF plus a labelled contact-sheet PNG (view it with the view tool to check motion), optionally MP4/WebM video and per-frame PNGs. Records for duration_ms (default 3000, or until `steps` finish), and `steps` (run_script steps) drive input while recording. Only frames that change are kept; returns distinct_frames, longest_static_ms and file paths.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            duration_ms: { type: "number", description: "Minimum length; default 3000 (0 with steps), max 60000" },
+                            fps: { type: "number", description: "Sampling rate, 1-30 (default 15)" },
+                            steps: { type: "array", items: { type: "object" }, description: "run_script steps to perform while recording" },
+                            restart: { type: "boolean", description: "Reload the app before recording" },
+                            stop_on_crash: { type: "boolean" },
+                            label: { type: "string" },
+                            scale: { type: "number", description: "GIF/video upscale 1-4 (default 2 for 160x120, 1 for 320x240)" },
+                            gif: { type: "boolean", description: "Write an animated GIF (default true)" },
+                            video: { type: "boolean", description: "Also record MP4 (or WebM) video with the browser's MediaRecorder" },
+                            sheet_frames: { type: "number", description: "Frames in the contact sheet (default 12)" },
+                            save_frames: { type: "boolean", description: "Also write every distinct frame as a PNG" },
+                        },
+                    },
+                    handler: (ctx) => doRecord(instanceFor(ctx), ctx.input ?? {}),
                 },
                 {
                     name: "rotate",

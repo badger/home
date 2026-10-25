@@ -19,6 +19,8 @@ type ServerEvent =
   | { type: 'restart' }
   | { type: 'exec'; id: string; code: string }
   | { type: 'rotate'; value?: boolean }
+  | { type: 'record-start'; id: string; fps: number; video: boolean; scale: number }
+  | { type: 'record-stop'; id: string }
 
 const appRoot = '/system/apps'
 const $ = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T>(selector)!
@@ -335,6 +337,7 @@ function startWorker() {
       screen.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0)
       model.updateFrame()
       frames++
+      recordFrame()
       root.dataset.framed = 'true'
     }
     if (data.backlight !== undefined) backlight = data.backlight
@@ -390,6 +393,87 @@ window.setInterval(() => {
   framesAtLastStat = frames
 }, 1000)
 
+// ---- recording (the canvas `record` action) -------------------------------------
+// Streams changed frames as raw RGBA to the extension, which encodes GIF/PNG. Video
+// uses MediaRecorder on an upscaled copy of the screen.
+type Recording = {
+  id: string; interval: number; start: number; last: number; hash: number; rendered: number
+  uploads: Promise<unknown>[]; video?: { canvas: HTMLCanvasElement; recorder: MediaRecorder; chunks: Blob[]; error?: string }
+}
+let recording: Recording | null = null
+function frameHash(data: Uint8ClampedArray) {
+  const words = new Uint32Array(data.buffer, data.byteOffset, data.byteLength >> 2)
+  let h = 0x811c9dc5 ^ words.length
+  for (let i = 0; i < words.length; i++) h = Math.imul(h ^ words[i], 0x01000193)
+  return h >>> 0
+}
+function recordFrame(force = false) {
+  const rec = recording
+  if (!rec) return
+  rec.rendered++
+  const now = performance.now()
+  if (!force && now - rec.last < rec.interval - 2) return
+  const { width, height } = screen
+  if (!width || !height) return
+  const image = screen.getContext('2d')!.getImageData(0, 0, width, height)
+  const hash = frameHash(image.data) ^ (width << 16) ^ height
+  if (rec.video) {
+    const ctx = rec.video.canvas.getContext('2d')!
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(screen, 0, 0, rec.video.canvas.width, rec.video.canvas.height)
+  }
+  if (!force && hash === rec.hash) return
+  rec.last = now
+  rec.hash = hash
+  const query = `id=${rec.id}&t=${(now - rec.start).toFixed(1)}&w=${width}&h=${height}`
+  rec.uploads.push(fetch(`/api/record-frame?${query}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Badge-Simulator': '1' }, body: image.data,
+  }).catch(() => undefined))
+}
+function startRecording(id: string, fps: number, video: boolean, scale: number) {
+  const now = performance.now()
+  recording = { id, interval: 1000 / fps, start: now, last: -Infinity, hash: -1, rendered: 0, uploads: [] }
+  if (video) {
+    const canvas = document.createElement('canvas')
+    const factor = scale || (screen.width >= 320 ? 2 : 4)
+    canvas.width = screen.width * factor
+    canvas.height = screen.height * factor
+    const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+    const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t))
+    try {
+      const recorder = new MediaRecorder(canvas.captureStream(fps), mimeType ? { mimeType, videoBitsPerSecond: 4_000_000 } : undefined)
+      const chunks: Blob[] = []
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+      recorder.start(250)
+      recording.video = { canvas, recorder, chunks }
+    } catch (error) {
+      recording.video = { canvas, recorder: null as unknown as MediaRecorder, chunks: [], error: String(error) }
+    }
+  }
+  recordFrame(true)
+}
+async function stopRecording(id: string) {
+  const rec = recording
+  if (!rec || rec.id !== id) { void post('/api/record-done', { id, error: 'No active recording in this canvas' }); return }
+  recording = null
+  const duration = performance.now() - rec.start
+  let video: { mime: string; data: string } | undefined
+  let videoError = rec.video?.error
+  if (rec.video?.recorder) {
+    const { recorder, chunks } = rec.video
+    await new Promise<void>((resolve) => { recorder.onstop = () => resolve(); recorder.stop() })
+    const blob = new Blob(chunks, { type: recorder.mimeType })
+    if (blob.size) {
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      let binary = ''
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      video = { mime: recorder.mimeType, data: btoa(binary) }
+    } else videoError = 'MediaRecorder produced no data'
+  }
+  await Promise.all(rec.uploads)
+  void post('/api/record-done', { id, duration_ms: duration, rendered_frames: rec.rendered, video, video_error: videoError })
+}
+
 // ---- server events ------------------------------------------------------------
 function capture(id: string) {
   const body: Record<string, string> = { id, screen: screen.toDataURL('image/png') }
@@ -397,7 +481,7 @@ function capture(id: string) {
 }
 
 function connect() {
-  const events = new EventSource('/events')
+  const events = new EventSource(`/events?client=${clientId}`)
   events.onmessage = ({ data }) => {
     const event = JSON.parse(data) as ServerEvent
     if (event.type === 'apps') setApps(event.apps, appSelect.value || null)
@@ -405,6 +489,8 @@ function connect() {
     else if (event.type === 'restart') { current = null; startWorker(); void loadApp() }
     else if (event.type === 'screenshot') capture(event.id)
     else if (event.type === 'exec') execCode(event.id, event.code)
+    else if (event.type === 'record-start') startRecording(event.id, event.fps, event.video, event.scale)
+    else if (event.type === 'record-stop') void stopRecording(event.id)
     else if (event.type === 'rotate') { if (event.value === undefined || event.value !== rotated) rotateButton.click() }
     else if (event.type === 'press') {
       input.set(`agent:${event.bit}`, event.bit, true)
