@@ -247,6 +247,13 @@ async function handle(inst, req, res) {
     const url = new URL(req.url, "http://localhost");
     const path = decodeURIComponent(url.pathname);
     try {
+        // Only serve this loopback origin: reject DNS-rebinding hosts, foreign origins and
+        // POSTs without the page's custom header (which cross-origin callers can't send
+        // without a CORS preflight this server never approves).
+        const origin = new URL(inst.url).host;
+        if (req.headers.host !== origin) return json(res, 403, { error: "Forbidden" });
+        if (req.headers.origin && req.headers.origin !== `http://${origin}`) return json(res, 403, { error: "Forbidden" });
+        if (req.method === "POST" && req.headers["x-badge-simulator"] !== "1") return json(res, 403, { error: "Forbidden" });
         if (path === "/events") {
             res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
             res.write(": connected\n\n");
@@ -287,6 +294,7 @@ async function handle(inst, req, res) {
             if (path === "/api/deploy") {
                 const app = body.app || inst.app;
                 if (!app) return json(res, 400, { error: "No app selected" });
+                if (!listApps(inst.root).includes(app)) return json(res, 400, { error: `Unknown app "${app}"` });
                 await session.send({ prompt: deployPrompt(app) });
                 return json(res, 200, { ok: true });
             }

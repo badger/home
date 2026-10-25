@@ -174,8 +174,10 @@ const standaloneExec = (id: string, code: string) =>
 const lines: string[] = []
 let pendingLog: string[] = []
 let logTimer = 0
+// The custom header makes cross-origin pages fail CORS preflight, so only this page can POST.
+const postHeaders = { 'Content-Type': 'application/json', 'X-Badge-Simulator': '1' }
 function post(path: string, body: unknown) {
-  return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined)
+  return fetch(path, { method: 'POST', headers: postHeaders, body: JSON.stringify(body) }).catch(() => undefined)
 }
 function flushLog() {
   logTimer = 0
@@ -265,6 +267,12 @@ for (const key of keys) {
   key.addEventListener('pointercancel', release)
   key.addEventListener('lostpointercapture', release)
   key.addEventListener('contextmenu', event => event.preventDefault())
+  // Keyboard (Space/Enter) and assistive-technology activation fire click without a pointer press.
+  key.addEventListener('click', event => {
+    if (event.detail !== 0) return
+    input.set(`click:${bit}`, bit, true)
+    window.setTimeout(() => input.set(`click:${bit}`, bit, false), 120)
+  })
 }
 document.addEventListener('visibilitychange', () => { input.clear(); worker?.postMessage({ pause: document.hidden }) })
 
@@ -276,12 +284,18 @@ let frames = 0
 const clientId = Math.random().toString(36).slice(2)
 let framesAtLastStat = 0
 let backlight = 1
+// Paths written into the worker's filesystem since it started. The worker only
+// overwrites files, so a deleted or renamed file needs a fresh runtime.
+const written = new Set<string>()
 
 function run(payload: AppPayload) {
   current = payload
   if (!worker || !ready) return
+  const paths = new Set(payload.files.map(file => `${payload.app}/${file.path}`))
+  if ([...written].some(path => !paths.has(path))) { startWorker(); return }
   try {
     const req = request(payload)
+    for (const path of paths) written.add(path)
     lines.length = 0
     log(`[simulator] Running ${payload.app} (revision ${payload.revision})`)
     worker.postMessage({ ...req, debug: false })
@@ -295,6 +309,7 @@ function run(payload: AppPayload) {
 
 function startWorker() {
   worker?.terminate()
+  written.clear()
   ready = false
   running = false
   const next = new Worker('/simulator/micropython.worker.js', { type: 'module' })
@@ -335,7 +350,15 @@ function setApps(apps: string[], selected: string | null) {
 
 async function loadApp() {
   const response = await fetch('/api/app')
-  if (response.status === 204) { current = null; deployButton.disabled = true; setStatus('Choose an app to run'); return }
+  if (response.status === 204) {
+    current = null
+    deployButton.disabled = true
+    startWorker()
+    screen.getContext('2d')?.clearRect(0, 0, screen.width, screen.height)
+    model.updateFrame()
+    setStatus('Choose an app to run')
+    return
+  }
   if (!response.ok) { setStatus(await response.text(), 'error'); return }
   const payload = await response.json() as AppPayload
   if (![...appSelect.options].some(option => option.value === payload.app)) appSelect.add(new Option(payload.app, payload.app))
@@ -379,7 +402,7 @@ function connect() {
     const event = JSON.parse(data) as ServerEvent
     if (event.type === 'apps') setApps(event.apps, appSelect.value || null)
     else if (event.type === 'reload') void loadApp()
-    else if (event.type === 'restart') startWorker()
+    else if (event.type === 'restart') { current = null; startWorker(); void loadApp() }
     else if (event.type === 'screenshot') capture(event.id)
     else if (event.type === 'exec') execCode(event.id, event.code)
     else if (event.type === 'rotate') { if (event.value === undefined || event.value !== rotated) rotateButton.click() }
@@ -395,7 +418,7 @@ reloadButton.addEventListener('click', () => { void loadApp() })
 deployButton.addEventListener('click', async () => {
   if (!appSelect.value) return
   deployButton.disabled = true
-  const response = await fetch('/api/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: appSelect.value }) }).catch(() => null)
+  const response = await fetch('/api/deploy', { method: 'POST', headers: postHeaders, body: JSON.stringify({ app: appSelect.value }) }).catch(() => null)
   const message = response?.ok ? `Asked Copilot to deploy ${appSelect.value} to your badge` : 'Could not ask Copilot to deploy'
   setStatus(message, response?.ok ? 'deploying' : 'error')
   log(`[simulator] ${message}`)
