@@ -12,8 +12,11 @@ Copilot loads it automatically for anyone who clones this repository.
   buttons, use the on-screen keys, or use the keyboard (arrows, Space/Enter =
   Select, Esc = Home, WASD/J/K/U for the gamepad).
 - **Deploy**: asks Copilot to install the selected app on a badge connected
-  over USB, following [`hardware/USB_SERIAL.md`](../../../hardware/USB_SERIAL.md)
-  and [`badge/AGENTS.md`](../../../badge/AGENTS.md).
+  over USB. It always uses USB mass-storage mode (entered over serial, so no
+  button presses are needed) and follows "Installing an app" in
+  [`hardware/USB_SERIAL.md`](../../../hardware/USB_SERIAL.md), including
+  copying the patched menu `app.py` if the badge's menu doesn't show app
+  `icon.png` files yet, plus [`badge/AGENTS.md`](../../../badge/AGENTS.md).
 - **Theme**: follows the Copilot app's light or dark theme.
 - **HOME** runs the app's `on_exit` and restarts it, because there is no menu.
 - **Output** shows `print()` output and tracebacks from MicroPython.

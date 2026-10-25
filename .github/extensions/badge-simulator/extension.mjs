@@ -140,11 +140,17 @@ function selectApp(inst, app) {
 
 function deployPrompt(app) {
     return [
-        `Deploy the \`${app}\` app from \`badge/apps/${app}\` to the GitHub Universe badge that is connected over USB.`,
-        "Follow the repository instructions: read `hardware/USB_SERIAL.md` (especially \"Installing an app\") and `badge/AGENTS.md` before touching the badge.",
-        "Use `mpremote devs` to find the badge port, then only explicit `mpremote connect <port> ...` commands, one at a time (never run serial commands concurrently).",
-        `\`/system\` is read-only over the serial REPL, so put the badge into USB mass-storage mode (\`mpremote connect <port> exec "import powman; powman.reset_into_msc()"\` works without touching the badge), copy \`badge/apps/${app}\` into \`apps/\` on the BADGER volume (its root is the badge's \`/system\`), eject it, reset the badge, and verify with \`mpremote connect <port> fs ls :/system/apps/${app}\`.`,
-        "If no badge is connected or a step needs me to press buttons on the badge, tell me exactly what to do.",
+        `Deploy the \`${app}\` app from \`badge/apps/${app}\` to the GitHub Universe badge connected over USB, using USB mass storage.`,
+        "",
+        "Before touching the badge, read and follow the repository instructions: `hardware/USB_SERIAL.md` (all of \"Installing an app\", including \"Menu icon patch\") and `badge/AGENTS.md` (\"Working with a connected badge\"). They take precedence over this summary.",
+        "",
+        "1. Run `mpremote devs` to find the badge port (USB `2e8a:1101`). Use only explicit `mpremote connect <port> ...` commands, one at a time; never run serial commands concurrently.",
+        "2. While the badge is in serial mode, run the menu icon patch check from `hardware/USB_SERIAL.md` to see whether `/system/apps/menu/app.py` needs the repository's patched `app.py`.",
+        "3. Put the badge into USB mass-storage mode with `mpremote connect <port> exec \"import powman; powman.reset_into_msc()\"` (the serial error as it reboots is expected) and wait for the `BADGER` volume. Its root is the badge's `/system`.",
+        `4. Copy the whole \`badge/apps/${app}\` directory into \`apps/\` on the volume (replacing any old copy), remove any \`.DS_Store\` or \`._*\` files, and confirm it matches with \`diff -rq\`. If step 2 showed the menu is unpatched, also copy \`badge/apps/menu/app.py\` to \`apps/menu/app.py\`. Do not change other system files.`,
+        `5. Eject the volume, wait for the serial port to return, reset the badge, and verify with \`mpremote connect <port> fs ls :/system/apps/${app}\`.`,
+        "",
+        "Do not use `mpremote fs cp` or `mpremote mount` to install into `/system`; it is read-only over serial. If no badge is connected or a step needs me to press buttons on the badge, tell me exactly what to do.",
     ].join("\n");
 }
 

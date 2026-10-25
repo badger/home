@@ -269,6 +269,26 @@ mpremote connect "$PORT" fs ls :/system/apps/my_app
 Avoid overwriting `/system/main.py`, the menu, shared assets, or other system
 files unless that is the explicit purpose of the change.
 
+### Menu icon patch
+
+The stock 2026-10-08 menu only draws its built-in vector icons, so a new app
+appears with the generic default icon. This repository's
+`badge/apps/menu/app.py` is the stock file plus a small patch that draws an
+app's own `icon.png` when the menu has no built-in icon for it. Check the
+badge before installing an app, while it is still in serial mode:
+
+```bash
+mpremote connect "$PORT" exec "print('load_picture' in open('/system/apps/menu/app.py').read())"
+```
+
+If it prints `False`, copy the patched file during the same mass-storage
+session as the app. Copy only `app.py`; the rest of the menu (compiled
+modules, animations, awards and photos) already matches the firmware:
+
+```bash
+cp badge/apps/menu/app.py "$BADGE_VOLUME/apps/menu/app.py"
+```
+
 ## Running code without installing it
 
 Execute a local script on the badge:

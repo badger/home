@@ -57,9 +57,10 @@ changing or testing an app, open it beside the conversation with
   presses a badge button (`up`, `down`, `left`, `right`, `select`, `home`,
   `back`, `menu`), `load_app` switches apps and `reload` reruns.
 - The canvas **Deploy** button sends a request to install the app on the
-  connected badge. Handle it with `hardware/USB_SERIAL.md` ("Installing an
-  app"): USB mass-storage mode for `/system/apps/<app>`, one `mpremote`
-  command at a time.
+  connected badge. Handle it by following `hardware/USB_SERIAL.md`
+  ("Installing an app", including "Menu icon patch"): always use USB
+  mass-storage mode for `/system/apps/<app>`, apply the patched menu `app.py`
+  when the badge's menu lacks it, and run one `mpremote` command at a time.
 - The simulator approximates the firmware; still test on real hardware.
 
 When porting a 2025 app, preserve behavior and assets but explicitly translate
