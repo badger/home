@@ -66,6 +66,44 @@ class LoaderTests(unittest.TestCase):
             self.assertIsNot(sys.modules.get("octocat_trail_" + name), _APP[name])
 
 
+class QuietRng(tl.Rng):
+    """Deterministic test RNG. chance() follows a script, then answers False;
+    randint() follows a script, then returns low; choice() takes the first
+    item; uniform() returns low. Every chance() probability is recorded."""
+
+    def __init__(self, chances=(), randints=()):
+        tl.Rng.__init__(self, 99)
+        self.chances = list(chances)
+        self.randints = list(randints)
+        self.asked = []
+
+    def chance(self, probability):
+        self.asked.append(probability)
+        return self.chances.pop(0) if self.chances else False
+
+    def randint(self, low, high):
+        if self.randints:
+            value = self.randints.pop(0)
+            if not low <= value <= high:
+                raise AssertionError("scripted randint %r outside %r..%r" % (value, low, high))
+            return value
+        return low
+
+    def uniform(self, low, high):
+        return low
+
+    def choice(self, items):
+        return items[0]
+
+
+def stocked(role=0, rng=None, brew=200.0, lgtm=50, patches=0):
+    trail = tl.Trail(role, rng or QuietRng())
+    trail.supplies["brew"] = brew
+    trail.supplies["lgtm"] = lgtm
+    trail.supplies["patches"] = patches
+    return trail
+
+
 class HelperTests(unittest.TestCase):
 
     def test_number_formatting(self):
@@ -144,6 +182,18 @@ class RngTests(unittest.TestCase):
         for _ in range(100):
             self.assertEqual(rng.weighted(((0, "a"), (2, "b"))), "b")
         self.assertEqual(set(rng.weighted(((1, "a"), (1, "b"))) for _ in range(200)), {"a", "b"})
+
+
+class TrailShopRiverTests(unittest.TestCase):
+    def test_store_prices(self):
+        trail = stocked()
+        for stop, prices in ((0, (4, 1, 25)), (1, (5, 2, 32)), (9, (6, 2, 38))):
+            trail.at = stop
+            self.assertTrue(trail.at_store())
+            self.assertEqual(trail.store_keys(), ("brew", "lgtm", "patches"))
+            self.assertEqual(tuple(trail.price(key) for key in ("brew", "lgtm", "patches")), prices)
+        trail.at = 2
+        self.assertEqual((trail.at_store(), trail.markup(), trail.price("brew")), (False, 0, 4))
 
 
 class FakeDevice:

@@ -27,6 +27,9 @@ STORE_ITEMS = (
     ("lgtm", 1, 10, 300, "Hunt ammo and deploy approvals."),
     ("patches", 25, 1, 9, "Fixes broken CI and reverts force-pushes."),
 )
+# (stop, price percent): stores and the Firehouse, which only sells patches.
+STORE_MARKUP = ((0, 100), (1, 125), (9, 150), (6, 160))
+FIREHOUSE = 6
 # (name, kegs per person per day, daily health change)
 RATIONS = (
     ("Nitro", 0.3, 2),
@@ -182,8 +185,11 @@ class Trail:
 
     def __init__(self, role, rng):
         self.role = clamp_int(role, 0, len(ROLES) - 1)
+        self.supplies = {"credits": ROLES[self.role][2], "brew": 0.0, "lgtm": 0, "patches": 0}
         self.members = [Member(name) for name in PARTY]
         self.rations = 1
+        self.at = 0
+        self.basket = {}
 
     # ----- party -----------------------------------------------------------
     def living(self):
@@ -213,3 +219,45 @@ class Trail:
     def brew_per_day(self):
         need = self.living_count() * RATIONS[self.rations][1]
         return need
+
+    # ----- shop -------------------------------------------------------------
+    def markup(self):
+        """Price percent at the current stop, or 0 if it has no store."""
+        for stop, percent in STORE_MARKUP:
+            if stop == self.at:
+                return percent
+        return 0
+
+    def at_store(self):
+        return self.markup() > 0
+
+    def store_keys(self):
+        if self.at == FIREHOUSE:
+            return ("patches",)
+        return ("brew", "lgtm", "patches")
+
+    def price(self, key):
+        percent = self.markup() or 100
+        return (store_item(key)[1] * percent + 99) // 100
+
+    def buy(self, key, quantity):
+        """Buy up to quantity, limited by carry space and credits."""
+        price = self.price(key)
+        room = int(carry_limit(key) - self.supplies[key])
+        quantity = min(int(quantity), room, self.supplies["credits"] // price)
+        if quantity <= 0:
+            return 0
+        self.supplies["credits"] -= quantity * price
+        self.supplies[key] += quantity
+        self.basket[key] = self.basket.get(key, 0) + quantity
+        return quantity
+
+    def sell_back(self, key, quantity):
+        """Return supplies bought on this visit, at the price paid."""
+        quantity = min(int(quantity), int(self.supplies[key]), self.basket.get(key, 0))
+        if quantity <= 0:
+            return 0
+        self.supplies[key] -= quantity
+        self.basket[key] -= quantity
+        self.supplies["credits"] += quantity * self.price(key)
+        return quantity
