@@ -203,6 +203,16 @@ def stocked(role=0, rng=None, brew=200.0, lgtm=50, patches=0):
     return trail
 
 
+def at_river(stop, role=0, rng=None, **supplies):
+    trail = stocked(role, rng, **supplies)
+    door = tm.STOPS[stop]
+    trail.x, trail.y = door[3], door[4]
+    if stop == tm.DNS:
+        trail.deployed = tm.deployed_bit(tm.MERGE)
+    trail.arrive(stop, [])
+    return trail
+
+
 def walk_to(trail, stop, limit=3000):
     """Walk the shortest route to a stop's door, passing time as the game does."""
     door = tm.STOPS[stop]
@@ -599,6 +609,84 @@ class TrailShopRiverTests(unittest.TestCase):
         trail.arrive(1, [])
         self.assertEqual(trail.basket, {})
         self.assertEqual(trail.sell_back("brew", 10), 0)
+
+    def test_river_risk(self):
+        trail = at_river(tm.MERGE)
+        self.assertEqual(trail.river, [20, 140])
+        self.assertEqual(trail.crossing_risk(tl.FORD), 0.0)
+        trail.river[0] = 60
+        risks = [trail.crossing_risk(option) for option in range(4)]
+        for got, want in zip(risks, (0.7, 0.2, 0.02, 0.0)):
+            self.assertAlmostEqual(got, want)
+        atc = at_river(tm.MERGE, role=tl.ATC_LEAD)
+        atc.river[0] = 60
+        for option in range(3):
+            self.assertAlmostEqual(atc.crossing_risk(option), risks[option] * 0.6)
+        trail.river[0] = 999
+        self.assertEqual(trail.crossing_risk(tl.FORD), 0.95)
+        self.assertEqual((trail.ferry_cost(), at_river(tm.DNS).ferry_cost(), stocked().ferry_cost()), (40, 70, 0))
+        self.assertEqual(stocked().crossing_risk(tl.FORD), 0.0)
+
+    def test_river_options_need_supplies(self):
+        trail = at_river(tm.DNS, role=tl.ATC_LEAD, lgtm=1)
+        self.assertEqual([trail.river_option_ok(option) for option in range(5)], [True, False, True, True, False])
+        trail.supplies["credits"] = 69
+        self.assertFalse(trail.river_option_ok(tl.FERRY))
+        self.assertEqual(trail.cross(tl.CAULK), ([], False))
+        self.assertEqual(trail.cross(tl.FERRY), ([], False))
+        self.assertEqual(stocked().cross(tl.FORD), ([], False))
+
+    def test_wait_for_review(self):
+        trail = at_river(tm.MERGE, rng=QuietRng(randints=(40, 140, 5)))
+        self.assertEqual(trail.river, [40, 140])
+        lines, crossed = trail.cross(tl.WAIT)
+        self.assertFalse(crossed)
+        self.assertEqual(trail.river, [45, 140])
+        self.assertEqual(lines, ["You waited a day for review. The river is now 4.5 ft deep."])
+        self.assertEqual((trail.day, trail.at), (2, tm.MERGE))
+
+    def test_ford_success_lands_on_the_far_pier(self):
+        trail = at_river(tm.MERGE)
+        lines, crossed = trail.cross(tl.FORD)
+        self.assertTrue(crossed)
+        self.assertEqual(lines, ["YOLO! The deploy went green across Merge Conflict River."])
+        self.assertEqual((trail.x, trail.y), tm.landing(tm.MERGE))
+        self.assertEqual(trail.steps, 160)
+        self.assertTrue(trail.deployed & tm.deployed_bit(tm.MERGE))
+        self.assertTrue(trail.has_visited(tm.MERGE))
+        self.assertEqual((trail.at, trail.river, trail.day), (-1, None, 2))
+        self.assertEqual(trail.next_stop(), 9)
+        trail.x = tm.dock(tm.MERGE)[0] + 1
+        self.assertTrue(trail.step(-1, 0))
+        self.assertEqual(trail.after_step(), ([], None))
+
+    def test_caulk_and_ferry(self):
+        trail = at_river(tm.MERGE, lgtm=5)
+        lines, crossed = trail.cross(tl.CAULK)
+        self.assertTrue(crossed)
+        self.assertEqual(lines, ["Two LGTMs and a prayer: the gangway is down."])
+        self.assertEqual(trail.supplies["lgtm"], 3)
+        ferry = at_river(tm.DNS)
+        lines, crossed = ferry.cross(tl.FERRY)
+        self.assertTrue(crossed)
+        self.assertEqual(lines, ["Copilot queued your ferry. Waited 1 day.", "Copilot ferried the wagon safely across."])
+        self.assertEqual((ferry.supplies["credits"], ferry.day), (1600 - 70, 3))
+        self.assertEqual((ferry.x, ferry.y), tm.landing(tm.DNS))
+        self.assertEqual(ferry.next_stop(), tm.END)
+
+    def test_failed_deploy_can_cost_a_life(self):
+        trail = at_river(tm.MERGE, rng=QuietRng(chances=(True, True)), lgtm=10)
+        trail.river[0] = 60
+        lines, crossed = trail.cross(tl.FORD)
+        self.assertTrue(crossed)
+        self.assertEqual(lines[0], "The deploy failed in Merge Conflict River!")
+        self.assertTrue(lines[1].startswith("Lost "))
+        self.assertIn("Markus has died of an unresolved merge conflict.", lines)
+        self.assertEqual(trail.living_count(), 4)
+        self.assertEqual(len(trail.rng.asked), 2)
+        self.assertAlmostEqual(trail.rng.asked[0], 0.7)
+        self.assertAlmostEqual(trail.rng.asked[1], 0.33)
+        self.assertLess(trail.supplies["brew"], 200.0)
 
 
 class FakeDevice:

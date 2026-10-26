@@ -18,6 +18,7 @@ ROLES = (
     ("ATC Control Lead", "@kdaigle", 600, 3, "Calm air traffic: safer deploys at rivers."),
 )
 RUSTACEAN = 1
+ATC_LEAD = 2
 
 SUPPLIES = (
     ("credits", "Copilot Credits"),
@@ -96,6 +97,14 @@ ILLNESSES = (
     (2, 2, 5, 7),
     (3, 2, 5, 8),
 )
+
+# (stop index, shallowest, deepest (tenths of a foot), narrowest, widest,
+#  ferry credits, cause of death)
+RIVERS = (
+    (tm.MERGE, 20, 60, 140, 180, 40, 6),
+    (tm.DNS, 35, 95, 150, 190, 70, 7),
+)
+FORD, CAULK, FERRY, WAIT = 0, 1, 2, 3
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
@@ -277,6 +286,7 @@ class Trail:
         self.deployed = 0
         self.healed_day = -HEAL_DAYS
         self.basket = {}
+        self.river = None
         self.tailwind = 0
         self.last_cause = CAUSE_EXHAUSTION
         self.ticker = "Outfit the wagon at the Gatehouse store."
@@ -427,6 +437,7 @@ class Trail:
         self.x = x
         self.y = y
         self.at = -1
+        self.river = None
         self.steps = min(MAX_STEPS, self.steps + tm.STEPS_PER_TILE)
         ms = self.tile_ms()
         self.pending_ms += ms
@@ -453,6 +464,8 @@ class Trail:
         stop = tm.stop_at(self.x, self.y)
         if stop < 0 or stop == self.at:
             return lines, None
+        if tm.STOPS[stop][2] == "river" and self.deployed & tm.deployed_bit(stop):
+            return lines, None
         return lines, self.arrive(stop, lines)
 
     def arrive(self, stop, lines):
@@ -460,6 +473,9 @@ class Trail:
         self.at = stop
         self.basket = {}
         kind = tm.STOPS[stop][2]
+        if kind == "river":
+            self.arrive_river()
+            return "river"
         first = not self.has_visited(stop)
         self.visited |= 1 << stop
         if kind == "end":
@@ -728,3 +744,108 @@ class Trail:
         for member in self.living():
             member.health = clamp(member.health + 8, 0, 100)
         lines.append("You spotted the GitHub unicorn. Morale soars.")
+
+    # ----- rivers -----------------------------------------------------------
+    def river_spec(self):
+        for spec in RIVERS:
+            if spec[0] == self.at:
+                return spec
+        return None
+
+    def arrive_river(self):
+        spec = self.river_spec()
+        if spec is None:
+            self.river = None
+            return
+        self.river = [self.rng.randint(spec[1], spec[2]), self.rng.randint(spec[3], spec[4])]
+
+    def ferry_cost(self):
+        spec = self.river_spec()
+        return spec[5] if spec else 0
+
+    def river_option_ok(self, option):
+        if option == CAULK:
+            return self.supplies["lgtm"] >= 2
+        if option == FERRY:
+            return self.supplies["credits"] >= self.ferry_cost()
+        return option in (FORD, WAIT)
+
+    def crossing_risk(self, option):
+        if not self.river:
+            return 0.0
+        depth = self.river[0] / 10.0
+        if option == FORD:
+            risk = (depth - 2.5) * 0.2
+        elif option == CAULK:
+            risk = 0.05 + depth * 0.025
+        elif option == FERRY:
+            risk = 0.02
+        else:
+            return 0.0
+        if self.role == ATC_LEAD:
+            risk *= 0.6
+        return clamp(risk, 0.0, 0.95)
+
+    def cross(self, option):
+        """Resolve a river choice. Returns (lines, crossed)."""
+        lines = []
+        spec = self.river_spec()
+        if spec is None or self.river is None or not self.river_option_ok(option):
+            return lines, False
+        stop = self.at
+        name = tm.STOPS[stop][0]
+        if option == WAIT:
+            self.idle_days(1, lines)
+            low = spec[1] * 8 // 10
+            self.river[0] = clamp(self.river[0] + self.rng.randint(-8, 5), low, spec[2])
+            lines.append("You waited a day for review. The river is now %s ft deep." % tenths(self.river[0]))
+            return lines, False
+        risk = self.crossing_risk(option)
+        if option == CAULK:
+            self.supplies["lgtm"] -= 2
+        elif option == FERRY:
+            self.supplies["credits"] -= spec[5]
+            wait = self.rng.randint(1, 3)
+            self.idle_days(wait, lines)
+            lines.append("Copilot queued your ferry. Waited %s." % plural(wait, "day"))
+        if self.all_dead():
+            return lines, True
+        if self.rng.chance(risk):
+            lines.append("The deploy failed in %s!" % name)
+            brew = int(self.supplies["brew"] * self.rng.uniform(0.15, 0.4))
+            stamps = int(self.supplies["lgtm"] * self.rng.uniform(0.1, 0.3))
+            patches = 1 if self.supplies["patches"] > 0 and self.rng.chance(0.4) else 0
+            self.supplies["brew"] -= brew
+            self.supplies["lgtm"] -= stamps
+            self.supplies["patches"] -= patches
+            lines.append("Lost %s, %s and %s." % (
+                plural(brew, "keg"), plural(stamps, "LGTM Stamp"), plural(patches, "Hotfix Patch", "es")))
+            if option == FORD:
+                death = 0.15 + max(0.0, self.river[0] / 10.0 - 3.0) * 0.06
+            elif option == CAULK:
+                death = 0.12
+            else:
+                death = 0.25
+            living = self.living()
+            if living and self.rng.chance(min(death, 0.6)):
+                self._kill(self.rng.choice(living), spec[6], lines)
+        elif option == FORD:
+            lines.append("YOLO! The deploy went green across %s." % name)
+        elif option == CAULK:
+            lines.append("Two LGTMs and a prayer: the gangway is down.")
+        else:
+            lines.append("Copilot ferried the wagon safely across.")
+        self.idle_days(1, lines)
+        self._land(stop)
+        return lines, True
+
+    def _land(self, stop):
+        """Lower the gangway and put the party on the far landing."""
+        dock = tm.dock(stop)
+        self.deployed |= tm.deployed_bit(stop)
+        self.visited |= 1 << stop
+        self.x, self.y = tm.landing(stop)
+        self.steps = min(MAX_STEPS, self.steps + (dock[2] - dock[0]) * tm.STEPS_PER_TILE)
+        self.facing = 1
+        self.at = -1
+        self.river = None
