@@ -2030,6 +2030,9 @@ class AppTests(unittest.TestCase):
                 return op
         return None
 
+    def rings(self):
+        return [op for op in self.shapes(kind="circle") if op[2].width == 2]
+
     def landed(self):
         return self.app.ball.state == self.A.eightball.LANDED
 
@@ -2354,6 +2357,117 @@ class AppTests(unittest.TestCase):
         kick.reset_mock()
         self.run_for(300, flipped=True)
         self.assertEqual([c.args[0] for c in kick.call_args_list], [16])
+
+    def test_select_beams_the_last_verdict_as_one_burst(self):
+        A = self.launch()
+        app, badge, ir = self.app, self.badge, self.ir
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, A.STAMP_HINT)
+        self.assertIsNone(app.fx_start)
+        self.step("DOWN")
+        self.assertIsNone(app.toast_text)
+        index = app.last_verdict
+        self.run_until(lambda: app.slam is None, 1300)
+        self.assertIsNone(app.lights)
+        lit = len(badge.lights)
+        self.step("SELECT")
+        start = badge.ticks
+        self.assertEqual(app.toast_text, "BEAMING TO NEARBY BADGES")
+        self.assertEqual(ir.frames, [(0x53, index, start)])
+        self.assertEqual([(op[2].args, op[1]) for op in self.rings()], [((160, -6, 10.0), pen(A.BLUE, 200))])
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, "STILL BEAMING")
+        self.assertEqual(app.fx_start, start)
+        most = 0
+        while app.fx_start is not None:
+            self.assertLess(badge.ticks - start, 1000)
+            self.step()
+            rings = self.rings()
+            most = max(most, len(rings))
+            for op in rings:
+                self.assertTrue(10 <= op[2].args[2] < 160, op[2].args)
+        self.assertEqual(most, 3)
+        self.assertEqual(badge.ticks - start, 848)
+        self.assertEqual(ir.frames, [(0x53, index, start + d) for d in (0, 176, 352)])
+        self.assertFalse(app.link.busy())
+        expected = []
+        last = None
+        for t in range(0, 849, 16):
+            levels = B.lights(t)
+            if levels != last:
+                expected.append((0,) if levels is None else levels)
+                last = levels
+        self.assertEqual(badge.lights[lit:], expected)
+
+    def test_an_incoming_verdict_slams_once_per_beam(self):
+        A = self.launch()
+        app, badge, ir = self.app, self.badge, self.ir
+        self.step("RIGHT")
+        start_slam = self.spy("start_slam")
+        lit = len(badge.lights)
+        ir.deliver(4)
+        self.step()
+        now = badge.ticks
+        self.assertEqual(app.mode, A.STAMP_MODE)
+        self.assertEqual(start_slam.call_args_list, [mock.call(4, now)])
+        self.assertEqual((app.slam.index, app.last_verdict), (4, 4))
+        self.assertEqual(app.toast_text, "FROM A NEARBY BADGE")
+        self.assertEqual([(op[2].args, op[1]) for op in self.rings()], [((160, -6, 160.0), pen(A.BLUE, 200))])
+        self.assertEqual(badge.lights[lit:], [B.lights(0)])
+        # The sender's burst repeats the frame; one beam is one slam.
+        for _ in range(10):
+            ir.deliver(4)
+            self.step()
+            for op in self.rings():
+                self.assertLess(op[2].args[2], 160)
+        self.assertEqual(start_slam.call_count, 1)
+        self.run_for(1300)
+        ir.deliver(4)
+        self.step()
+        self.assertEqual(start_slam.call_count, 2)
+        self.assertEqual(ir.frames, [])
+
+    def test_an_incoming_prompt_spins_the_ball_onto_its_face(self):
+        A = self.launch()
+        app, ir = self.app, self.ir
+        kick = self.spy("kick")
+        ir.deliver(0x40 + 12)
+        self.step()
+        now = self.badge.ticks
+        self.assertEqual(app.mode, A.BALL_MODE)
+        self.assertEqual(kick.call_args_list, [mock.call(16, now, 13)])
+        self.assertEqual(app.toast_text, "INCOMING PROMPT")
+        self.assertEqual([op[2].args for op in self.rings()], [(160, -6, 160.0)])
+        self.run_until(self.landed, 5000)
+        self.assertEqual(app.ball.number(), 13)
+        self.assertEqual(len(app.prompt), len(app.build_prompt(A.verdicts.PROMPTS[12])))
+        self.assertEqual(ir.frames, [])
+
+    def test_the_badge_ignores_its_own_beam_bouncing_back(self):
+        self.launch()
+        app, ir = self.app, self.ir
+        self.step("DOWN")
+        index = app.last_verdict
+        other = (index + 1) % len(V.VERDICTS)
+        self.run_until(lambda: app.slam is None, 1300)
+        start_slam = self.spy("start_slam")
+        self.step("SELECT")
+        # Frames heard mid-burst are dropped, so another badge talking over
+        # the burst can't carry our own echo past the duplicate filter.
+        ir.deliver(other)
+        ir.deliver(index)
+        self.step()
+        for _ in range(60):
+            ir.deliver(index)
+            self.step()
+        self.assertEqual(start_slam.call_count, 0)
+        self.assertEqual(len(ir.frames), 3)
+        # Once the echoes stop, the same verdict from another badge is news.
+        self.run_for(1300)
+        ir.deliver(index)
+        self.step()
+        self.assertEqual(start_slam.call_args.args[0], index)
+        self.assertEqual(app.toast_text, "FROM A NEARBY BADGE")
 
 
 if __name__ == "__main__":
