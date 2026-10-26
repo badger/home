@@ -1,7 +1,7 @@
 # Taste Stamp: a Creative Director's rubber stamp.
 #
-# Flip the badge over or press DOWN to slam a verdict onto the brief,
-# with screen shake and a case-light strobe.
+# Flip the badge over, karate-chop it or press DOWN to slam a verdict onto
+# the brief, with screen shake and a case-light strobe.
 
 import os
 import random
@@ -100,8 +100,19 @@ SPECKS = 90
 STAMP_MAX_W = 220.0
 STAMP_MAX_H = 136.0
 STAMP_MAX_SCALE = 5.5
+MOTION_COOLDOWN_MS = 650
 
 TOAST_MS = 1800
+
+
+def read_imu():
+    try:
+        values = badge.imu()
+        if len(values) >= 6:
+            return values
+    except Exception:
+        pass
+    return None
 
 
 def read_upside_down():
@@ -247,6 +258,8 @@ class App:
         # The brief's header is vector text, which needs EVEN_ODD.
         self.desk.fill_rule = image.EVEN_ODD
         self.flip = motion.FlipDetector(read_upside_down())
+        self.chop = motion.ChopDetector()
+        self.last_motion = None
         self.toast_text = None
         self.toast_until = 0
         self.lights = None
@@ -258,10 +271,14 @@ class App:
         now = badge.ticks
         dt = max(0, min(100, badge.ticks_delta))
         flipped = self.flip.update(read_upside_down(), now)
+        chopped = False
+        imu = read_imu()
+        if imu is not None:
+            chopped = self.chop.update(imu, dt, now)
         if not self.handle_buttons(now):
             on_exit()
             return False
-        self.handle_motion(now, flipped)
+        self.handle_motion(now, flipped, chopped)
         if self.slam is not None:
             self.advance_slam(now, dt)
         self.draw_stamp_mode(now)
@@ -290,9 +307,12 @@ class App:
             return True
         return False
 
-    def handle_motion(self, now, flipped):
-        if flipped:
-            self.start_slam(self.next_verdict(), now)
+    def handle_motion(self, now, flipped, chopped):
+        if flipped or chopped:
+            # One physical move can read as both a flip and a chop.
+            if self.last_motion is None or now - self.last_motion >= MOTION_COOLDOWN_MS:
+                self.last_motion = now
+                self.start_slam(self.next_verdict(), now)
 
     # Modes and choices.
 
@@ -466,7 +486,7 @@ class App:
         screen.pen = HEADING_C
         screen.shape(shape.rounded_rectangle(x, y, bw, bh, 6).stroke(1.5))
         screen.font = UI_FONT
-        self.centred("FLIP TO STAMP", y + 12, PAPER_TEXT_C)
+        self.centred("FLIP OR CHOP TO STAMP", y + 12, PAPER_TEXT_C)
         screen.font = SMALL_FONT
         self.centred("OR PRESS DOWN", y + 32, PAPER_TEXT_C)
         screen.font = UI_FONT
