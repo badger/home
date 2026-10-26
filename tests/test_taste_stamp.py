@@ -1496,6 +1496,49 @@ class MicroPythonCompatibilityTests(unittest.TestCase):
                 for module in modules:
                     self.assertIn(module, ALLOWED_IMPORTS, name + " imports " + str(module))
 
+    def test_never_uses_the_event_beacon_address(self):
+        for name, source in self.sources.items():
+            tokens = tokenize.generate_tokens(iter(source.splitlines(True)).__next__)
+            for tok in tokens:
+                if tok.type == tokenize.NUMBER and tok.string.lower().startswith("0x"):
+                    self.assertNotEqual(int(tok.string, 16), 0x45, "%s:%d" % (name, tok.start[0]))
+
+    def test_every_ir_frame_goes_to_the_app_address(self):
+        calls = []
+        for tree in self.trees.values():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                        and node.func.attr == "send_addr_cmd":
+                    calls.append(node)
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertIsInstance(call.args[0], ast.Name)
+            self.assertEqual(call.args[0].id, "ADDRESS")
+
+    def test_sources_are_ascii(self):
+        for name in APP_FILES + ("README.md",):
+            data = (APP / name).read_bytes()
+            self.assertTrue(all(b < 128 for b in data), name)
+
+    def test_timing_constants_are_integer_milliseconds(self):
+        floats_allowed = {"SPLAT_DRAG_MS"}
+        checked = 0
+        for name, tree in self.trees.items():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+                    continue
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id.endswith(("_MS", "_PCT")):
+                        checked += 1
+                        if target.id not in floats_allowed:
+                            self.assertIsInstance(node.value.value, int, name + " " + target.id)
+        self.assertGreater(checked, 20)
+
+    def test_does_not_import_badge_or_write_secrets(self):
+        for name, source in self.sources.items():
+            self.assertNotIn("import badge", source, name)
+            self.assertNotIn("secrets", source, name)
+
 
 if __name__ == "__main__":
     unittest.main()
