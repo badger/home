@@ -5,6 +5,16 @@ badge's MicroPython and under CPython tests. Randomness comes from an
 injected Rng, ordered data lives in tuples (MicroPython dicts are unordered),
 and only APIs that exist in MicroPython 1.29 are used.
 """
+PARTY = ("Markus", "Mona", "Cameron", "Hubot", "Tufty")
+
+# (title, handle, starting Copilot Credits, score multiplier, perk)
+ROLES = (
+    ("Creative Director", "@wmarkus", 1600, 1, "Deep pockets for a comfortable run."),
+    ("Staff Rustacean", "@mona", 1000, 2, "Every Hotfix Patch also heals the party."),
+    ("ATC Control Lead", "@kdaigle", 600, 3, "Calm air traffic: safer deploys at rivers."),
+)
+
+HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
 MASK32 = 0xFFFFFFFF
 
@@ -73,6 +83,17 @@ def wrap(text, width, measure):
     return lines
 
 
+def health_label(health):
+    for floor, label in HEALTH_LABELS:
+        if health >= floor:
+            return label
+    return HEALTH_LABELS[-1][1]
+
+
+def role_label(index):
+    return ROLES[index][0] + " " + ROLES[index][1]
+
+
 class Rng:
     """Seeded xorshift32 generator; MicroPython has no random.Random class."""
 
@@ -117,3 +138,42 @@ class Rng:
                 return item
             pick -= weight
         return pairs[-1][1]
+
+
+class Member:
+    def __init__(self, name):
+        self.health = 100
+        self.alive = True
+
+
+class Trail:
+    """One journey on foot from the Gatehouse to the Mainstage."""
+
+    def __init__(self, role, rng):
+        self.role = clamp_int(role, 0, len(ROLES) - 1)
+        self.members = [Member(name) for name in PARTY]
+
+    # ----- party -----------------------------------------------------------
+    def living(self):
+        return [member for member in self.members if member.alive]
+
+    def living_count(self):
+        return len(self.living())
+
+    def all_dead(self):
+        return self.living_count() == 0
+
+    def average_health(self):
+        living = self.living()
+        if not living:
+            return 0
+        total = 0
+        for member in living:
+            total += member.health
+        return total / len(living)
+
+    def party_health(self):
+        return health_label(self.average_health())
+
+    def multiplier(self):
+        return ROLES[self.role][3]
