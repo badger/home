@@ -2,7 +2,8 @@
 #
 # Stamp mode: flip the badge over, karate-chop it or press DOWN to slam a
 # verdict onto the brief, with screen shake and a case-light strobe.
-# 8-Ball mode: shake the badge (or press DOWN) to tumble a dithered d20.
+# 8-Ball mode: shake the badge (or press DOWN) to tumble a dithered d20 that
+# lands on a Studio creative direction.
 
 import os
 import random
@@ -132,6 +133,7 @@ CARD_X = 16
 CARD_Y = 180
 CARD_W = W - 2 * CARD_X
 CARD_H = 56
+REVEAL_MS = 18
 NUMBER_SCALE = 0.078
 NUMBER_HW = 0.065
 
@@ -384,6 +386,7 @@ class App:
         self.desk.fill_rule = image.EVEN_ODD
         self.ball_bg = None
         self.ball = eightball.Ball(rng.random)
+        self.prompt = None
         self.flip = motion.FlipDetector(read_upside_down())
         self.chop = motion.ChopDetector()
         self.shake = motion.ShakeDetector()
@@ -414,8 +417,8 @@ class App:
         self.handle_motion(now, flipped, chopped, shaking, reversal)
         if self.slam is not None:
             self.advance_slam(now, dt)
-        if self.mode == BALL_MODE:
-            self.ball.update(dt, now, shaking)
+        if self.mode == BALL_MODE and self.ball.update(dt, now, shaking):
+            self.landed(now)
         if self.mode == STAMP_MODE:
             self.draw_stamp_mode(now)
         else:
@@ -453,6 +456,7 @@ class App:
             return False
         if self.ball.state != eightball.IDLE:
             self.ball.reset()
+            self.prompt = None
             return True
         return False
 
@@ -504,6 +508,7 @@ class App:
 
     def kick(self, strength, now):
         self.ball.kick(strength, now)
+        self.prompt = None
 
     def toast(self, text, now):
         self.toast_text = text
@@ -677,6 +682,27 @@ class App:
         screen.pen = pen
         screen.text(text, (W - text_width(text)) // 2, y)
 
+    def landed(self, now):
+        self.prompt = self.build_prompt(verdicts.PROMPTS[self.ball.number() - 1])
+
+    def build_prompt(self, text):
+        lines = stamp.wrap(text, 14)
+        widest = 1.0
+        for line in lines:
+            widest = max(widest, stamp.line_width(line))
+        scale = min(1.9, (CARD_W - 24) / widest)
+        hw = stamp.STROKE * 0.5 * scale * 0.85
+        pitch = stamp.LINE_PITCH * scale
+        block = stamp.CAP * scale + (len(lines) - 1) * pitch
+        top = CARD_Y + 21 - block * 0.5
+        groups = []
+        for i in range(len(lines)):
+            stamp.text_groups(lines[i], W * 0.5, top + i * pitch, scale, hw, groups)
+        outlines = []
+        for group in groups:
+            outlines.append(contour_shape(group))
+        return outlines
+
     def draw_ball_mode(self, now):
         if self.ball_bg is None:
             self.ball_bg = build_ball_bg()
@@ -726,9 +752,16 @@ class App:
         screen.pen = CARD_EDGE_C
         screen.shape(CARD_EDGE)
         state = self.ball.state
-        if state == eightball.IDLE:
+        if state == eightball.LANDED and self.prompt is not None:
+            shown = (now - self.ball.landed_at) // REVEAL_MS + 1
+            screen.pen = WHITE_C
+            screen.fill_rule = image.NON_ZERO
+            for i in range(min(shown, len(self.prompt))):
+                screen.shape(self.prompt[i])
+            screen.fill_rule = image.EVEN_ODD
+        elif state == eightball.IDLE:
             screen.font = UI_FONT
-            self.centred("SHAKE TO SPIN THE D20", CARD_Y + 12, WHITE_C)
+            self.centred("SHAKE FOR A CREATIVE DIRECTION", CARD_Y + 12, WHITE_C)
             screen.font = SMALL_FONT
             self.centred("OR PRESS DOWN", CARD_Y + 32, DIM_C)
             screen.font = UI_FONT
