@@ -2,7 +2,7 @@
 #
 # Stamp mode: flip the badge over, karate-chop it or press DOWN to slam a
 # verdict onto the brief, with screen shake and a case-light strobe.
-# 8-Ball mode: press DOWN to tumble a dithered d20.
+# 8-Ball mode: shake the badge (or press DOWN) to tumble a dithered d20.
 
 import os
 import random
@@ -357,6 +357,8 @@ class App:
         self.ball = eightball.Ball(rng.random)
         self.flip = motion.FlipDetector(read_upside_down())
         self.chop = motion.ChopDetector()
+        self.shake = motion.ShakeDetector()
+        self.was_shaking = False
         self.last_motion = None
         self.toast_text = None
         self.toast_until = 0
@@ -370,17 +372,21 @@ class App:
         dt = max(0, min(100, badge.ticks_delta))
         flipped = self.flip.update(read_upside_down(), now)
         chopped = False
+        shaking = False
+        reversal = False
         imu = read_imu()
         if imu is not None:
             chopped = self.chop.update(imu, dt, now)
+            shaking = self.shake.update(imu, dt, now)
+            reversal = self.shake.reversed
         if not self.handle_buttons(now):
             on_exit()
             return False
-        self.handle_motion(now, flipped, chopped)
+        self.handle_motion(now, flipped, chopped, shaking, reversal)
         if self.slam is not None:
             self.advance_slam(now, dt)
         if self.mode == BALL_MODE:
-            self.ball.update(dt, now)
+            self.ball.update(dt, now, shaking)
         if self.mode == STAMP_MODE:
             self.draw_stamp_mode(now)
         else:
@@ -421,13 +427,21 @@ class App:
             return True
         return False
 
-    def handle_motion(self, now, flipped, chopped):
+    def handle_motion(self, now, flipped, chopped, shaking, reversal):
         if self.mode == STAMP_MODE:
             if flipped or chopped:
                 # One physical move can read as both a flip and a chop.
                 if self.last_motion is None or now - self.last_motion >= MOTION_COOLDOWN_MS:
                     self.last_motion = now
                     self.start_slam(self.next_verdict(), now)
+        else:
+            if flipped:
+                self.kick(16, now)
+            if shaking and not self.was_shaking:
+                self.kick(14, now)
+            elif reversal:
+                self.kick(5, now)
+        self.was_shaking = shaking
 
     # Modes and choices.
 
@@ -676,7 +690,10 @@ class App:
         state = self.ball.state
         if state == eightball.IDLE:
             screen.font = UI_FONT
-            self.centred("PRESS DOWN TO SPIN THE D20", CARD_Y + 21, WHITE_C)
+            self.centred("SHAKE TO SPIN THE D20", CARD_Y + 12, WHITE_C)
+            screen.font = SMALL_FONT
+            self.centred("OR PRESS DOWN", CARD_Y + 32, DIM_C)
+            screen.font = UI_FONT
         else:
             base = "CONSULTING THE STUDIO"
             screen.font = UI_FONT
