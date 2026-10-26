@@ -1,4 +1,5 @@
-# Rubber-stamp artwork for Taste Stamp: a stroked block font.
+# Rubber-stamp artwork for Taste Stamp: a stroked block font and the
+# stamp layout.
 #
 # Everything here is plain Python that emits flat [x0, y0, x1, y1, ...]
 # contours for shape.custom(), so it runs unchanged on the badge and under
@@ -12,7 +13,19 @@ CAP = 6.0
 STROKE = 1.42
 TRACKING = 2.45
 SPACE = 1.8
+SMALL = 0.42
+SMALL_STROKE = 0.6
+BORDER = 1.5
+INNER = 0.5
+INNER_GAP = 1.8
+PAD_X = 2.6
+PAD_Y = 1.4
+RULE = 0.5
+LINE_PITCH = 8.4
+DIAMOND = 0.9
+DIAMOND_GAP = 1.2
 MAX_SINGLE_LINE = 9
+MAX_GROW = 1.45
 MITER_LIMIT = 2.0
 
 # Glyphs: character -> (width, strokes). A stroke is a tuple of points,
@@ -233,3 +246,85 @@ def wrap(text, limit=MAX_SINGLE_LINE):
         if best is None or key < best[0]:
             best = (key, first, second)
     return (best[1], best[2])
+
+
+def chamfer_box(x0, y0, x1, y1, chamfer):
+    # Closed outline starting mid-edge so both square caps overlap cleanly.
+    mx = (x0 + x1) * 0.5
+    return (
+        (mx, y0), (x1 - chamfer, y0), (x1, y0 + chamfer), (x1, y1 - chamfer),
+        (x1 - chamfer, y1), (x0 + chamfer, y1), (x0, y1 - chamfer),
+        (x0, y0 + chamfer), (x0 + chamfer, y0), (mx, y0),
+    )
+
+
+def _diamond(cx, cy, r):
+    return _positive([cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy])
+
+
+def build_stamp(text, header=None, footer=None):
+    # Returns (groups, width, height): contour groups centred on (0, 0).
+    lines = wrap(text.upper())
+    hw = STROKE * 0.5
+    shw = SMALL_STROKE * 0.5
+    widest = 0.0
+    for line in lines:
+        widest = max(widest, line_width(line))
+    header_text = 0.0
+    header_span = 0.0
+    if header:
+        header_text = line_width(header) * SMALL
+        header_span = header_text + SMALL_STROKE + 2 * (DIAMOND_GAP + 2 * DIAMOND)
+    footer_span = line_width(footer) * SMALL + SMALL_STROKE if footer else 0.0
+    # Short verdicts grow to fill the frame the header sets.
+    grow = 1.0
+    if widest > 0:
+        grow = min(MAX_GROW, max(1.0, max(header_span, footer_span) / (widest + STROKE)))
+    main_hw = hw * grow
+    content = max(widest * grow + 2 * main_hw, header_span, footer_span)
+    inner_half = content * 0.5 + PAD_X
+    outer_half = inner_half + INNER_GAP
+
+    groups = []
+    rules = []
+    inner_top = INNER_GAP
+    y = inner_top + INNER * 0.5 + PAD_Y
+    if header:
+        y += shw
+        text_groups(header, 0.0, y, SMALL, shw, groups)
+        mid = y + CAP * SMALL * 0.5
+        dx = header_text * 0.5 + shw + DIAMOND_GAP + DIAMOND
+        groups.append([_diamond(-dx, mid, DIAMOND), _diamond(dx, mid, DIAMOND)])
+        y += CAP * SMALL + shw + 1.1 + RULE * 0.5
+        rules.append(y)
+        y += RULE * 0.5 + 1.6 + main_hw
+    else:
+        y += main_hw + 0.6
+    pitch = LINE_PITCH * grow
+    for i in range(len(lines)):
+        text_groups(lines[i], 0.0, y + i * pitch, grow, main_hw, groups)
+    y += (len(lines) - 1) * pitch + CAP * grow + main_hw
+    if footer:
+        y += 1.6 + RULE * 0.5
+        rules.append(y)
+        y += RULE * 0.5 + 1.1 + shw
+        text_groups(footer, 0.0, y, SMALL, shw, groups)
+        y += CAP * SMALL + shw
+    else:
+        y += 0.6
+    inner_bottom = y + PAD_Y + INNER * 0.5
+    outer_bottom = inner_bottom + INNER_GAP
+
+    frame = []
+    stroke_path(chamfer_box(-outer_half, 0.0, outer_half, outer_bottom, 2.2), BORDER * 0.5, frame)
+    stroke_path(chamfer_box(-inner_half, inner_top, inner_half, inner_bottom, 1.0), INNER * 0.5, frame)
+    for ry in rules:
+        stroke_path(((-inner_half, ry), (inner_half, ry)), RULE * 0.5, frame, False, False)
+    groups.insert(0, frame)
+
+    shift = -outer_bottom * 0.5
+    for group in groups:
+        for contour in group:
+            for i in range(1, len(contour), 2):
+                contour[i] += shift
+    return groups, 2 * outer_half + BORDER, outer_bottom + BORDER

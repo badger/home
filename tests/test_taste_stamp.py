@@ -45,6 +45,15 @@ def contrast(a, b):
     return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 
 
+def shoelace(c):
+    total = 0.0
+    n = len(c) // 2
+    for i in range(n):
+        j = (i + 1) % n
+        total += c[2 * i] * c[2 * j + 1] - c[2 * j] * c[2 * i + 1]
+    return total
+
+
 class VerdictsTests(unittest.TestCase):
     def test_verdicts_follow_the_spec_order(self):
         self.assertEqual(V.VERDICTS, (
@@ -151,6 +160,36 @@ class StampTests(unittest.TestCase):
         self.assertEqual(S.wrap("YES, AND", 14), ("YES, AND",))
         self.assertEqual(S.wrap("SHIP IT, NOW", 9), ("SHIP IT", "NOW"))
         self.assertEqual(S.wrap(", WORD", 5), (",", "WORD"))
+
+    def test_every_stamp_is_centred_and_well_wound(self):
+        for i, verdict in enumerate(V.VERDICTS):
+            groups, w, h = S.build_stamp(verdict, V.STAMP_HEADER, V.FOOTERS[i])
+            self.assertGreater(w, 0)
+            self.assertGreater(h, 0)
+            xs, ys = [], []
+            for group in groups:
+                self.assertTrue(group)
+                for contour in group:
+                    self.assertEqual(len(contour) % 2, 0)
+                    self.assertGreaterEqual(len(contour), 6)
+                    for v in contour:
+                        self.assertTrue(math.isfinite(v))
+                    self.assertGreater(shoelace(contour), 0, verdict)
+                    xs.extend(contour[0::2])
+                    ys.extend(contour[1::2])
+            self.assertGreaterEqual(min(xs), -w / 2 - 1e-6)
+            self.assertLessEqual(max(xs), w / 2 + 1e-6)
+            self.assertGreaterEqual(min(ys), -h / 2 - 1e-6)
+            self.assertLessEqual(max(ys), h / 2 + 1e-6)
+            self.assertGreater(max(xs) - min(xs), 0.95 * w)
+            self.assertGreater(max(ys) - min(ys), 0.95 * h)
+
+    def test_build_stamp_is_deterministic(self):
+        first = S.build_stamp("SHIP IT", V.STAMP_HEADER, "APPROVED")
+        second = S.build_stamp("SHIP IT", V.STAMP_HEADER, "APPROVED")
+        self.assertEqual(first, second)
+        bare = S.build_stamp("SHIP IT", None, "APPROVED")
+        self.assertLess(bare[2], first[2])
 
 
 def read_png(path):
