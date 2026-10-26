@@ -114,6 +114,17 @@ RIVERS = (
 )
 FORD, CAULK, FERRY, WAIT = 0, 1, 2, 3
 
+EPITAPHS = (
+    "LGTM",
+    "It worked on my machine",
+    "rm -rf node_modules",
+    "404: party not found",
+    "Should have pinned it",
+    "git push --force",
+    "Ship it",
+    "Merged with love",
+)
+
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 HEALTH_POINTS = ((70, 500), (40, 400), (20, 300), (0, 200))
 
@@ -924,6 +935,9 @@ class Trail:
             points += self.sights_seen() * SIGHT_POINTS
         return points * self.multiplier()
 
+    def tombstone(self, epitaph=0):
+        return tombstone_record(self.steps, self.last_cause, epitaph, self.role, False)
+
 
 # ----- hunt mini-game -------------------------------------------------------
 HUNT_MS = 30000
@@ -1176,3 +1190,24 @@ class Hunt:
             if hauled < self.bounty:
                 lines.append("You could only haul %s back to the wagon." % plural(hauled, "keg"))
         return lines
+
+
+def tombstone_record(step, cause, epitaph, role, beamed):
+    return [
+        clamp_int(step, 0, MAX_STEPS),
+        clamp_int(cause, 0, len(CAUSES) - 1),
+        clamp_int(epitaph, 0, len(EPITAPHS) - 1),
+        clamp_int(role, 0, len(ROLES) - 1),
+        1 if beamed else 0,
+    ]
+
+
+def tombstone_lines(record):
+    step, cause, epitaph, role, beamed = record
+    return (
+        "Step " + commas(step),
+        "Here lies the " + ROLES[role][0] + "'s party",
+        "Died of " + CAUSES[cause],
+        '"' + EPITAPHS[epitaph] + '"',
+        "Beamed in over IR" if beamed else "From your own wagon",
+    )

@@ -483,6 +483,16 @@ class TrailTests(unittest.TestCase):
         trail.idle_days(3, lines)
         self.assertEqual(trail.day, 2)
 
+    def test_death_march_exhaustion(self):
+        trail = stocked()
+        trail.pace = 2
+        for member in trail.members:
+            member.health = 2
+        trail.idle_days(1, [])
+        self.assertTrue(trail.all_dead())
+        self.assertEqual(trail.last_cause, tl.CAUSE_EXHAUSTION)
+        self.assertEqual(trail.tombstone(3), [0, tl.CAUSE_EXHAUSTION, 3, 0, 0])
+
 
 class TrailEventTests(unittest.TestCase):
     def test_illness_and_recovery(self):
