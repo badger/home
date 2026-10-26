@@ -9,6 +9,7 @@ runtime modules (badgeware.ir, aye_arr.nec, ...) are removed after each test.
 """
 
 import ast
+import binascii
 import importlib.util
 import re
 import struct
@@ -21,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "badge" / "apps" / "ascii_mona"
 PREFIX = "ascii_mona_"
 MODULE_ORDER = (
+    "mona_parts",
+    "mona_octo",
     "mona_dna",
 )
 _MISSING = object()
@@ -382,6 +385,7 @@ class TestHandles(unittest.TestCase):
 class TestDna(unittest.TestCase):
     def setUp(self):
         self.D = M["mona_dna"]
+        self.O = M["mona_octo"]
 
     def test_hash_and_prng_vectors_match_the_badge(self):
         D = self.D
@@ -400,6 +404,49 @@ class TestDna(unittest.TestCase):
                 value = rng.below(limit)
                 self.assertTrue(0 <= value < limit)
                 self.assertIsInstance(value, int)
+
+
+class TestOcto(unittest.TestCase):
+    """The baked MyOctocat art library and its frame-sliced painter."""
+
+    @classmethod
+    def setUpClass(cls):
+        load_app_modules()
+        cls.data = (APP_DIR / M["mona_parts"].BIN).read_bytes()
+
+    def setUp(self):
+        self.O = M["mona_octo"]
+        self.P = M["mona_parts"]
+        self.D = M["mona_dna"]
+        self.path = str(APP_DIR / self.P.BIN)
+
+    def test_art_file_matches_its_index(self):
+        O, P = self.O, self.P
+        self.assertEqual(len(self.data), P.BIN_SIZE)
+        self.assertEqual(binascii.crc32(self.data) & 0xFFFFFFFF, P.BIN_CRC)
+        self.assertEqual(self.data[:6], b"OCTO" + bytes((P.VERSION, P.Q)))
+        self.assertTrue(O.check_header(self.data[:6]))
+        for bad in (b"OCTO\x02", b"OCTX\x02\x04", b"OCTO\x03\x04", b"OCTO\x02\x08", b""):
+            self.assertFalse(O.check_header(bad), bad)
+
+    def test_part_names_and_lookup(self):
+        O, P = self.O, self.P
+        self.assertEqual(O.PICKS, 10)
+        self.assertEqual([O.count(c) for c in range(O.MISC + 1)],
+                         [19, 18, 31, 36, 49, 32, 30, 37, 15, 9, 18])
+        self.assertEqual(len(P.PARTS), O.MISC + 1)
+        self.assertEqual(O.part_name(O.PROPS, 0), "Baguette")
+        self.assertEqual(O.part_name(O.PROPS, -1), "None")
+        self.assertEqual(O.part_name(O.PROPS, 999), "None")
+        self.assertEqual(O.part_name(O.PROPS, None), "None")
+        self.assertEqual(O.find_part(O.PROPS, "Baguette"), 0)
+        self.assertEqual(O.find_part(O.TOPS, "Dress"), 16)
+        self.assertEqual(O.find_part(O.PROPS, "Nope"), -1)
+        for cat in range(O.MISC + 1):
+            for index in range(O.count(cat)):
+                name = O.part_name(cat, index)
+                self.assertTrue(name and isinstance(name, str))
+                self.assertLessEqual(O.find_part(cat, name), index)
 
 
 # App files -------------------------------------------------------------------
@@ -428,7 +475,7 @@ class TestAppFiles(unittest.TestCase):
         self.assertIsNone(validator.check_app(APP_DIR))
 
     def test_app_folder_ships_only_app_files(self):
-        allowed = (".py", ".png", ".md")
+        allowed = (".py", ".png", ".md", ".bin")
         for path in APP_DIR.iterdir():
             if path.name == "__pycache__" or path.name.startswith("."):
                 continue
