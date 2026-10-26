@@ -83,3 +83,22 @@ def face_centre(verts, face):
 def face_normal(verts, face):
     a = verts[face[0]]
     return _unit(_cross(_sub(verts[face[1]], a), _sub(verts[face[2]], a)))
+
+
+def face_edges(faces):
+    # Every edge once, as (i, j, face, other face), so the renderer can
+    # outline the visible faces without drawing a shared edge twice.
+    edges = []
+    for f in range(len(faces)):
+        face = faces[f]
+        for e in range(3):
+            i = face[e]
+            j = face[(e + 1) % 3]
+            if i > j:
+                continue
+            for g in range(len(faces)):
+                other = faces[g]
+                if g != f and i in other and j in other:
+                    edges.append((i, j, f, g))
+                    break
+    return edges

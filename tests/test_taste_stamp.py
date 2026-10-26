@@ -416,6 +416,21 @@ class EightBallTests(unittest.TestCase):
         for a, b in edges:
             self.assertIn((b, a), edges)
 
+    def test_face_edges_lists_each_edge_once(self):
+        edges = E.face_edges(self.faces)
+        self.assertEqual(len(edges), 30)
+        self.assertEqual(len({(i, j) for i, j, f, g in edges}), 30)
+        borders = [0] * len(self.faces)
+        for i, j, f, g in edges:
+            self.assertLess(i, j)
+            self.assertNotEqual(f, g)
+            for face in (self.faces[f], self.faces[g]):
+                self.assertIn(i, face)
+                self.assertIn(j, face)
+            borders[f] += 1
+            borders[g] += 1
+        self.assertEqual(borders, [3] * len(self.faces))
+
 
 def read_png(path):
     data = Path(path).read_bytes()
