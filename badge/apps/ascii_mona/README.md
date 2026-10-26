@@ -90,3 +90,15 @@ MENU, or SELECT on the DNA card, fetches the public profile from `https://api.gi
   - tea or coffee adds a mug, Ruby a gem and photography a camera
 
 The DNA card shows the first two notes about what changed. The badge keeps the last eight profiles, so tuned Monas stay tuned offline. Without a lookup, the Mona comes from the handle alone.
+
+## Styles
+
+**Vector** draws the real MyOctocat parts with a gentle bob over the backdrop from the Mona's DNA: plain, a contribution grid, stars or rings.
+
+The three ASCII styles redraw the Mona as a 24 x 18 grid of 8 x 12 pixel characters that type themselves in like a terminal:
+
+- **Shapes** picks the character whose shape best matches each cell, comparing six-zone shape vectors.
+- **Dither** shades each cell from a character ramp with 4 x 4 Bayer ordered dithering.
+- **Edges** traces the outlines with a Sobel filter and draws them as line art.
+
+UP cycles the Primer, ANSI, Phosphor and Amber palettes. If the badge runs short of memory, the ASCII styles fall back to Vector.
