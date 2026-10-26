@@ -406,6 +406,16 @@ class TestDna(unittest.TestCase):
                 self.assertIsInstance(value, int)
 
 
+def art_blocks(parts):
+    """Every (offset, length) block the art index points at."""
+    blocks = [(base[2], base[3]) for base in parts.BASE]
+    for category in parts.PARTS:
+        for part in category:
+            for _holder, _cls, offset, length in part[2]:
+                blocks.append((offset, length))
+    return blocks
+
+
 class TestOcto(unittest.TestCase):
     """The baked MyOctocat art library and its frame-sliced painter."""
 
@@ -428,6 +438,30 @@ class TestOcto(unittest.TestCase):
         self.assertTrue(O.check_header(self.data[:6]))
         for bad in (b"OCTO\x02", b"OCTX\x02\x04", b"OCTO\x03\x04", b"OCTO\x02\x08", b""):
             self.assertFalse(O.check_header(bad), bad)
+
+    def test_every_art_block_parses_exactly(self):
+        O, P = self.O, self.P
+        blocks = art_blocks(P)
+        self.assertEqual(len(blocks), 343)
+        layer_count = 0
+        for offset, length in blocks:
+            self.assertGreaterEqual(offset, 6)
+            self.assertLessEqual(offset + length, len(self.data))
+            data = self.data[offset:offset + length]
+            used = 2
+            for role, rgb, alpha, variant, contours in O.layers(data):
+                layer_count += 1
+                self.assertTrue(role < len(P.ROLES) or role == O.CUSTOM, role)
+                self.assertTrue(0 <= rgb <= 0xFFFFFF)
+                self.assertTrue(0 <= alpha <= 255)
+                self.assertIn(variant, (0, O.ORIGINAL, O.MASKED))
+                used += 8 if role == O.CUSTOM else 5
+                for contour in contours:
+                    self.assertEqual(len(contour) % 4, 0)
+                    self.assertGreaterEqual(len(contour), 12)
+                    used += 2 + len(contour)
+            self.assertEqual(used, length, "block at %d" % offset)
+        self.assertEqual(layer_count, 4497)
 
     def test_part_names_and_lookup(self):
         O, P = self.O, self.P
