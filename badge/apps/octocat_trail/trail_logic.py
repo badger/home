@@ -64,6 +64,22 @@ TURBO_DAYS = 6
 TURBO_COOLDOWN = 8
 TURBO_BREW = 1.5
 TURBO_STRAIN = 2
+
+STOP_BLURBS = (
+    "The gate is open and the repo is empty. Outfit the wagon before you go.",
+    "Plushies, hoodies and supplies, at venue prices.",
+    "Maintainers trade stickers and stamp each other's pull requests.",
+    "The hub of the show floor. Somebody is handing out hugs.",
+    "Ask anything. Someone here has already debugged it.",
+    "Recruiters, resumes and an alarming amount of free cold brew.",
+    "Hotfix HQ. The crew patches up the party every few days.",
+    "Recess on the grass, with the Golden Gate in view. Bugs swarm here.",
+    "Two branches meet here and neither will yield.",
+    "Soldering irons, spare parts and the last store before the show.",
+    "A keynote rehearsal is running. The seats are warm.",
+    "Fast water. The far pier resolves eventually.",
+    "The lights are up and the crowd is waiting.",
+)
 # (stop, supply or "health", amount, line) granted on the first visit.
 SIGHTS = (
     (2, "lgtm", 20, "The maintainers stamped 20 LGTMs for the road."),
@@ -114,6 +130,7 @@ RIVERS = (
     (tm.MERGE, 20, 60, 140, 180, 40, 6),
     (tm.DNS, 35, 95, 150, 190, 70, 7),
 )
+RIVER_OPTIONS = ("YOLO deploy (ford)", "Ship with 2 LGTMs", "Ask Copilot (ferry)", "Wait for review")
 FORD, CAULK, FERRY, WAIT = 0, 1, 2, 3
 
 EPITAPHS = (
@@ -125,6 +142,21 @@ EPITAPHS = (
     "git push --force",
     "Ship it",
     "Merged with love",
+)
+
+FORT_TIPS = (
+    "The piers are fenced off for load-in. Deploy a gangway from Pier 1.",
+    "The Firehouse crew patches the whole party every few days.",
+    "Sights pay out on your first visit, and they count toward your score.",
+    "Ford only where the diff is shallow.",
+    "LGTM Stamps stop bugs and steady a raft.",
+    "Never force-push on a Friday. Pack a Hotfix Patch anyway.",
+    "Shake your badge to sprint, but sprinting drinks cold brew.",
+    "When the lights go out, the party makes Dark Mode Camp.",
+    "AI slop is slow, but it takes two stamps to clean up.",
+    "Decaf saves kegs. It does not save morale.",
+    "Hold your badge to a friend's to beam tombstones and victories.",
+    "Copilot ferries are pricey but rarely tip over.",
 )
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
@@ -592,6 +624,9 @@ class Trail:
         self.basket[key] -= quantity
         self.supplies["credits"] += quantity * self.price(key)
         return quantity
+
+    def tip(self):
+        return self.rng.choice(FORT_TIPS)
 
     # ----- daily upkeep -----------------------------------------------------
     def _kill(self, member, cause, lines):

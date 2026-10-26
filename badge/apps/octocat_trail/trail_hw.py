@@ -140,6 +140,7 @@ class IrLink:
 
     def __init__(self, nonce):
         self.inbox = tl.IrInbox(nonce)
+        self.nonce = nonce & 0x7F
         self.pending = []
         self.queue = []
         self.total = 0

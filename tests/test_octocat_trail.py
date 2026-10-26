@@ -94,6 +94,15 @@ class LoaderTests(unittest.TestCase):
             self.assertIsNot(sys.modules.get(name), _APP[name])
             self.assertIsNot(sys.modules.get("octocat_trail_" + name), _APP[name])
 
+    def test_app_modules_share_one_set_of_dependencies(self):
+        self.assertIs(tl.tm, tm)
+        self.assertIs(tg.tl, tl)
+        self.assertIs(tg.tm, tm)
+        self.assertIs(hw.tl, tl)
+        self.assertIs(td.ta, ta)
+        self.assertIs(td.tl, tl)
+        self.assertIs(td.tm, tm)
+
     def test_descriptor_falls_back_without_aye_arr(self):
         self.assertIs(hw._Descriptor, object)
         beam = hw.make_descriptor()
@@ -399,6 +408,24 @@ class HelperTests(unittest.TestCase):
         self.assertEqual([tm.STOPS[spec[0]][0] for spec in tl.RIVERS],
                          ["Merge Conflict River", "DNS Propagation Rapids"])
         self.assertEqual(tl.IR_ADDRESS, 0x54)
+
+    def test_tables_are_consistent(self):
+        self.assertEqual(len(tl.STOP_BLURBS), len(tm.STOPS))
+        sights = [i for i in range(len(tm.STOPS)) if tm.STOPS[i][2] == "sight"]
+        self.assertEqual([entry[0] for entry in tl.SIGHTS], sights)
+        keys = [key for key, _label in tl.SUPPLIES]
+        for _stop, key, amount, line in tl.SIGHTS:
+            self.assertTrue(key == "health" or key in keys)
+            self.assertTrue(amount > 0 and line)
+        for stop, percent in tl.STORE_MARKUP:
+            self.assertIn(tm.STOPS[stop][2], ("store", "heal"))
+            self.assertGreaterEqual(percent, 100)
+        self.assertEqual(tm.STOPS[tl.FIREHOUSE][2], "heal")
+        self.assertEqual(tm.STOPS[tl.MEADOW][2], "meadow")
+        for cause, low, high, drain in tl.ILLNESSES:
+            self.assertTrue(0 <= cause < len(tl.CAUSES) and 0 < low <= high and drain > 0)
+        self.assertEqual(sum(month[1] for month in tl.MONTHS), 365)
+        self.assertEqual(len(tl.RIVER_OPTIONS), 4)
 
     def test_number_formatting(self):
         self.assertEqual(tl.commas(0), "0")
@@ -1529,6 +1556,31 @@ class IrLinkTests(unittest.TestCase):
         with patched_modules(NO_IR):
             self.assertIsNone(hw.open_sender())
 
+    def test_offline_link_paces_a_simulated_beam(self):
+        with patched_modules(NO_IR):
+            link = hw.IrLink(0x2A).open()
+        self.assertEqual((link.status(), link.can_send(), link.progress()), ("IR off", False, 1.0))
+        self.assertEqual(hw.IrLink(0xFF).nonce, 0x7F)
+        packet = tl.encode_packet(tl.KIND_VICTORY, 0x2A, 5, 1, 2, 3)
+        self.assertTrue(link.beam(packet, repeats=2))
+        self.assertEqual((link.sending(), link.total), (True, 18))
+        link.update(1000)
+        link.update(1050)
+        self.assertEqual(len(link.queue), 17)
+        link.update(1000 + hw.FRAME_MS)
+        self.assertEqual(len(link.queue), 16)
+        self.assertAlmostEqual(link.progress(), 2 / 18.0)
+        now = 1000 + hw.FRAME_MS
+        while link.sending():
+            now += hw.FRAME_MS
+            link.update(now)
+        self.assertEqual((link.progress(), link.frames_sent), (1.0, 0))
+        self.assertEqual(link.mute_until, now + hw.FRAME_MS + hw.MUTE_MS)
+        link.update(now + 5000)
+        link.beam([1, 2], repeats=1)
+        link.beam([3], repeats=2)
+        self.assertEqual((link.total, link.queue), (4, [1, 2, 3, 3]))
+
     def test_transmitter_sends_one_frame_per_update(self):
         modules, log = fake_ir(fail_slots=((0, 1),))
         with patched_modules(modules):
@@ -1654,6 +1706,7 @@ class DescriptorSubclassTests(unittest.TestCase):
 
 VIEW_KINDS = ("title", "menu", "store", "roam", "card", "stop", "supplies", "map", "river", "crossing", "hunt",
               "camp", "tombstone", "victory", "help")
+STEP_NAMES = ((0, -1, "up"), (0, 1, "down"), (-1, 0, "left"), (1, 0, "right"))
 
 
 class FakeLink:
@@ -1728,11 +1781,428 @@ class Driver:
         raise AssertionError("no option %r in %r" % (prefix, [o[0] for o in view.options]))
 
 
+def guide_direction(trail):
+    guide = trail.guide()
+    here = guide[trail.y * tm.W + trail.x]
+    if here == tm.UNREACHED or here == 0:
+        return None
+    for dx, dy, name in STEP_NAMES:
+        x, y = trail.x + dx, trail.y + dy
+        if 0 <= x < tm.W and 0 <= y < tm.H and guide[y * tm.W + x] == here - 1:
+            return name
+    return None
+
+
+def roaming(seed=5, role=0, **kw):
+    """A Driver whose party has just left the Gatehouse store with 10 brew packs and 3 LGTM packs."""
+    driver = Driver(seed, **kw)
+    driver.press("select")
+    for _ in range(role):
+        driver.press("down")
+    driver.press("select")
+    driver.press("select")
+    for _ in range(10):
+        driver.press("right")
+    driver.press("down")
+    for _ in range(3):
+        driver.press("right")
+    driver.pick("Hit the trail")
+    if driver.game.screen != "roam":
+        raise AssertionError(driver.game.screen)
+    return driver
+
+
+def play(seed, role=0, explore=False, limit=20000):
+    """Follow the guide arrows to the Mainstage, resting, shopping and crossing like a cautious player."""
+    driver = roaming(seed, role)
+    game = driver.game
+    explored = False
+    shopped = set()
+    held = None
+    while driver.frames < limit:
+        screen = game.screen
+        trail = game.trail
+        if screen == "roam":
+            if game.walk is None and trail.average_health() < 45 and trail.supplies["brew"] > 5:
+                driver.press("select")
+                continue
+            name = guide_direction(trail)
+            if name is None:
+                driver.press("select")
+                continue
+            driver.frame(pressed=(name,) if name != held else (), held=(name,))
+            held = name
+        elif screen in ("event", "stop", "crossing", "supplies", "map"):
+            held = None
+            driver.press("select")
+        elif screen == "menu":
+            if explore and not explored:
+                explored = True
+                driver.pick("Check the wagon")
+                driver.press("back")
+                driver.pick("Look at the venue map")
+                driver.press("select")
+                driver.pick("Set the pace")
+                driver.press("down")
+                driver.press("select")
+                driver.pick("Set the rations")
+                driver.press("up")
+                driver.press("select")
+                driver.pick("Talk to attendees")
+                driver.press("select")
+                driver.pick("Bug & AI Slop Hunt")
+                for index in range(200):
+                    if game.screen != "hunt":
+                        break
+                    driver.frame(pressed=("select",) if index % 9 == 0 else (),
+                                 held=("left",) if index < 60 else ("up",))
+                if game.screen == "hunt":
+                    driver.press("back")
+                continue
+            if trail.average_health() < 45 and trail.supplies["brew"] > 5:
+                driver.pick("Make camp and rest")
+                while game.screen in ("camp", "event") and driver.frames < limit:
+                    driver.press("select") if game.screen == "event" else driver.frame()
+                continue
+            if trail.at_store() and trail.supplies["brew"] < 60 and trail.at not in shopped:
+                shopped.add(trail.at)
+                driver.pick("Visit the store")
+                for _ in range(8):
+                    driver.press("right")
+                driver.press("back")
+                continue
+            driver.pick("Keep shipping" if game.origin == "roam" else "Back to the river")
+        elif screen == "river":
+            if trail.river_option_ok(tl.FERRY) and trail.river[0] > 30:
+                want = tl.FERRY
+            elif trail.river_option_ok(tl.CAULK):
+                want = tl.CAULK
+            else:
+                want = tl.FORD if trail.river[0] <= 30 else tl.WAIT
+            driver.pick(tl.RIVER_OPTIONS[want])
+        elif screen == "camp":
+            driver.frame()
+        elif screen in ("victory", "tombstone"):
+            return driver
+        else:
+            raise AssertionError("unexpected screen " + screen)
+    raise AssertionError("seed %d did not finish in %d frames" % (seed, limit))
+
+
+class GuidedRunTests(unittest.TestCase):
+    """A cautious bot follows the guide from the Gatehouse to the Mainstage."""
+
+    def test_guided_runs_reach_an_ending(self):
+        endings = []
+        seen = set()
+        for seed in range(1, 25):
+            role = seed % 3
+            driver = play(seed * 7919, role=role, explore=seed % 4 == 0)
+            game = driver.game
+            endings.append(game.screen)
+            self.assertIsNone(game.save["run"], seed)
+            self.assertEqual(game.save["runs"], 1)
+            self.assertGreater(driver.writes, 5)
+            if game.screen == "victory":
+                self.check_victory(driver, role)
+            else:
+                self.check_tombstone(driver)
+            seen |= driver.screens
+        self.assertGreater(endings.count("victory"), len(endings) // 2, endings)
+        expected = {"title", "role", "event", "store", "roam", "stop", "menu", "river", "crossing", "supplies",
+                    "map", "pace", "rations", "hunt", "victory"}
+        self.assertTrue(expected <= seen, expected - seen)
+
+    def check_victory(self, driver, role):
+        game = driver.game
+        trail = game.trail
+        door = tm.STOPS[tm.END]
+        self.assertEqual((trail.x, trail.y, trail.at), (door[3], door[4], tm.END))
+        self.assertTrue(abs(trail.steps - tl.TRAIL_STEPS) <= 50, trail.steps)
+        score, survivors, days, won_role, best = game.result
+        self.assertEqual((won_role, survivors, days, best), (role, trail.living_count(), trail.day, True))
+        self.assertGreaterEqual(survivors, 1)
+        self.assertEqual((game.save["victories"], game.save["best"]), (1, score))
+        driver.press("select")
+        packet = tl.decode_packet(driver.link.sent[-1])
+        self.assertEqual((packet["kind"], packet["nonce"]), (tl.KIND_VICTORY, FakeLink.nonce))
+        self.assertEqual(tl.victory_from_packet(packet), (min(score, tl.MAX_VALUE), survivors, min(days, 127), role))
+        self.assertEqual((game.save["beamed"], game.current_toast()), (1, "No IR: victory beam simulated."))
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+        self.assertIn("Wins 1", game.view().lines[1])
+
+    def check_tombstone(self, driver):
+        game = driver.game
+        self.assertTrue(game.trail.all_dead())
+        stones = game.save["tombstones"]
+        self.assertEqual(len(stones), 1)
+        self.assertIs(stones[0], game.record)
+        self.assertEqual(game.record[0], game.trail.steps)
+        epitaph = game.record[2]
+        driver.press("right")
+        self.assertEqual(stones[0][2], (epitaph + 1) % len(tl.EPITAPHS))
+        driver.press("left")
+        driver.press("left")
+        self.assertEqual(stones[0][2], (epitaph - 1) % len(tl.EPITAPHS))
+        driver.press("select")
+        packet = tl.decode_packet(driver.link.sent[-1])
+        self.assertEqual(tl.tombstone_from_packet(packet)[:4], stones[0][:4])
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+        driver.pick("Visit the graveyard")
+        self.assertEqual(game.screen, "graveyard")
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+
+    def test_same_seed_replays_the_same_run(self):
+        first = play(4242, role=1)
+        second = play(4242, role=1)
+        self.assertEqual(first.frames, second.frames)
+        self.assertEqual(first.game.trail.to_dict(), second.game.trail.to_dict())
+        self.assertEqual(first.game.screen, second.game.screen)
+
+    def test_a_tombstone_run(self):
+        driver = roaming(5, role=2)
+        game = driver.game
+        doom(game.trail)
+        driver.frame(pressed=("up",), held=("up",))
+        while game.screen == "roam" and driver.frames < 200:
+            driver.frame(held=("up",))
+        self.assertEqual((game.screen, game.card_after), ("event", "tombstone"))
+        lines = game.card_lines
+        self.assertEqual(lines[-1], "Nobody is left to finish the trail.")
+        died = [line for line in lines if line.endswith(" has died of caffeine withdrawal.")]
+        self.assertEqual(len(died), len(game.trail.members))
+        self.assertIsNone(game.save["run"])
+        finish_cards(driver)
+        self.assertEqual(game.screen, "tombstone")
+        self.assertEqual((game.record[1], game.record[3]), (tl.CAUSE_WITHDRAWAL, 2))
+        self.check_tombstone(driver)
+
+
+def doom(trail):
+    """Leave the party one day of upkeep from dying of caffeine withdrawal."""
+    trail.supplies["brew"] = 0.0
+    for member in trail.members:
+        member.health = 1
+    trail.day_ms = tl.DAY_MS - 1
+
+
+def kill_all(trail):
+    lines = []
+    for member in trail.living():
+        trail._kill(member, tl.CAUSE_EXHAUSTION, lines)
+    return lines
+
+
+def finish_cards(driver, limit=12):
+    for _ in range(limit):
+        if driver.game.screen != "event":
+            return
+        driver.press("select")
+    raise AssertionError("cards never finished")
+
+
+def river_driver(stop=tm.MERGE, seed=3, credits=None, **supplies):
+    """A Driver that has resumed a saved run waiting at a river."""
+    trail = at_river(stop, **supplies)
+    if credits is not None:
+        trail.supplies["credits"] = credits
+    save = tl.default_save()
+    save["run"] = trail.to_dict()
+    driver = Driver(seed, save=save)
+    driver.pick("Continue your run")
+    if driver.game.screen != "river":
+        raise AssertionError(driver.game.screen)
+    return driver
+
+
 def labels(view):
     return [option[0] for option in view.options]
 
 
+def to_store(driver, role=0):
+    driver.pick("Start a new run")
+    for _ in range(role):
+        driver.press("down")
+    driver.press("select")
+    finish_cards(driver)
+
+
+class TitleFlowTests(unittest.TestCase):
+    def test_fresh_title(self):
+        driver = Driver()
+        game = driver.game
+        view = game.view()
+        self.assertEqual((view.kind, view.title, view.cursor), ("title", "The Octocat Trail", 0))
+        self.assertEqual(labels(view), ["Start a new run", "Visit the graveyard", "Monitor", "Dark Mode Camp sensor",
+                                        "Learn how to play"])
+        self.assertEqual([option[2] for option in view.options], [True, False, True, True, True])
+        self.assertEqual(view.lines[1], "Best 0   Runs 0   Wins 0")
+        driver.press("up")
+        self.assertEqual(game.cursor, 4)
+        driver.pick("Visit the graveyard")
+        self.assertEqual((game.screen, game.view().note), ("title", "No tombstones yet. Give it time."))
+        driver.press("down")
+        self.assertEqual(game.view().note, "")
+
+    def test_toggles_persist(self):
+        driver = Driver()
+        game = driver.game
+        driver.pick("Monitor")
+        self.assertEqual((game.save["visual"], game.current_toast()), (1, "Monitor: Green"))
+        driver.press("left")
+        driver.press("right")
+        driver.press("right")
+        self.assertEqual(game.save["visual"], 0)
+        self.assertEqual(game.view().options[game.cursor][1], "Color")
+        driver.press("down")
+        driver.press("right")
+        self.assertEqual((game.save["auto_camp"], game.view().options[game.cursor][1]), (False, "Off"))
+        driver.press("select")
+        self.assertTrue(game.save["auto_camp"])
+        driver.press("up")
+        driver.press("up")
+        driver.press("right")
+        self.assertEqual((game.screen, game.cursor), ("title", 1))
+        self.assertEqual(driver.writes, 6)
+
+    def test_menu_key_switches_monitor_on_any_screen(self):
+        driver = roaming()
+        game = driver.game
+        driver.press("menu")
+        self.assertEqual((game.visual(), game.screen, game.current_toast()), (1, "roam", "Monitor: Green"))
+        driver.press("select")
+        driver.press("menu")
+        self.assertEqual((game.visual(), game.screen), (0, "menu"))
+
+    def test_help_pages(self):
+        driver = Driver()
+        game = driver.game
+        driver.pick("Learn how to play")
+        titles = []
+        while game.screen == "help":
+            titles.append(game.view().title)
+            driver.press("select")
+        self.assertEqual(len(titles), len(tg.HELP))
+        self.assertEqual(titles[0], "The Octocat Trail  (1/%d)" % len(tg.HELP))
+        self.assertEqual((game.screen, game.cursor), ("title", 4))
+        driver.press("select")
+        driver.press("right")
+        driver.press("left")
+        driver.press("left")
+        self.assertEqual(game.help_page, 0)
+        driver.press("right")
+        driver.press("back")
+        self.assertEqual((game.screen, game.cursor), ("title", 4))
+        for title, lines in tg.HELP:
+            self.assertTrue(title and lines)
+            for line in lines:
+                self.assertLessEqual(len(line), 120, line)
+
+    def test_role_choice(self):
+        driver = Driver()
+        game = driver.game
+        driver.pick("Start a new run")
+        view = game.view()
+        self.assertEqual((game.screen, view.title), ("role", "Choose a role"))
+        self.assertEqual(labels(view), [role[0] + " " + role[1] for role in tl.ROLES])
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+        driver.pick("Start a new run")
+        driver.press("down")
+        driver.press("down")
+        driver.press("select")
+        self.assertEqual((game.screen, game.card_title, game.card_after), ("event", "Your Studio party", "store"))
+        self.assertEqual((game.trail.role, game.save["runs"]), (2, 1))
+        self.assertIsNotNone(game.save["run"])
+        finish_cards(driver)
+        self.assertEqual((game.screen, game.view().title), ("store", "Gatehouse General Store"))
+        self.assertEqual(game.trail.supplies["credits"], tl.ROLES[2][2])
+
+
+class StoreFlowTests(unittest.TestCase):
+    def test_buying_and_returning(self):
+        driver = Driver()
+        game = driver.game
+        to_store(driver, role=1)
+        view = game.view()
+        self.assertEqual(labels(view), ["Cold Brew Kegs", "LGTM Stamps", "Hotfix Patches", "Hit the trail"])
+        self.assertEqual((view.hint, view.foot[-1]), ("RIGHT buy  LEFT return  BACK title", "Copilot Credits left: 1,000"))
+        driver.press("left")
+        self.assertEqual(game.view().note, "Only this visit's purchases can go back.")
+        driver.press("right")
+        self.assertEqual(game.view().note, "Bought 10 Cold Brew Kegs.")
+        driver.press("select")
+        driver.press("left")
+        self.assertEqual(game.view().note, "Returned 10 Cold Brew Kegs.")
+        self.assertEqual((game.trail.supplies["brew"], game.trail.supplies["credits"]), (10, 960))
+        self.assertEqual(game.view().options[0][1], "10")
+        driver.press("down")
+        self.assertEqual(game.view().note, "")
+
+    def test_leaving_without_brew_warns_once(self):
+        driver = Driver()
+        game = driver.game
+        to_store(driver)
+        driver.pick("Hit the trail")
+        self.assertEqual((game.screen, game.view().note), ("store", "No cold brew packed! Leave again to go anyway."))
+        driver.press("select")
+        self.assertEqual((game.screen, game.trail.ticker), ("roam", "The Ducky leans into the harness. Onward!"))
+        self.assertEqual((game.save["run"]["at"], game.save["run"]["brew"]), (0, 0))
+
+    def test_wagon_and_wallet_limits(self):
+        driver = Driver()
+        game = driver.game
+        to_store(driver)
+        driver.press("down")
+        driver.press("down")
+        for _ in range(tl.carry_limit("patches") + 1):
+            driver.press("right")
+        self.assertEqual(game.view().note, "The wagon can't carry any more.")
+        self.assertEqual(game.trail.supplies["patches"], tl.carry_limit("patches"))
+        driver.press("up")
+        driver.press("up")
+        for _ in range(60):
+            driver.press("right")
+        self.assertEqual(game.view().note, "Not enough Copilot Credits.")
+        self.assertLess(game.trail.supplies["credits"], tl.store_item("brew")[2] * game.trail.price("brew"))
+        self.assertGreaterEqual(game.trail.supplies["credits"], 0)
+
+    def test_back_saves_the_run_for_later(self):
+        driver = Driver()
+        game = driver.game
+        to_store(driver)
+        driver.press("right")
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+        self.assertEqual(game.view().options[0][:2], ("Continue your run", "Step 0"))
+        driver.pick("Continue your run")
+        self.assertEqual((game.screen, game.trail.supplies["brew"]), ("store", 10))
+        self.assertEqual(game.view().options[-1][0], "Hit the trail")
+
+
 class ResumeFlowTests(unittest.TestCase):
+    def resumed(self, trail):
+        save = tl.default_save()
+        save["run"] = trail.to_dict()
+        driver = Driver(save=save)
+        driver.pick("Continue your run")
+        return driver
+
+    def test_resume_lands_on_the_right_screen(self):
+        self.assertEqual(self.resumed(at_river(tm.DNS)).game.screen, "river")
+        trail = stocked()
+        walk_to(trail, 2)
+        self.assertEqual(trail.at, 2)
+        game = self.resumed(trail).game
+        self.assertEqual((game.screen, game.origin, game.trail.at), ("menu", "roam", 2))
+        trail = stocked()
+        trail.step(0, -1)
+        trail.after_step()
+        game = self.resumed(trail).game
+        self.assertEqual((game.screen, game.trail.y), ("roam", tm.START[1] - 1))
 
     def test_corrupt_run_is_dropped(self):
         for bad in ({"v": 2, "party": "nope"}, {"v": 99}, {}):
@@ -1741,6 +2211,28 @@ class ResumeFlowTests(unittest.TestCase):
             driver = Driver(save=save)
             self.assertNotIn("Continue your run", labels(driver.game.view()))
             self.assertIsNone(save["run"])
+
+    def test_shutdown_mid_step_saves_a_whole_tile(self):
+        driver = roaming()
+        game = driver.game
+        driver.frame(pressed=("up",), held=("up",))
+        self.assertIsNotNone(game.walk)
+        writes = driver.writes
+        game.shutdown()
+        self.assertIsNone(game.walk)
+        run = game.save["run"]
+        self.assertEqual((run["x"], run["y"], run["steps"]), (tm.START[0], tm.START[1] - 1, tm.STEPS_PER_TILE))
+        self.assertEqual(driver.writes, writes + 1)
+
+    def test_shutdown_mid_step_can_end_the_run(self):
+        driver = roaming()
+        game = driver.game
+        driver.frame(pressed=("up",), held=("up",))
+        doom(game.trail)
+        game.shutdown()
+        self.assertTrue(game.over)
+        self.assertIsNone(game.save["run"])
+        self.assertEqual(game.save["tombstones"][0][1], tl.CAUSE_WITHDRAWAL)
 
     def test_shutdown_elsewhere_only_persists(self):
         driver = Driver()
@@ -1752,13 +2244,803 @@ class ResumeFlowTests(unittest.TestCase):
         self.assertEqual(driver.game.saves, 0)
 
 
+UPRIGHT = (0, 16384, 0, 0, 0, 0)
+JOLT = (0, 40000, 0, 0, 0, 0)
+
+
+def shake(driver, frames=6):
+    """Feed one shake gesture (a resting reading, then alternating jolts); returns shakes detected."""
+    before = driver.game.shakes
+    for index in range(frames):
+        driver.frame(imu=JOLT if index % 2 else UPRIGHT)
+    return driver.game.shakes - before
+
+
+def light_for(driver, value, ms, dt=40):
+    """Hold the ambient light at value for ms, clicking through any cards."""
+    for _ in range(ms // dt):
+        if driver.game.screen == "event":
+            driver.frame(("select",), dt=dt, light=value)
+        else:
+            driver.frame(dt=dt, light=value)
+
+
+def lights_out(driver):
+    light_for(driver, 40000, 3000)
+    light_for(driver, 0, 2000)
+
+
+def name_of(dx, dy):
+    for ddx, ddy, name in STEP_NAMES:
+        if (ddx, ddy) == (dx, dy):
+            return name
+    raise AssertionError((dx, dy))
+
+
+class RoamFlowTests(unittest.TestCase):
+    def test_status_rows(self):
+        driver = roaming()
+        view = driver.game.view()
+        self.assertEqual((view.kind, view.title, view.hint), ("roam", "", "D-pad walk  SELECT menu  BACK sprint"))
+        self.assertEqual([row[0] for row in view.rows],
+                         ["Date", "Weather", "Health", "Cold brew", "Next stop", "Steps walked"])
+        rows = dict(view.rows)
+        self.assertEqual((rows["Date"], rows["Cold brew"]), ("September 1, 2026", "100 kegs"))
+        self.assertEqual((rows["Next stop"], rows["Steps walked"]), ("GitHub Shop, 320 steps", "0"))
+        self.assertEqual(view.note, "The Ducky leans into the harness. Onward!")
+        self.assertIs(view.data, driver.game.trail)
+
+    def test_a_step_slides_from_tile_to_tile(self):
+        driver = roaming()
+        game = driver.game
+        trail = game.trail
+        x0, y0 = tm.START
+        driver.frame(pressed=("up",), held=("up",))
+        self.assertEqual((trail.x, trail.y), (x0, y0 - 1))
+        self.assertEqual(game.walk[2], trail.tile_ms())
+        positions = [game.party_px()]
+        self.assertEqual(positions[0], (x0 * tm.TILE, y0 * tm.TILE))
+        while game.walk is not None:
+            driver.frame()
+            positions.append(game.party_px())
+        self.assertEqual(positions[-1], (x0 * tm.TILE, (y0 - 1) * tm.TILE))
+        ys = [y for _x, y in positions]
+        self.assertEqual(ys, sorted(ys, reverse=True))
+        self.assertGreater(len(set(ys)), 3)
+        self.assertEqual(set(x for x, _y in positions), {x0 * tm.TILE})
+        self.assertEqual((game.walk_frame(), game.stride, trail.steps), (0, 0, tm.STEPS_PER_TILE))
+
+    def test_holding_a_direction_keeps_walking(self):
+        driver = roaming()
+        game = driver.game
+        driver.frame(pressed=("up",), held=("up",))
+        frames = set()
+        for _ in range(12):
+            driver.frame(held=("up",))
+            self.assertIsNotNone(game.walk)
+            frames.add(game.walk_frame())
+        self.assertEqual(game.trail.y, tm.START[1] - 2)
+        self.assertEqual(frames, {0, 1})
+
+    def test_bumping_into_the_venue(self):
+        for code, reason in ((tm.WATER, "That way lies San Francisco Bay."),
+                             (tm.FENCE, "Load-in zone: no entry from the plaza."),
+                             (tm.GANG1, "Gangway is up. Cross at the dock.")):
+            driver = roaming()
+            game = driver.game
+            trail = game.trail
+            x, y, dx, dy = edge_of(code)
+            trail.x, trail.y, trail.at = x, y, -1
+            name = name_of(dx, dy)
+            driver.frame(pressed=(name,), held=(name,))
+            self.assertEqual((trail.x, trail.y, game.walk), (x, y, None))
+            self.assertEqual((game.current_toast(), trail.blocked_reason(dx, dy)), (reason, reason))
+            for _ in range(5):
+                driver.frame(held=(name,))
+            self.assertEqual(len(game.toasts), 1)
+            driver.frame(pressed=(name,), held=(name,))
+            self.assertEqual(len(game.toasts), 2)
+            driver.frame()
+            self.assertEqual(game.bump, "")
+            driver.frame(held=(name,))
+            self.assertEqual(len(game.toasts), 3)
+            self.assertEqual(trail.steps, 0)
+
+    def test_back_sprints(self):
+        driver = roaming()
+        game = driver.game
+        trail = game.trail
+        self.assertEqual(game.sprint_state(), "Ready")
+        driver.press("back")
+        self.assertEqual((game.current_toast(), trail.turbo_days), ("Turbo sprint!", tl.TURBO_DAYS))
+        self.assertEqual(game.view().note, "Turbo sprint: %d days left" % tl.TURBO_DAYS)
+        self.assertEqual(game.sprint_state(), "Sprinting")
+        self.assertEqual(game.lights()[0], 0.3 if (game.now // 250) & 1 else 0.1)
+        driver.press("back")
+        self.assertEqual(game.current_toast(), "Already sprinting.")
+        trail.turbo_days = 0
+        trail.turbo_cooldown = 2
+        self.assertEqual(game.sprint_state(), "Cooling 2d")
+        driver.press("back")
+        self.assertEqual(game.current_toast(), "Sprint cooling down: 2 days left.")
+        trail.turbo_cooldown = 1
+        driver.press("back")
+        self.assertEqual(game.current_toast(), "Sprint cooling down: 1 day left.")
+        trail.turbo_cooldown = 0
+        trail.supplies["brew"] = 0
+        driver.press("back")
+        self.assertEqual((game.current_toast(), game.sprint_state()), ("No cold brew to fuel a sprint.", "No brew"))
+        self.assertEqual((game.screen, trail.turbo_days), ("roam", 0))
+
+
+class SensorFlowTests(unittest.TestCase):
+    def test_shaking_sprints_only_while_roaming(self):
+        driver = roaming()
+        game = driver.game
+        driver.press("select")
+        self.assertEqual(shake(driver), 1)
+        self.assertEqual((game.screen, game.trail.turbo_days), ("menu", 0))
+        driver.press("back")
+        driver.now += 2500
+        self.assertEqual(shake(driver), 1)
+        self.assertEqual((game.current_toast(), game.trail.turbo_days),
+                         ("Shake detected: turbo sprint!", tl.TURBO_DAYS))
+        self.assertEqual(shake(driver), 0)
+        driver.frame(imu=(0, 0, 0, 0, 0, 0))
+        self.assertEqual(game.screen, "roam")
+
+    def test_simulator_upside_down_reading_is_not_a_shake(self):
+        driver = roaming()
+        for reading in ((0, -16384, 0, 0, 0, 0), (0, 16384, 0, 0, 0, 0)) * 6:
+            driver.frame(imu=reading)
+        self.assertEqual(driver.game.shakes, 0)
+
+    def test_lights_out_camps_until_the_lights_return(self):
+        driver = roaming()
+        game = driver.game
+        light_for(driver, 40000, 3000)
+        self.assertEqual((game.screen, game.dark_room), ("roam", False))
+        light_for(driver, 0, 2000)
+        self.assertEqual((game.screen, game.camp_auto, game.camp_origin), ("camp", True, "roam"))
+        self.assertTrue(game.dark() and game.dark_room)
+        view = game.view()
+        self.assertEqual(view.lines[0], "Lights out. The party rests until the room is bright again.")
+        self.assertIs(view.data, True)
+        flicker = game.lights()
+        self.assertEqual((flicker[0], flicker[3]), (flicker[3], flicker[0]))
+        day = game.trail.day
+        light_for(driver, 0, 4400)
+        self.assertGreaterEqual(game.camp_days, 1)
+        self.assertGreater(game.trail.day, day)
+        self.assertTrue(game.view().lines[1].startswith("Health: "))
+        light_for(driver, 40000, 2000)
+        self.assertEqual((game.screen, game.dark_room, game.darkness.suppressed), ("roam", False, False))
+        self.assertIn("The lights are back on. Break camp!", [toast[0] for toast in game.toasts])
+        self.assertEqual(game.save["run"]["day"], game.trail.day)
+
+    def test_breaking_camp_by_hand_waits_for_daylight(self):
+        driver = roaming()
+        game = driver.game
+        lights_out(driver)
+        self.assertEqual(game.screen, "camp")
+        driver.press("select", light=0)
+        self.assertEqual((game.screen, game.darkness.suppressed), ("roam", True))
+        light_for(driver, 0, 3000)
+        self.assertEqual(game.screen, "roam")
+        light_for(driver, 40000, 2500)
+        self.assertFalse(game.darkness.suppressed or game.dark_room)
+        light_for(driver, 0, 2500)
+        self.assertEqual(game.screen, "camp")
+
+    def test_darkness_while_already_resting_turns_camp_automatic(self):
+        driver = roaming()
+        game = driver.game
+        light_for(driver, 40000, 3000)
+        driver.press("select", light=40000)
+        driver.pick("Make camp and rest")
+        self.assertFalse(game.camp_auto)
+        light_for(driver, 0, 2000)
+        self.assertEqual((game.screen, game.camp_auto), ("camp", True))
+        light_for(driver, 40000, 2000)
+        self.assertEqual(game.screen, "menu")
+
+    def test_sensor_off_never_camps(self):
+        save = tl.default_save()
+        save["auto_camp"] = False
+        driver = roaming(save=save)
+        game = driver.game
+        lights_out(driver)
+        light_for(driver, 0, 1000)
+        self.assertTrue(game.dark_room)
+        self.assertEqual((game.screen, game.want_camp, game.dark()), ("roam", False, False))
+
+    def test_switching_the_sensor_off_cancels_a_pending_camp(self):
+        driver = Driver()
+        game = driver.game
+        game.want_camp = True
+        driver.pick("Dark Mode Camp sensor")
+        self.assertEqual((game.save["auto_camp"], game.want_camp), (False, False))
+
+    def test_manual_camp_rests_three_days(self):
+        driver = roaming()
+        game = driver.game
+        driver.press("select")
+        driver.pick("Make camp and rest")
+        self.assertEqual((game.screen, game.camp_auto, game.camp_origin), ("camp", False, "menu"))
+        view = game.view()
+        self.assertEqual(view.lines, ["Resting: day 1 of 3.", "Health: %s." % game.trail.party_health()])
+        self.assertEqual((view.hint, view.progress), ("SELECT break camp", 0.0))
+        day = game.trail.day
+        now = game.now
+        driver.frame(dt=5000)
+        self.assertEqual((game.camp_timer, game.now), (tg.MAX_DT, now + 5000))
+        for _ in range(100):
+            if game.screen == "menu":
+                break
+            driver.frame(("select",) if game.screen == "event" else (), dt=250)
+        self.assertEqual((game.screen, game.trail.day, game.camp_days), ("menu", day + 3, 3))
+        self.assertEqual(game.save["run"]["day"], day + 3)
+
+    def test_breaking_a_manual_camp_early(self):
+        driver = roaming()
+        game = driver.game
+        driver.press("select")
+        driver.pick("Make camp and rest")
+        driver.press("back")
+        self.assertEqual((game.screen, game.trail.day, game.darkness.suppressed), ("menu", 1, False))
+
+
+def step_once(driver, name="up"):
+    driver.frame(pressed=(name,), held=(name,))
+    while driver.game.walk is not None:
+        driver.frame()
+
+
+def in_menu(**kw):
+    driver = roaming(**kw)
+    driver.press("select")
+    if driver.game.screen != "menu":
+        raise AssertionError(driver.game.screen)
+    return driver
+
+
+class MenuFlowTests(unittest.TestCase):
+    def test_gatehouse_menu(self):
+        driver = in_menu()
+        game = driver.game
+        view = game.view()
+        self.assertEqual((view.kind, view.title, view.hint),
+                         ("menu", "The Gatehouse (git init)", "UP/DOWN choose  SELECT go  BACK walk on"))
+        self.assertEqual(view.lines, ("September 1, 2026", "Weather: Sunny", "Health: Good", "You can:"))
+        self.assertEqual(labels(view), ["Keep shipping", "Check the wagon", "Look at the venue map", "Set the pace",
+                                        "Set the rations", "Make camp and rest", "Talk to attendees",
+                                        "Visit the store", "Bug & AI Slop Hunt", "Turbo sprint", "Save and quit"])
+        values = dict((option[0], option[1]) for option in view.options)
+        self.assertEqual((values["Set the pace"], values["Set the rations"]), ("Sustainable", "Drip"))
+        self.assertEqual((values["Bug & AI Slop Hunt"], values["Turbo sprint"]), ("30 LGTMs", "Ready"))
+        driver.pick("Keep shipping")
+        self.assertEqual(game.screen, "roam")
+        driver.press("select")
+        driver.press("back")
+        self.assertEqual(game.screen, "roam")
+
+    def test_menu_between_stops(self):
+        driver = roaming()
+        step_once(driver)
+        finish_cards(driver)
+        driver.press("select")
+        view = driver.game.view()
+        self.assertEqual(view.title, "Fort Mason Center")
+        self.assertNotIn("Visit the store", labels(view))
+
+    def test_wagon_and_map(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Check the wagon")
+        view = game.view()
+        self.assertEqual((game.screen, view.kind, view.title), ("supplies", "supplies", "Your wagon"))
+        self.assertEqual(view.rows, (("Copilot Credits", "1,170"), ("Cold Brew Kegs", "100"),
+                                     ("LGTM Stamps", "30"), ("Hotfix Patches", "0")))
+        self.assertEqual([member[0] for member in view.data], list(tl.PARTY))
+        self.assertTrue(all(member[2] for member in view.data))
+        self.assertEqual(view.foot, ("The party drinks %s kegs a day." % tg.kegs(game.trail.brew_per_day()),))
+        driver.press("back")
+        self.assertEqual((game.screen, game.cursor), ("menu", 1))
+        driver.pick("Look at the venue map")
+        view = game.view()
+        self.assertEqual((view.kind, view.title), ("map", "Fort Mason Center"))
+        self.assertEqual(view.lines, ("Next stop: GitHub Shop", "320 steps away", "Walked: 0 steps"))
+        self.assertIs(view.data, game.trail)
+        driver.press("select")
+        self.assertEqual((game.screen, game.cursor), ("menu", 2))
+
+    def test_pace_and_rations(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Set the pace")
+        view = game.view()
+        self.assertEqual((game.screen, view.title, view.cursor), ("pace", "Set the pace", 0))
+        self.assertEqual([option[1] for option in view.options], ["20 steps/day", "26 steps/day", "34 steps/day"])
+        self.assertEqual(view.foot, (tg.PACE_NOTES[0],))
+        driver.press("down")
+        driver.press("back")
+        self.assertEqual((game.screen, game.trail.pace), ("menu", 0))
+        driver.press("select")
+        driver.press("down")
+        writes = driver.writes
+        driver.press("select")
+        self.assertEqual((game.screen, game.trail.pace, game.current_toast()), ("menu", 1, "Pace: Crunch"))
+        self.assertEqual((game.save["run"]["pace"], driver.writes), (1, writes + 1))
+        self.assertEqual(game.view().options[3][1], "Crunch")
+        driver.pick("Set the rations")
+        view = game.view()
+        self.assertEqual((view.title, view.cursor), ("Set the rations", 1))
+        self.assertEqual([option[1] for option in view.options], ["0.3 kegs each", "0.2 kegs each", "0.1 kegs each"])
+        driver.press("down")
+        self.assertEqual(game.view().foot, (tg.RATION_NOTES[2],))
+        driver.press("select")
+        self.assertEqual((game.trail.rations, game.current_toast()), (2, "Rations: Decaf"))
+
+    def test_talk_to_attendees(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Talk to attendees")
+        view = game.view()
+        self.assertEqual((view.kind, view.title, game.card_after), ("card", "Talk to attendees", "menu"))
+        self.assertTrue(view.lines[0].endswith(" says:"))
+        self.assertTrue(view.lines[0][:-6] in tg.SPEAKERS)
+        self.assertTrue(view.lines[1].startswith('"') and view.lines[1].endswith('"'))
+        self.assertEqual(view.hint, "SELECT continue")
+        driver.press("select")
+        self.assertEqual(game.screen, "menu")
+
+    def test_store_from_the_menu(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Visit the store")
+        view = game.view()
+        self.assertEqual((view.title, labels(view)[-1]), ("Gatehouse General Store", "Leave the store"))
+        self.assertTrue(view.hint.endswith("BACK leave"))
+        driver.press("right")
+        self.assertEqual(game.trail.supplies["brew"], 110)
+        driver.pick("Leave the store")
+        self.assertEqual(game.screen, "menu")
+        self.assertEqual(game.save["run"]["brew"], 1100)
+        driver.pick("Visit the store")
+        driver.press("back")
+        self.assertEqual(game.screen, "menu")
+
+
+def option_of(view, label):
+    for option in view.options:
+        if option[0] == label:
+            return option
+    raise AssertionError("no option %r" % label)
+
+
+class MenuActionTests(unittest.TestCase):
+    def test_hunt_from_the_menu(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Bug & AI Slop Hunt")
+        view = game.view()
+        self.assertEqual((game.screen, view.kind, view.title), ("hunt", "hunt", "Bug & AI Slop Hunt"))
+        self.assertEqual((view.hint, view.progress), ("D-pad walk  SELECT stamp  BACK stop", 1.0))
+        self.assertIs(view.data, game.hunt)
+        for _ in range(10):
+            driver.frame(pressed=("select",), held=("right",))
+        self.assertAlmostEqual(game.view().progress, 1 - 400.0 / tl.HUNT_MS)
+        driver.press("back")
+        self.assertEqual((game.screen, game.card_title, game.card_after), ("event", "Bug & AI Slop Hunt", "menu"))
+        self.assertIsNone(game.hunt)
+        finish_cards(driver)
+        self.assertEqual(game.screen, "menu")
+        self.assertLess(game.trail.supplies["lgtm"], 30)
+        self.assertEqual(game.save["run"]["lgtm"], game.trail.supplies["lgtm"])
+
+    def test_hunt_runs_out_of_time(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Bug & AI Slop Hunt")
+        driver.frame(dt=250)
+        self.assertAlmostEqual(game.view().progress, 1 - 100.0 / tl.HUNT_MS)
+        frames = 1
+        while game.screen == "hunt" and frames < 400:
+            driver.frame(dt=100)
+            frames += 1
+        self.assertEqual((game.screen, frames), ("event", tl.HUNT_MS // 100))
+        self.assertEqual(game.card_title, "Bug & AI Slop Hunt")
+
+    def test_hunt_needs_stamps(self):
+        driver = in_menu()
+        game = driver.game
+        game.trail.supplies["lgtm"] = 0
+        self.assertEqual(option_of(game.view(), "Bug & AI Slop Hunt")[1:], ("0 LGTMs", False))
+        driver.pick("Bug & AI Slop Hunt")
+        self.assertEqual((game.screen, game.view().note), ("menu", "You need LGTM Stamps to hunt."))
+
+    def test_sprint_from_the_menu(self):
+        driver = in_menu()
+        game = driver.game
+        driver.pick("Turbo sprint")
+        self.assertEqual((game.screen, game.current_toast()), ("roam", "Turbo sprint!"))
+        self.assertEqual(game.trail.turbo_days, tl.TURBO_DAYS)
+        driver.press("select")
+        self.assertEqual(option_of(game.view(), "Turbo sprint")[1:], ("Sprinting", False))
+        driver.pick("Turbo sprint")
+        self.assertEqual((game.screen, game.view().note), ("menu", "Already sprinting."))
+
+    def test_save_and_quit(self):
+        driver = in_menu()
+        game = driver.game
+        writes = driver.writes
+        driver.pick("Save and quit")
+        self.assertEqual((game.screen, driver.writes, game.trail), ("title", writes + 1, None))
+        self.assertEqual(game.view().options[0][0], "Continue your run")
+        driver.pick("Continue your run")
+        self.assertEqual((game.screen, game.trail.supplies["brew"]), ("store", 100))
+
+    def test_lights_out_in_the_menu(self):
+        driver = in_menu()
+        game = driver.game
+        lights_out(driver)
+        self.assertEqual((game.screen, game.camp_origin), ("camp", "menu"))
+        light_for(driver, 40000, 2000)
+        self.assertEqual(game.screen, "menu")
+
+
+class RiverFlowTests(unittest.TestCase):
+    def test_river_screen(self):
+        driver = river_driver()
+        view = driver.game.view()
+        self.assertEqual((view.kind, view.title, view.data), ("river", "Merge Conflict River", tm.MERGE))
+        self.assertEqual(view.lines[2:], ("Diff: 140 ft wide, 2.0 ft deep", "You can:"))
+        self.assertEqual(list(view.options), [
+            ("YOLO deploy (ford)", "0%", True), ("Ship with 2 LGTMs", "2 LGTMs, 10%", True),
+            ("Ask Copilot (ferry)", "40 cr, 2%", True), ("Wait for review", "1 day", True), ("Plan it out", "", True)])
+
+    def test_blocked_options_explain_themselves(self):
+        driver = river_driver(lgtm=1, credits=10)
+        game = driver.game
+        driver.pick("Ship with 2 LGTMs")
+        self.assertEqual((game.screen, game.view().note), ("river", "You need 2 LGTM Stamps to ship it."))
+        driver.pick("Ask Copilot (ferry)")
+        self.assertEqual((game.screen, game.view().note), ("river", "Not enough Copilot Credits for the ferry."))
+        driver.press("down")
+        self.assertEqual(game.view().note, "")
+
+    def test_plan_it_out(self):
+        driver = river_driver()
+        game = driver.game
+        driver.pick("Plan it out")
+        view = game.view()
+        self.assertEqual((game.screen, game.origin, labels(view)[0]), ("menu", "river", "Back to the river"))
+        self.assertNotIn("Visit the store", labels(view))
+        self.assertEqual(option_of(view, "Turbo sprint")[1:], ("Ready", False))
+        driver.pick("Turbo sprint")
+        self.assertEqual(game.view().note, "Cross the river first.")
+        driver.press("back")
+        self.assertEqual(game.screen, "river")
+        driver.pick("Plan it out")
+        driver.pick("Back to the river")
+        self.assertEqual(game.screen, "river")
+
+    def test_waiting_for_review(self):
+        driver = river_driver()
+        game = driver.game
+        day = game.trail.day
+        driver.pick("Wait for review")
+        self.assertEqual((game.screen, game.card_title, game.card_after), ("event", "Merge Conflict River", "river"))
+        self.assertTrue(game.card_lines[0].startswith("You waited a day for review. The river is now "))
+        self.assertEqual((game.trail.day, game.save["run"]["day"]), (day + 1, day + 1))
+        finish_cards(driver)
+        self.assertEqual(game.screen, "river")
+        self.assertIn(" %s ft deep" % tl.tenths(game.trail.river[0]), game.view().lines[2])
+
+    def test_walking_away_and_back(self):
+        driver = river_driver()
+        game = driver.game
+        driver.press("back")
+        self.assertEqual((game.screen, game.trail.at), ("roam", tm.MERGE))
+        driver.press("select")
+        self.assertEqual(game.screen, "river")
+
+    def test_ferry_crossing(self):
+        driver = river_driver()
+        game = driver.game
+        credits = game.trail.supplies["credits"]
+        driver.pick("Ask Copilot (ferry)")
+        view = game.view()
+        self.assertEqual((game.screen, view.kind, view.title), ("crossing", "crossing", "Merge Conflict River"))
+        self.assertEqual((view.lines, view.hint, view.progress), (("Ask Copilot (ferry)",), "SELECT skip", 0.0))
+        self.assertEqual(view.data[:2], (tm.MERGE, tl.FERRY))
+        self.assertTrue(game.trail.deployed & tm.deployed_bit(tm.MERGE))
+        self.assertEqual(game.trail.supplies["credits"], credits - 40)
+        frames = 0
+        while game.screen == "crossing":
+            driver.frame(dt=250)
+            frames += 1
+        self.assertEqual(frames, 8)
+        self.assertEqual((game.screen, game.card_after, game.card_back), ("event", "roam", "roam"))
+        self.assertTrue(game.save["run"]["deployed"] & tm.deployed_bit(tm.MERGE))
+        finish_cards(driver)
+        self.assertEqual((game.screen, game.trail.at), ("roam", -1))
+
+    def test_skipping_the_crossing(self):
+        driver = river_driver()
+        game = driver.game
+        driver.pick("Ask Copilot (ferry)")
+        driver.press("select")
+        self.assertEqual((game.screen, game.card_after), ("event", "roam"))
+
+    def test_a_fatal_crossing(self):
+        driver = river_driver()
+        game = driver.game
+        trail = game.trail
+        trail.cross = lambda option: (kill_all(trail), False)
+        driver.pick("YOLO deploy (ford)")
+        self.assertEqual((game.screen, game.card_title, game.card_after),
+                         ("event", "Merge Conflict River", "tombstone"))
+        self.assertEqual(game.card_lines[-1], "Nobody is left to finish the trail.")
+        self.assertTrue(game.over)
+        self.assertIsNone(game.save["run"])
+        finish_cards(driver)
+        self.assertEqual((game.screen, game.record[1]), ("tombstone", tl.CAUSE_EXHAUSTION))
+
+    def test_lights_out_at_the_river(self):
+        driver = river_driver()
+        game = driver.game
+        lights_out(driver)
+        self.assertEqual((game.screen, game.camp_origin), ("camp", "river"))
+        light_for(driver, 40000, 2000)
+        self.assertEqual(game.screen, "river")
+
+
+class EndingFlowTests(unittest.TestCase):
+    def test_dying_in_camp(self):
+        driver = in_menu()
+        game = driver.game
+        doom(game.trail)
+        driver.pick("Make camp and rest")
+        for _ in range(80):
+            if game.screen != "camp":
+                break
+            driver.frame(dt=100)
+        self.assertEqual((game.screen, game.card_title, game.card_after, game.card_back),
+                         ("event", "Dark Mode Camp", "tombstone", "camp"))
+        self.assertEqual(game.card_lines[-1], "Nobody is left to finish the trail.")
+        self.assertEqual(len(game.card_lines), len(tl.PARTY) + 1)
+        self.assertEqual((game.over, game.save["run"], game.record[1]), (True, None, tl.CAUSE_WITHDRAWAL))
+        self.assertIs(game.save["tombstones"][-1], game.record)
+        finish_cards(driver)
+        view = game.view()
+        self.assertEqual((game.screen, view.kind, view.title), ("tombstone", "tombstone", "Game over"))
+        self.assertEqual(view.lines, tl.tombstone_lines(game.record))
+        self.assertEqual((view.hint, view.progress), ("L/R epitaph  SELECT beam  BACK title", None))
+
+    def test_dying_on_a_hunt(self):
+        driver = in_menu()
+        game = driver.game
+        trail = game.trail
+        driver.pick("Bug & AI Slop Hunt")
+        trail.finish_hunt = lambda hunt: kill_all(trail)
+        driver.press("back")
+        self.assertEqual((game.screen, game.card_title, game.card_after),
+                         ("event", "Bug & AI Slop Hunt", "tombstone"))
+        self.assertEqual(game.card_lines[-1], "Nobody is left to finish the trail.")
+        self.assertEqual((game.over, game.record[1], game.hunt), (True, tl.CAUSE_EXHAUSTION, None))
+        finish_cards(driver)
+        self.assertEqual(game.screen, "tombstone")
+
+    def test_epitaphs_wrap_both_ways(self):
+        driver = in_menu()
+        game = driver.game
+        kill_all(game.trail)
+        game.game_over()
+        game.go("tombstone")
+        game.record[2] = 0
+        driver.press("left")
+        self.assertEqual(game.record[2], len(tl.EPITAPHS) - 1)
+        self.assertEqual(game.view().lines[3], '"' + tl.EPITAPHS[-1] + '"')
+        driver.press("right")
+        self.assertEqual(game.save["tombstones"][-1][2], 0)
+        writes = driver.writes
+        driver.press("back")
+        self.assertEqual((game.screen, driver.writes), ("title", writes + 1))
+
+    def test_victory_screen(self):
+        driver = roaming()
+        game = driver.game
+        game.win()
+        game.go("victory")
+        view = game.view()
+        score = game.trail.score()
+        self.assertEqual((view.kind, view.title, view.hint, view.progress),
+                         ("victory", "You made it to the Mainstage!", "SELECT beam victory  BACK title", None))
+        self.assertEqual(view.lines, ("Final score: %s  New best!" % tl.commas(score), "5 of 5 made it in 1 day.",
+                                      "Creative Director @wmarkus, score x1"))
+        self.assertEqual((game.save["best"], game.save["victories"], game.save["run"]), (score, 1, None))
+        lit = game.lights()
+        self.assertEqual(lit[(game.now // 250) % 4], 0.4)
+        self.assertEqual(sorted(lit), [0.1, 0.1, 0.1, 0.4])
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+
+    def test_a_lower_score_is_not_a_new_best(self):
+        save = tl.default_save()
+        save["best"] = 10 ** 6
+        driver = roaming(save=save, role=2)
+        game = driver.game
+        game.win()
+        game.go("victory")
+        lines = game.view().lines
+        self.assertEqual(lines[0], "Final score: " + tl.commas(game.trail.score()))
+        self.assertEqual(lines[2], "ATC Control Lead @kdaigle, score x3")
+        self.assertEqual(game.save["best"], 10 ** 6)
+
+
 class ShutdownTests(unittest.TestCase):
+    def test_shutdown_mid_step_saves_a_whole_tile(self):
+        driver = roaming()
+        game = driver.game
+        driver.frame(pressed=("up",), held=("up",))
+        self.assertIsNotNone(game.walk)
+        writes = driver.writes
+        game.shutdown()
+        run = game.save["run"]
+        self.assertIsNone(game.walk)
+        self.assertEqual((run["x"], run["y"], run["steps"]), (tm.START[0], tm.START[1] - 1, tm.STEPS_PER_TILE))
+        self.assertEqual(driver.writes, writes + 1)
+
+    def test_shutdown_while_resting_saves_the_run(self):
+        driver = roaming()
+        game = driver.game
+        game.trail.supplies["lgtm"] = 17
+        game.shutdown()
+        self.assertEqual(game.save["run"]["lgtm"], 17)
 
     def test_shutdown_on_the_title_just_persists(self):
         driver = Driver()
         game = driver.game
         game.shutdown()
         self.assertEqual((driver.writes, game.save["run"]), (1, None))
+
+    def test_shutdown_after_game_over_keeps_no_run(self):
+        driver = in_menu()
+        game = driver.game
+        kill_all(game.trail)
+        game.game_over()
+        writes = driver.writes
+        game.shutdown()
+        self.assertEqual((driver.writes, game.save["run"]), (writes + 1, None))
+
+    def test_shutdown_finishes_a_fatal_step(self):
+        driver = roaming()
+        game = driver.game
+        doom(game.trail)
+        driver.frame(pressed=("up",), held=("up",))
+        self.assertEqual((game.screen, game.over), ("roam", False))
+        game.shutdown()
+        self.assertEqual((game.over, game.walk, game.save["run"]), (True, None, None))
+        self.assertEqual(game.save["tombstones"], [game.record])
+        self.assertEqual((game.record[0], game.record[1]), (tm.STEPS_PER_TILE, tl.CAUSE_WITHDRAWAL))
+
+
+def graveyard_save(count):
+    save = tl.default_save()
+    for index in range(count):
+        save["tombstones"].append(tl.tombstone_record(100 * (index + 1), index % len(tl.CAUSES), index, index % 3, 0))
+    return save
+
+
+def in_graveyard(count=3, link=_MISSING):
+    driver = Driver(save=graveyard_save(count), link=link)
+    driver.pick("Visit the graveyard")
+    if driver.game.screen != "graveyard":
+        raise AssertionError(driver.game.screen)
+    return driver
+
+
+class BeamFlowTests(unittest.TestCase):
+    def test_graveyard_browses_newest_first_and_wraps(self):
+        driver = in_graveyard()
+        game = driver.game
+        stones = game.save["tombstones"]
+        view = game.view()
+        self.assertEqual((view.kind, view.title, view.hint), ("tombstone", "Graveyard 3/3", "L/R browse  SELECT beam  BACK title"))
+        self.assertEqual(view.lines, tl.tombstone_lines(stones[2]))
+        self.assertEqual(view.lines[0], "Step 300")
+        driver.press("right")
+        self.assertEqual(game.view().title, "Graveyard 1/3")
+        driver.press("left")
+        driver.press("left")
+        self.assertEqual(game.view().title, "Graveyard 2/3")
+        driver.press("select")
+        packet = tl.decode_packet(driver.link.sent[-1])
+        self.assertEqual(tl.tombstone_from_packet(packet), stones[1][:4] + [1])
+        self.assertEqual((game.current_toast(), game.save["beamed"]), ("No IR: tombstone beam simulated.", 1))
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+
+    def test_an_empty_graveyard(self):
+        driver = Driver()
+        game = driver.game
+        option = option_of(game.view(), "Visit the graveyard")
+        self.assertEqual(option[1:], ("0", False))
+        driver.pick("Visit the graveyard")
+        self.assertEqual((game.screen, game.view().note), ("title", "No tombstones yet. Give it time."))
+        game.go("graveyard")
+        view = game.view()
+        self.assertEqual((view.kind, view.title, view.lines, view.hint),
+                         ("tombstone", "Graveyard", ("No tombstones yet.",), "BACK title"))
+        driver.frame()
+        self.assertEqual(game.screen, "title")
+
+    def test_beaming_without_ir(self):
+        driver = in_graveyard(link=None)
+        game = driver.game
+        writes = driver.writes
+        driver.press("select")
+        self.assertEqual((game.current_toast(), game.save["beamed"], driver.writes),
+                         ("IR is not available on this badge.", 0, writes))
+        self.assertEqual((game.nonce(), game.beam_progress(), game.view().progress), (0, None, None))
+
+    def test_beaming_over_ir(self):
+        driver = in_graveyard(link=FakeLink(transmit=True))
+        game = driver.game
+        driver.press("select")
+        self.assertEqual((game.current_toast(), game.save["beamed"]), ("Beaming your tombstone over IR.", 1))
+        packet = tl.decode_packet(driver.link.sent[0])
+        self.assertEqual((packet["kind"], packet["nonce"], packet["value"]), (tl.KIND_TOMBSTONE, FakeLink.nonce, 300))
+
+    def test_one_beam_at_a_time(self):
+        driver = in_graveyard()
+        game = driver.game
+        driver.link.busy = True
+        driver.press("select")
+        self.assertEqual((game.current_toast(), driver.link.sent), ("Still beaming. Hold steady.", []))
+        self.assertEqual((game.beam_progress(), game.view().progress), (0.25, 0.25))
+        lit = game.lights()
+        self.assertEqual(lit[(game.now // 120) % 4], 0.5)
+        self.assertEqual(sorted(lit), [0.05, 0.05, 0.05, 0.5])
+        driver.link.busy = False
+        driver.press("select")
+        self.assertEqual(len(driver.link.sent), 1)
+
+    def test_receiving_beams(self):
+        driver = Driver()
+        game = driver.game
+        record = tl.tombstone_record(1234, 2, 3, 1, False)
+        tomb = tl.decode_packet(tl.tombstone_packet(9, record))
+        win = tl.decode_packet(tl.victory_packet(9, 4321, 3, 12, 2))
+        self.assertTrue(game.receive([tomb, win]))
+        self.assertEqual(game.save["tombstones"], [[1234, 2, 3, 1, 1]])
+        self.assertEqual([toast[0] for toast in game.toasts],
+                         ["Tombstone beamed in: step 1,234.", "Victory beamed in: 4,321 points!"])
+        self.assertEqual((game.save["met"], driver.writes), (1, 1))
+        self.assertTrue(game.receive([tomb]))
+        self.assertEqual((len(game.save["tombstones"]), game.save["met"]), (1, 2))
+        self.assertEqual(option_of(game.view(), "Visit the graveyard")[1:], ("1", True))
+
+    def test_junk_is_ignored(self):
+        driver = Driver()
+        game = driver.game
+        junk = {"kind": 9, "nonce": 1, "value": 5, "a": 0, "b": 0, "c": 0}
+        self.assertFalse(game.receive([]))
+        self.assertFalse(game.receive([junk, None]))
+        self.assertEqual((game.save["met"], driver.writes, game.toasts), (0, 0, []))
+
+    def test_received_tombstones_are_capped(self):
+        driver = Driver()
+        game = driver.game
+        packets = []
+        for index in range(tl.MAX_TOMBSTONES + 3):
+            packets.append(tl.decode_packet(tl.tombstone_packet(index, tl.tombstone_record(index + 1, 0, 0, 0, 0))))
+        game.receive(packets)
+        stones = game.save["tombstones"]
+        self.assertEqual(len(stones), tl.MAX_TOMBSTONES)
+        self.assertEqual((stones[0][0], stones[-1][0]), (4, tl.MAX_TOMBSTONES + 3))
+        self.assertEqual(len(game.toasts), 3)
 
 
 class ToastLightPersistTests(unittest.TestCase):
@@ -1777,6 +3059,72 @@ class ToastLightPersistTests(unittest.TestCase):
             game.toast(text)
         self.assertEqual([toast[0] for toast in game.toasts], ["b", "c", "d"])
         self.assertEqual(game.current_toast(), "d")
+
+    def test_menu_key_switches_monitors_anywhere(self):
+        driver = roaming()
+        game = driver.game
+        writes = driver.writes
+        driver.press("menu")
+        self.assertEqual((game.visual(), game.screen, game.current_toast()), (1, "roam", "Monitor: Green"))
+        self.assertEqual(driver.writes, writes + 1)
+        driver.press("select")
+        driver.press("menu")
+        self.assertEqual((game.visual(), game.screen, game.current_toast()), (0, "menu", "Monitor: Color"))
+
+    def test_long_frames_are_clamped(self):
+        driver = roaming()
+        game = driver.game
+        driver.frame(pressed=("up",), held=("up",))
+        driver.frame(held=("up",), dt=60000)
+        self.assertEqual(game.walk[3], tg.MAX_DT)
+        driver.frame(held=("up",), dt=-500)
+        self.assertEqual(game.walk[3], tg.MAX_DT)
+
+    def test_failed_saves_are_survivable(self):
+        driver = roaming()
+        game = driver.game
+        saves = game.saves
+
+        def broken(data):
+            raise OSError(28, "No space left on device")
+
+        game.persist_fn = broken
+        game.persist()
+        driver.press("select")
+        driver.pick("Save and quit")
+        self.assertEqual((game.saves, game.screen), (saves, "title"))
+        self.assertIsNotNone(game.save["run"])
+
+    def test_running_without_storage(self):
+        driver = roaming(persist=False)
+        game = driver.game
+        step_once(driver)
+        finish_cards(driver)
+        game.shutdown()
+        self.assertEqual((game.saves, driver.writes), (0, 0))
+        self.assertEqual(game.save["run"]["steps"], tm.STEPS_PER_TILE)
+
+    def test_case_lights_follow_the_game(self):
+        self.assertEqual(Driver().game.lights(), (0, 0, 0, 0))
+        driver = roaming()
+        game = driver.game
+        self.assertEqual(game.lights(), (0, 0, 0, 0))
+        driver.press("back")
+        for _ in range(10):
+            driver.frame()
+            level = 0.3 if (game.now // 250) & 1 else 0.1
+            self.assertEqual(game.lights(), (level, level, level, level))
+        driver.press("select")
+        self.assertEqual(game.lights(), (0, 0, 0, 0))
+        driver.pick("Make camp and rest")
+        seen = set()
+        for _ in range(30):
+            driver.frame()
+            lit = game.lights()
+            self.assertEqual((lit[1], lit[2], lit[3]), (lit[0] * 0.6, lit[0] * 0.6, lit[0]))
+            self.assertTrue(0.08 <= lit[0] <= 0.17)
+            seen.add(lit[0])
+        self.assertGreater(len(seen), 2)
 
 
 # ----- the renderer, through strict fakes of the badge drawing globals --------------------------
@@ -2015,6 +3363,33 @@ class RenderHelperTests(unittest.TestCase):
 MAP_LABELS = frozenset(label[0] for label in tm.LABELS if not label[3])
 
 
+class BeamLink(FakeLink):
+    """A transmitting FakeLink whose beam lasts a few frames."""
+    FRAMES = 6
+
+    def __init__(self):
+        FakeLink.__init__(self, transmit=True)
+        self.left = 0
+
+    def status(self):
+        return "IR ready"
+
+    def beam(self, packet):
+        FakeLink.beam(self, packet)
+        self.left = self.FRAMES
+        return True
+
+    def tick(self):
+        if self.left > 0:
+            self.left -= 1
+
+    def sending(self):
+        return self.left > 0
+
+    def progress(self):
+        return 1.0 - self.left / float(self.FRAMES)
+
+
 class RenderTests(unittest.TestCase):
     """Every screen drawn after every frame, through strict fakes of the badge globals."""
 
@@ -2062,6 +3437,100 @@ class RenderTests(unittest.TestCase):
             self.fail("the %s screen has text off the edge: %r" % (kind, stray))
         return kind
 
+    def beam_and_wait(self, driver, what):
+        link = BeamLink()
+        driver.link = link
+        driver.game.link = link
+        driver.press("select")
+        self.assertEqual(driver.game.current_toast(), "Beaming your %s over IR." % what)
+        driver.press("select")
+        self.assertEqual(driver.game.current_toast(), "Still beaming. Hold steady.")
+        for _ in range(8):
+            driver.frame()
+        self.assertFalse(link.sending())
+        self.assertEqual(len(link.sent), 1)
+
+    def tour(self, visual):
+        self.visual = visual
+        # The title: an empty graveyard, both ways out of the help pages, the sensor switch.
+        driver = Driver(5)
+        game = driver.game
+        driver.frame()
+        driver.pick("Visit the graveyard")
+        self.assertEqual((game.screen, game.note), ("title", "No tombstones yet. Give it time."))
+        driver.pick("Learn how to play")
+        for _ in range(len(tg.HELP)):
+            self.assertEqual(game.screen, "help")
+            driver.press("right")
+        self.assertEqual(game.screen, "title")
+        driver.pick("Learn how to play")
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+        driver.pick("Dark Mode Camp sensor")
+        self.assertIs(game.save["auto_camp"], False)
+        # A whole run to the Mainstage, then beaming the victory.
+        driver = play(31676, role=1, explore=True)
+        self.assertEqual(driver.game.screen, "victory")
+        self.beam_and_wait(driver, "victory")
+        driver.press("back")
+        self.assertEqual(driver.game.screen, "title")
+        # Dying in camp, choosing an epitaph and beaming the tombstone.
+        driver = in_menu()
+        game = driver.game
+        doom(game.trail)
+        driver.pick("Make camp and rest")
+        for _ in range(80):
+            if game.screen != "camp":
+                break
+            driver.frame(dt=100)
+        finish_cards(driver)
+        self.assertEqual(game.screen, "tombstone")
+        driver.press("right")
+        self.beam_and_wait(driver, "tombstone")
+        driver.press("back")
+        self.assertEqual(game.screen, "title")
+        # Browsing and beaming from the graveyard.
+        driver = in_graveyard(3, link=BeamLink())
+        driver.press("left")
+        driver.press("select")
+        for _ in range(8):
+            driver.frame()
+        driver.press("back")
+        self.assertEqual(driver.game.screen, "title")
+        # Dark Mode Camp from the light sensor, then daylight.
+        driver = roaming()
+        lights_out(driver)
+        self.assertEqual(driver.game.screen, "camp")
+        self.assertEqual(self.renderer.pen_key, visual + 2)
+        light_for(driver, 40000, 3000)
+        self.assertEqual(driver.game.screen, "roam")
+        self.assertEqual(self.renderer.pen_key, visual)
+        # A shake-powered turbo sprint along the guide.
+        driver = roaming()
+        self.assertGreater(shake(driver), 0)
+        self.assertGreater(driver.game.trail.turbo_days, 0)
+        held = None
+        for _ in range(40):
+            name = guide_direction(driver.game.trail)
+            if driver.game.screen != "roam" or name is None:
+                break
+            driver.frame(pressed=(name,) if name != held else (), held=(name,))
+            held = name
+        self.assertEqual(set(VIEW_KINDS) - self.kinds, set())
+        self.assertEqual(set(self.renderer.pen_sets), {visual, visual + 2})
+        self.assertEqual(self.log.colors, sum(len(pens) for pens in self.renderer.pen_sets.values()))
+        for cache in (self.renderer.widths, self.renderer.wraps, self.renderer.fits):
+            self.assertLessEqual(len(cache), td.CACHE_LIMIT + 1)
+        # Offscreen images are cached (one title banner, one venue chart), never made per frame.
+        self.assertLessEqual(len(self.log.images), 4)
+        return driver
+
+    def test_every_screen_on_the_color_monitor(self):
+        self.tour(0)
+
+    def test_every_screen_on_the_green_monitor(self):
+        self.tour(1)
+
     def test_a_failing_screen_falls_back_and_reports_once(self):
         game = Driver(5).game
 
@@ -2083,6 +3552,33 @@ class RenderTests(unittest.TestCase):
         Driver(5).frame()
         self.assertIs(self.renderer.face, nope)
         self.assertIs(self.screen.font, nope)
+
+    def test_screens_still_draw_when_images_cannot_be_allocated(self):
+        self.fakes["image"].fail = MemoryError
+        driver = in_menu()
+        self.assertIsNone(self.renderer.banner)
+        driver.pick("Look at the venue map")
+        self.assertEqual(driver.game.view().kind, "map")
+        self.assertIsNone(self.renderer.chart)
+        self.assertEqual(self.log.images, [])
+        Driver(5).frame()
+        self.assertIsNone(self.renderer.banner)
+        self.assertIn("The Octocat Trail", self.screen.texts)
+
+    def test_the_venue_chart_is_cached_only_while_the_map_is_open(self):
+        driver = in_menu()
+        before = len(self.log.images)
+        driver.pick("Look at the venue map")
+        self.assertEqual(self.log.images[before:], [(td.CHART_W, td.CHART_H)])
+        chart = self.renderer.chart
+        self.assertIsNotNone(chart)
+        driver.frame()
+        driver.frame()
+        self.assertIs(self.renderer.chart, chart)
+        self.assertEqual(len(self.log.images), before + 1)
+        driver.press("select")
+        self.assertNotEqual(driver.game.view().kind, "map")
+        self.assertIsNone(self.renderer.chart)
 
     def test_the_title_banner_is_drawn_once_and_reused(self):
         driver = Driver(5)
@@ -2629,6 +4125,19 @@ class SourceScanTests(unittest.TestCase):
         for snippet in CLEAN_SNIPPETS:
             with self.subTest(snippet=snippet):
                 self.assertEqual(scan_source(snippet), [])
+
+    def test_ordered_tables_are_tuples_or_lists(self):
+        tables = ((tl, ("ROLES", "SUPPLIES", "PACES", "RATIONS", "RIVER_OPTIONS", "PARTY", "CAUSES", "EPITAPHS")),
+                  (tm, ("STOPS", "LABELS", "BUILDINGS", "PATHS", "TREES", "PARKING", "DOCKS", "FENCES")),
+                  (tg, ("HELP", "MONITORS", "DIRS", "UNITS", "STORE_NAMES")),
+                  (td, ("FACADES", "CONFETTI", "BASE", "CHART")),
+                  (ta, ("PALETTE",)))
+        for mod, names in tables:
+            for name in names:
+                with self.subTest(name):
+                    value = getattr(mod, name)
+                    self.assertIsInstance(value, (tuple, list))
+                    self.assertTrue(value)
 
     def test_no_module_constant_is_a_dict_or_set(self):
         # Dict and set iteration is hash-ordered on the badge, so constants stay sequences.
