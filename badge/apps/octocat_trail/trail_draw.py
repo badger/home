@@ -58,6 +58,7 @@ FACADES = (
     ("river", "", NAVY),
     ("pavilion", "MAINSTAGE", VIOLET),
 )
+CONFETTI = (YELLOW, VIOLET, AQUA, PINK, GREEN, ORANGE)
 
 
 def dim(rgb):
@@ -81,6 +82,16 @@ def scatter(count, seed, x0, y0, w, h):
     return tuple(points)
 
 
+def link_status(game):
+    link = game.link
+    if link is None:
+        return "IR off"
+    try:
+        return link.status()
+    except Exception:
+        return "IR off"
+
+
 class Renderer:
     def __init__(self):
         self.now = 0
@@ -102,6 +113,7 @@ class Renderer:
         self.stars = scatter(40, 11, 0, 2, W, 92)
         self.tufts = scatter(36, 23, 6, 6, W - 12, tl.HUNT_H - 12)
         self.flowers = scatter(14, 37, 8, 8, W - 16, tl.HUNT_H - 16)
+        self.confetti = scatter(28, 53, 0, 16, W, 100)
 
     # ----- frame setup ------------------------------------------------------------
     def draw(self, game):
@@ -364,6 +376,15 @@ class Renderer:
             for row in foot:
                 self.text(row, MARGIN, foot_top)
                 foot_top += ROW
+
+    def beam_bar(self, progress, y):
+        label = "Beaming over IR"
+        self.pen(WHITE)
+        self.text(label, MARGIN, y)
+        x = MARGIN + self.measure(label) + 8
+        width = W - MARGIN - x
+        self.outline(x, y + 2, width, 8)
+        self.fill(GREEN, x + 2, y + 4, int((width - 4) * max(0.0, min(1.0, progress))), 4)
 
     def draw_toast(self, text):
         text = self.fit(text, W - 28)
@@ -1148,3 +1169,57 @@ class Renderer:
         self.pen(WHITE)
         self.outline(14, 220, W - 28, 8)
         self.fill(GREEN, 16, 222, int((W - 32) * progress), 4)
+
+    # ----- game over and the Mainstage --------------------------------------------------------------
+    def draw_tombstone(self, view, game):
+        self.bar(view.title)
+        lines = view.lines
+        if len(lines) < 4:
+            self.lines(lines, 40)
+            self.hint(view.hint)
+            return
+        self.pen(GREY)
+        screen.shape(shape.rounded_rectangle(40, 22, 240, 150, 30))
+        self.fill(GREEN, 0, 158, W, 28)
+        self.pen(DKGREEN)
+        for x, y, _i in self.tufts[:16]:
+            screen.rectangle(x, 160 + y % 22, 1, 3)
+        for fx, slot in ((70, PINK), (78, YELLOW), (244, PINK), (252, YELLOW)):
+            self.fill(DKGREEN, fx + 1, 152, 1, 6)
+            self.fill(slot, fx, 150, 3, 3)
+        self.pen(BLACK)
+        y = 34
+        for line in lines[:4]:
+            for row in self.wrap(line, 212):
+                if y + ROW <= 156:
+                    self.centred(row, y)
+                    y += ROW
+            y += 4
+        if len(lines) > 4:
+            text = self.fit(lines[4], TEXT_W)
+            width = self.measure(text) + 12
+            self.fill(BLACK, (W - width) // 2, 165, width, ROW + 4)
+            self.pen(WHITE)
+            self.centred(text, 167)
+        if view.progress is not None:
+            self.beam_bar(view.progress, 192)
+        else:
+            self.pen(GREY)
+            self.centred(link_status(game), 192)
+        self.hint(view.hint)
+
+    def draw_victory(self, view, game):
+        self.facade(tm.END, 128, (self.now // 250) & 1)
+        drift = self.now // 20
+        sway = self.now // 150
+        for x, y0, i in self.confetti:
+            y = (y0 + drift + i * 7) % 100 + 4
+            self.fill(CONFETTI[i % len(CONFETTI)], x + (sway + i) % 3 - 1, y, 2 + (i & 1), 3 - (i & 1))
+        y = self.bar(view.title, 128)
+        self.lines(view.lines, y, limit=188)
+        if view.progress is not None:
+            self.beam_bar(view.progress, 192)
+        else:
+            self.pen(GREY)
+            self.centred(link_status(game), 192)
+        self.hint(view.hint)

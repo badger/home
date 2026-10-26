@@ -1994,6 +1994,23 @@ class RenderHelperTests(unittest.TestCase):
         self.assertNotEqual(points, td.scatter(40, 12, 6, 2, 300, 92))
         self.assertGreater(len({x // 30 for x, _y, _index in points}), 5)
 
+    def test_link_status_never_raises(self):
+        game = types.SimpleNamespace(link=None)
+        self.assertEqual(td.link_status(game), "IR off")
+
+        class Broken:
+            def status(self):
+                raise OSError("gone")
+
+        game.link = Broken()
+        self.assertEqual(td.link_status(game), "IR off")
+        link = hw.IrLink(5)
+        game.link = link
+        self.assertEqual(td.link_status(game), "IR off")
+        link.tx = object()
+        link.listening = True
+        self.assertEqual(td.link_status(game), "IR ready")
+
 
 MAP_LABELS = frozenset(label[0] for label in tm.LABELS if not label[3])
 
