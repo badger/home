@@ -84,6 +84,7 @@ CAUSES = (
 )
 CAUSE_EXHAUSTION = 4
 CAUSE_WITHDRAWAL = 5
+CAUSE_PYTHON2 = 8
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
@@ -573,6 +574,8 @@ class Trail:
                 (2, self._typosquatter),
                 (2, self._shortcut),
                 (1, self._stale_readme),
+                (2, self._python2),
+                (1, self._unicorn),
             ))
             event(lines)
 
@@ -627,3 +630,18 @@ class Trail:
     def _stale_readme(self, lines):
         lines.append("You followed a stale README. Lost 2 days.")
         self.idle_days(2, lines)
+
+    def _python2(self, lines):
+        living = self.living()
+        if not living:
+            return
+        member = self.rng.choice(living)
+        member.health = clamp(member.health - 20, 0, 100)
+        lines.append("%s was bitten by a Python 2 dependency." % member.name)
+        if member.health <= 0:
+            self._kill(member, CAUSE_PYTHON2, lines)
+
+    def _unicorn(self, lines):
+        for member in self.living():
+            member.health = clamp(member.health + 8, 0, 100)
+        lines.append("You spotted the GitHub unicorn. Morale soars.")

@@ -296,6 +296,41 @@ class TrailTests(unittest.TestCase):
 
 class TrailEventTests(unittest.TestCase):
 
+    def test_each_trail_event(self):
+        trail = stocked(brew=100.0, lgtm=0)
+        lines = []
+        trail._broken_ci(lines)
+        self.assertEqual(lines[-1], "No Hotfix Patch. Rebuilt it from source: lost 2 days.")
+        trail.supplies["patches"] = 1
+        trail._broken_ci(lines)
+        self.assertEqual((lines[-1], trail.supplies["patches"]), ("You swapped in a Hotfix Patch.", 0))
+        trail._dependabot(lines)
+        self.assertEqual(lines[-1], "A Dependabot caravan shared 8 Cold Brew Kegs.")
+        trail._abandoned_wagon(lines)
+        self.assertEqual(lines[-1], "You found an abandoned wagon with 10 LGTM Stamps.")
+        self.assertEqual(trail.supplies["lgtm"], 10)
+        trail._typosquatter(lines)
+        self.assertEqual(lines[-1], "An npm typosquatter made off with 5 kegs.")
+        day = trail.day
+        trail._rate_limited(lines)
+        trail._stale_readme(lines)
+        self.assertEqual(trail.day, day + 3)
+        trail._shortcut(lines)
+        self.assertEqual((trail.tailwind, trail.steps_per_day()), (2, 35))
+        trail.members[0].health = 15
+        trail._python2(lines)
+        self.assertEqual(lines[-2:], ["Markus was bitten by a Python 2 dependency.",
+                                      "Markus has died of a Python 2 dependency."])
+        trail.members[1].health = 95
+        trail._unicorn(lines)
+        self.assertEqual(trail.members[1].health, 100)
+        trail.supplies["brew"] = 500.0
+        trail._dependabot(lines)
+        self.assertEqual(lines[-1], "A Dependabot caravan waved hello.")
+        trail.supplies["brew"] = 0.0
+        trail._typosquatter(lines)
+        self.assertEqual(lines[-1], "An npm typosquatter found nothing worth taking.")
+
     def test_sights_pay_out_once(self):
         trail = stocked(lgtm=0)
         lines = []
