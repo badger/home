@@ -19,7 +19,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "badge" / "apps" / "octocat_trail"
-MODULES = ("trail_map", "trail_logic")
+MODULES = ("trail_map", "trail_logic", "trail_art")
 _MISSING = object()
 
 
@@ -58,6 +58,7 @@ def load_modules(prefix="octocat_trail_", extra=None, names=MODULES):
 _APP = load_modules()
 tm = _APP["trail_map"]
 tl = _APP["trail_logic"]
+ta = _APP["trail_art"]
 
 BOTH_RIVERS = tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS)
 
@@ -164,6 +165,33 @@ class MapTests(unittest.TestCase):
         dist = tm.distances(0, 0)
         self.assertEqual(tm.terrain(0, 0), tm.WATER)
         self.assertEqual(set(dist), {tm.UNREACHED})
+
+
+class ArtTests(unittest.TestCase):
+
+    def test_palette_matches_letters(self):
+        self.assertEqual(len(ta.PALETTE), 18)
+        self.assertEqual(len(ta.LETTERS), len(ta.PALETTE))
+        self.assertEqual(len(set(ta.LETTERS)), len(ta.LETTERS))
+        self.assertNotIn(".", ta.LETTERS)
+        for rgb in ta.PALETTE:
+            self.assertEqual(len(rgb), 3)
+            for channel in rgb:
+                self.assertTrue(isinstance(channel, int) and 0 <= channel <= 255)
+        self.assertEqual(ta.PALETTE[ta.BLACK], (0, 0, 0))
+        self.assertEqual(ta.PALETTE[ta.WHITE], (255, 255, 255))
+
+    def test_green_monitor_palette(self):
+        self.assertIs(ta.palette(), ta.PALETTE)
+        self.assertIs(ta.palette(False), ta.PALETTE)
+        self.assertEqual(ta.green_rgb((0, 0, 0)), (0, 0, 0))
+        self.assertEqual(ta.green_rgb((255, 255, 255)), (42, 255, 63))
+        green = ta.palette(True)
+        self.assertEqual(len(green), len(ta.PALETTE))
+        for rgb in green[1:]:
+            self.assertGreaterEqual(rgb[1], 60)
+            self.assertGreater(rgb[1], rgb[0])
+            self.assertGreater(rgb[1], rgb[2])
 
 
 class QuietRng(tl.Rng):
