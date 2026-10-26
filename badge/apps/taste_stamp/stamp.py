@@ -1,5 +1,5 @@
 # Rubber-stamp artwork for Taste Stamp: a stroked block font, the stamp
-# layout and the slam curve.
+# layout, and the slam and ink-splatter curves.
 #
 # Everything here is plain Python that emits flat [x0, y0, x1, y1, ...]
 # contours for shape.custom(), so it runs unchanged on the badge and under
@@ -334,6 +334,7 @@ def build_stamp(text, header=None, footer=None):
 DROP_MS = 140
 SQUASH_MS = 120
 BAKE_MS = DROP_MS + SQUASH_MS
+SPLAT_MS = 400
 DROP_SCALE = 2.6
 DROP_SPIN = 20.0
 SQUASH = 0.06
@@ -346,3 +347,29 @@ def slam_pose(t):
         return DROP_SCALE - (DROP_SCALE - 1.0) * p * p, (1.0 - p) * (1.0 - p), int(70 + 185 * p), False
     q = min(1.0, (t - DROP_MS) / SQUASH_MS)
     return 1.0 - SQUASH * (1.0 - q) * (1.0 - q), 0.0, 255, True
+
+
+def make_splats(rand, count, cx, cy, half_w, half_h):
+    # Ink droplets flung from the stamp's rim: [x, y, vx, vy, radius].
+    splats = []
+    for _ in range(count):
+        a = rand() * 6.2831853
+        c = math.cos(a)
+        s = math.sin(a)
+        speed = 60.0 + 170.0 * rand()
+        splats.append([cx + c * half_w * 0.92, cy + s * half_h * 0.92, c * speed, s * speed, 0.8 + 1.7 * rand()])
+    return splats
+
+
+SPLAT_DRAG_MS = 110.0
+
+
+def step_splats(splats, dt):
+    # Exact exponential drag, so any frame rate lands droplets in one place.
+    decay = math.exp(-dt / SPLAT_DRAG_MS)
+    travel = SPLAT_DRAG_MS / 1000.0 * (1.0 - decay)
+    for s in splats:
+        s[0] += s[2] * travel
+        s[1] += s[3] * travel
+        s[2] *= decay
+        s[3] *= decay

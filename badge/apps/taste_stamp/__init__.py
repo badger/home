@@ -93,6 +93,7 @@ BRIEF = (-0.42, 0.94, 0.88, 0.97, 0.52, 0, -0.3, 0.9, 0.96, 0.84, 0.6, 0, 0.91, 
 INK_ALPHA = 225
 # Older impressions fade as new ones land on the same sheet.
 FADES = (150, 95, 55)
+SPLATS = 14
 STAMP_MAX_W = 220.0
 STAMP_MAX_H = 136.0
 STAMP_MAX_SCALE = 5.5
@@ -161,8 +162,8 @@ def draw_stamp(target, index, x, y, rot, scale, alpha):
 
 
 class Slam:
-    # One stamp impression: it falls, lands and is then baked into the desk
-    # image, where it stays as a mark.
+    # One stamp impression: it falls, lands, flings ink and is then baked
+    # into the desk image, where it stays as a mark.
 
     def __init__(self, index, now):
         outlines, w, h = stamp_shapes(index)
@@ -171,15 +172,24 @@ class Slam:
         self.scale = min(STAMP_MAX_W / w, STAMP_MAX_H / h, STAMP_MAX_SCALE)
         self.w = w
         self.h = h
+        self.half_w = w * self.scale * 0.5
+        self.half_h = h * self.scale * 0.5
         self.x = PAPER_CX + rng.uniform(-10.0, 10.0)
         self.y = PAPER_CY + rng.uniform(-6.0, 6.0)
         self.rot = rng.uniform(-10.0, 10.0)
         self.spin = rng.uniform(-stamp.DROP_SPIN, stamp.DROP_SPIN)
+        self.splats = None
+        self.dots = []
         self.inked = False
+        self.dried = False
 
 
 def draw_mark(target, mark, alpha):
     draw_stamp(target, mark.index, mark.x, mark.y, mark.rot, mark.scale, alpha)
+    if mark.dots:
+        target.pen = rgb(verdicts.INKS[mark.index], alpha)
+        for d in mark.dots:
+            target.shape(shape.circle(d[0], d[1], d[2]))
 
 
 class App:
@@ -200,10 +210,11 @@ class App:
 
     def update(self):
         now = badge.ticks
+        dt = max(0, min(100, badge.ticks_delta))
         if not self.handle_buttons(now):
             return False
         if self.slam is not None:
-            self.advance_slam(now)
+            self.advance_slam(now, dt)
         self.draw_stamp_mode(now)
         self.draw_toast(now)
         if self.slam is None:
@@ -264,21 +275,35 @@ class App:
             self.render_desk()
         self.slam = Slam(index, now)
 
-    def advance_slam(self, now):
+    def advance_slam(self, now, dt):
         s = self.slam
         t = now - s.start
+        if s.splats is None:
+            if t >= stamp.DROP_MS:
+                s.splats = stamp.make_splats(rng.random, SPLATS, s.x, s.y, s.half_w, s.half_h)
+                stamp.step_splats(s.splats, t - stamp.DROP_MS)
+        elif not s.dried:
+            stamp.step_splats(s.splats, dt)
         if not s.inked and t >= stamp.BAKE_MS:
             self.bake_stamp(s)
-        if s.inked:
+        if not s.dried and s.splats is not None and t >= stamp.DROP_MS + stamp.SPLAT_MS:
+            self.bake_splats(s)
+        if s.inked and s.dried:
             self.slam = None
 
     def finish_slam(self):
-        # Lands the current slam at once.
+        # Lands the current slam at once, ink and splats included.
         s = self.slam
         if s is None:
             return
+        if s.splats is None:
+            s.splats = stamp.make_splats(rng.random, SPLATS, s.x, s.y, s.half_w, s.half_h)
+        if not s.dried:
+            stamp.step_splats(s.splats, 2000)
         if not s.inked:
             self.bake_stamp(s)
+        if not s.dried:
+            self.bake_splats(s)
         self.slam = None
 
     def bake_stamp(self, s):
@@ -286,6 +311,16 @@ class App:
         self.marks.append(s)
         d = self.desk
         draw_stamp(d, s.index, s.x, s.y, s.rot, s.scale, INK_ALPHA)
+
+    def bake_splats(self, s):
+        s.dried = True
+        dots = []
+        for p in s.splats:
+            dots.append((p[0], p[1], p[4]))
+        s.dots = dots
+        self.desk.pen = rgb(verdicts.INKS[s.index], INK_ALPHA)
+        for d in dots:
+            self.desk.shape(shape.circle(d[0], d[1], d[2]))
 
     def render_desk(self):
         d = self.desk
@@ -329,6 +364,10 @@ class App:
             t = now - s.start
             if not s.inked:
                 self.draw_falling(s, t)
+            if s.splats is not None and not s.dried:
+                screen.pen = rgb(verdicts.INKS[s.index], INK_ALPHA)
+                for p in s.splats:
+                    screen.shape(shape.circle(p[0], p[1], p[4]))
         self.draw_title("TASTE STAMP")
         screen.font = SMALL_FONT
         if self.choice is None:

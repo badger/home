@@ -6,6 +6,7 @@ apps' tests that vendor helpers with generic names.
 """
 
 import ast
+import copy
 import math
 import struct
 import types
@@ -205,6 +206,33 @@ class StampTests(unittest.TestCase):
             self.assertGreaterEqual(pose[2], previous[2])
             self.assertFalse(pose[3])
             previous = pose
+
+    def test_splats_fly_outward_from_the_rim(self):
+        rng = V.Rng(7)
+        splats = S.make_splats(rng.random, 40, 160.0, 121.0, 80.0, 50.0)
+        self.assertEqual(len(splats), 40)
+        for x, y, vx, vy, r in splats:
+            ex = (x - 160.0) / (80.0 * 0.92)
+            ey = (y - 121.0) / (50.0 * 0.92)
+            self.assertAlmostEqual(ex * ex + ey * ey, 1.0, places=6)
+            self.assertGreaterEqual(vx * (x - 160.0), -1e-9)
+            self.assertGreaterEqual(vy * (y - 121.0), -1e-9)
+            self.assertTrue(60.0 - 1e-6 <= math.hypot(vx, vy) <= 230.0 + 1e-6)
+            self.assertTrue(0.8 <= r <= 2.5)
+
+    def test_splat_drag_is_frame_rate_independent(self):
+        rng = V.Rng(8)
+        one = S.make_splats(rng.random, 10, 0.0, 0.0, 30.0, 20.0)
+        many = copy.deepcopy(one)
+        start = copy.deepcopy(one)
+        S.step_splats(one, 400)
+        for _ in range(25):
+            S.step_splats(many, 16)
+        for a, b, s in zip(one, many, start):
+            for i in range(4):
+                self.assertAlmostEqual(a[i], b[i], delta=1e-6)
+            travel = math.hypot(a[0] - s[0], a[1] - s[1])
+            self.assertLessEqual(travel, math.hypot(s[2], s[3]) * S.SPLAT_DRAG_MS / 1000.0 + 1e-9)
 
 
 def read_png(path):
