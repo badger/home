@@ -157,6 +157,7 @@ class Game:
         self.stride = 0
         self.last_dir = None
         self.bump = ""
+        self.want_menu = False
         self.saved_day = 0
         self.hunt = None
         self.cross_stop = -1
@@ -192,6 +193,7 @@ class Game:
         self.screen = screen
         self.cursor = cursor
         self.note = ""
+        self.want_menu = False
         if screen == "title":
             self.trail = None
             self.walk = None
@@ -620,7 +622,14 @@ class Game:
 
     def _roam(self, dt, keys):
         trail = self.trail
+        # Presses fire for one frame only, so take them mid-step too: BACK
+        # sprints at once and SELECT waits for the step to land.
+        if keys.hit("select"):
+            self.want_menu = True
+        elif keys.hit("back"):
+            self.sprint()
         walk = self.walk
+        extra = 0
         if walk is not None:
             walk[3] += dt
             self.stride += dt
@@ -633,19 +642,13 @@ class Game:
             if self.screen != "roam" or self.over:
                 self.stride = 0
                 return
-            name = self.direction(keys)
-            if name is None or not self.try_step(name, keys, extra):
-                self.stride = 0
-            return
-        if keys.hit("select"):
+        if self.want_menu:
             self.stride = 0
             if trail.at_kind("river"):
                 self.go("river")
             else:
                 self.open_menu("roam")
             return
-        if keys.hit("back"):
-            self.sprint()
         if self.auto_camp_due():
             self.start_camp(True, "roam")
             return
@@ -654,7 +657,7 @@ class Game:
             self.stride = 0
             self.bump = ""
             return
-        self.try_step(name, keys)
+        self.try_step(name, keys, extra)
 
     def outcome(self, lines, outcome):
         """React to the end of a step (see Trail.after_step)."""

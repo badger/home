@@ -2372,6 +2372,50 @@ class RoamFlowTests(unittest.TestCase):
         self.assertEqual((game.current_toast(), game.sprint_state()), ("No cold brew to fuel a sprint.", "No brew"))
         self.assertEqual((game.screen, trail.turbo_days), ("roam", 0))
 
+    def test_back_sprints_mid_step(self):
+        # Presses last one frame, so BACK during a step must sprint at once.
+        for held in (("up",), ()):
+            driver = roaming()
+            game = driver.game
+            trail = game.trail
+            x0, y0 = tm.START
+            driver.frame(pressed=("up",), held=("up",))
+            driver.frame(pressed=("back",), held=held)
+            self.assertEqual((trail.x, trail.y), (x0, y0 - 1))
+            self.assertIsNotNone(game.walk)
+            self.assertEqual((game.current_toast(), trail.turbo_days), ("Turbo sprint!", tl.TURBO_DAYS))
+            goal = y0 - 2 if held else y0 - 1
+            for _ in range(20):
+                driver.frame(held=held)
+                if trail.y == goal and (held or game.walk is None):
+                    break
+            self.assertEqual((game.screen, trail.x, trail.y), ("roam", x0, goal))
+            self.assertEqual(game.walk is not None, bool(held))
+
+    def test_select_mid_step_opens_the_menu_when_the_step_lands(self):
+        driver = roaming()
+        game = driver.game
+        trail = game.trail
+        x0, y0 = tm.START
+        driver.frame(pressed=("up",), held=("up",))
+        driver.frame(pressed=("select",), held=("up",))
+        self.assertEqual((game.screen, trail.y), ("roam", y0 - 1))
+        self.assertIsNotNone(game.walk)
+        for _ in range(20):
+            if game.screen != "roam":
+                break
+            driver.frame(held=("up",))
+        self.assertEqual((game.screen, game.origin), ("menu", "roam"))
+        self.assertEqual((trail.x, trail.y, game.walk, game.stride, game.want_menu), (x0, y0 - 1, None, 0, False))
+        driver.press("back")
+        driver.frame(held=("up",))
+        self.assertEqual((game.screen, trail.y), ("roam", y0 - 2))
+        for _ in range(20):
+            if game.walk is None:
+                break
+            driver.frame()
+        self.assertEqual((game.screen, trail.y, game.walk), ("roam", y0 - 2, None))
+
 
 class SensorFlowTests(unittest.TestCase):
     def test_shaking_sprints_only_while_roaming(self):
@@ -2417,6 +2461,28 @@ class SensorFlowTests(unittest.TestCase):
         self.assertEqual((game.screen, game.dark_room, game.darkness.suppressed), ("roam", False, False))
         self.assertIn("The lights are back on. Break camp!", [toast[0] for toast in game.toasts])
         self.assertEqual(game.save["run"]["day"], game.trail.day)
+
+    def test_lights_out_while_walking_camps_when_the_step_lands(self):
+        driver = roaming()
+        game = driver.game
+        trail = game.trail
+        trail.rng = QuietRng()
+        light_for(driver, 40000, 3000)
+        self.assertEqual((game.screen, game.walk), ("roam", None))
+        steps = trail.steps
+        was_walking = False
+        for _ in range(150):
+            self.assertEqual(game.screen, "roam")
+            name = guide_direction(trail)
+            self.assertIsNotNone(name)
+            was_walking = game.walk is not None
+            driver.frame(held=(name,), light=0)
+            if game.screen != "roam":
+                break
+        self.assertEqual((game.screen, game.camp_auto, game.camp_origin), ("camp", True, "roam"))
+        self.assertTrue(was_walking)
+        self.assertEqual((game.walk, trail.pending_ms), (None, 0))
+        self.assertGreater(trail.steps, steps)
 
     def test_breaking_camp_by_hand_waits_for_daylight(self):
         driver = roaming()
@@ -2744,6 +2810,38 @@ class RiverFlowTests(unittest.TestCase):
         self.assertEqual((game.screen, game.trail.at), ("roam", tm.MERGE))
         driver.press("select")
         self.assertEqual(game.screen, "river")
+
+    def test_select_mid_step_back_onto_the_dock(self):
+        driver = river_driver()
+        game = driver.game
+        trail = game.trail
+        trail.rng = QuietRng()
+        driver.press("back")
+        x0, y0 = trail.x, trail.y
+        for dx, dy, name in STEP_NAMES:
+            if tm.walkable(x0 + dx, y0 + dy, trail.deployed) and tm.stop_at(x0 + dx, y0 + dy) < 0:
+                break
+        else:
+            self.fail("no way off the dock")
+        driver.frame(pressed=(name,), held=(name,))
+        for _ in range(20):
+            if game.walk is None:
+                break
+            driver.frame()
+        self.assertEqual((game.screen, trail.x, trail.y, trail.at), ("roam", x0 + dx, y0 + dy, -1))
+        home = name_of(-dx, -dy)
+        driver.frame(pressed=(home,), held=(home,))
+        driver.frame(pressed=("select",))
+        self.assertEqual(game.screen, "roam")
+        self.assertIsNotNone(game.walk)
+        for _ in range(20):
+            if game.screen != "roam":
+                break
+            driver.frame()
+        self.assertEqual((game.screen, game.cursor, trail.at, game.want_menu), ("river", 0, tm.MERGE, False))
+        driver.press("back")
+        driver.frame()
+        self.assertEqual((game.screen, trail.at), ("roam", tm.MERGE))
 
     def test_ferry_crossing(self):
         driver = river_driver()
