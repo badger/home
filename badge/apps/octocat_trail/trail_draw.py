@@ -447,6 +447,43 @@ class Renderer:
         self.token(x, 180, (self.now // 200) & 1, False, 2)
         self.hint(view.hint)
 
+    def draw_card(self, view, game):
+        back = view.data
+        trail = game.trail
+        if back == "roam" and trail is not None:
+            self.walk_view(game, trail)
+            self.fill(BLACK, 0, VIEW_H, W, H - VIEW_H)
+        elif back == "camp" and trail is not None:
+            self.camp_scene()
+        else:
+            y = self.bar(view.title) + 8
+            for line in view.lines:
+                y = self.lines((line,), y) + 6
+            self.hint(view.hint)
+            return
+        self.card_box(view)
+
+    def card_box(self, view):
+        rows = []
+        for line in view.lines:
+            for row in self.wrap(line, W - 32):
+                rows.append(row)
+        height = len(rows) * ROW + 2 * ROW + 16
+        top = max(20, min(BOX_Y, H - 2 - height))
+        self.fill(BLACK, 2, top - 2, W - 4, H - top + 2)
+        self.fill(WHITE, 4, top, W - 8, H - 2 - top)
+        self.pen(BLACK)
+        self.outline(6, top + 2, W - 12, H - 6 - top)
+        self.centred(self.fit(view.title, W - 24), top + 5)
+        y = top + ROW + 9
+        limit = H - 6 - ROW
+        for row in rows:
+            if y + ROW > limit:
+                break
+            self.text(row, 16, y)
+            y += ROW
+        self.centred(self.fit(view.hint, W - 24), limit)
+
     # ----- walking the venue ----------------------------------------------------------------
     def draw_roam(self, view, game):
         trail = view.data if view.data is not None else game.trail
