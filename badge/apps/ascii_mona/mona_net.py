@@ -1,6 +1,7 @@
 """Optional public-profile lookup on api.github.com to tune a Mona.
 
-Only public fields are kept, and a GITHUB_TOKEN from secrets is sent to
+A blocking requests.get fetches the profile, the way the ISS app does. Only
+public fields are kept, and a GITHUB_TOKEN from secrets is sent to
 api.github.com and nowhere else.
 """
 
@@ -13,6 +14,11 @@ KEEP = (
     "public_repos", "public_gists", "followers", "following", "site_admin",
 )
 TEXT_LIMIT = 160
+REQUEST_TIMEOUT = 10
+GIVE_UP_MS = 30000
+
+IDLE = 0
+FETCHING = 2
 
 
 def load_module(name):
@@ -86,3 +92,87 @@ def reason(data, code=0):
     if not isinstance(data, dict):
         return "bad reply from GitHub"
     return "no such GitHub user"
+
+
+class Lookup:
+    """One profile lookup at a time, advanced a step per frame."""
+
+    def __init__(self, load=None):
+        self.load = load or load_module
+        self.state = IDLE
+        self.handle = ""
+        self.requests = None
+        self.started = 0
+        self.painted = False
+        self.status = ""
+
+    @property
+    def busy(self):
+        return self.state != IDLE
+
+    def cancel(self):
+        self.state = IDLE
+        self.painted = False
+
+    def _fail(self, why):
+        self.cancel()
+        self.status = why
+        return ("failed", why)
+
+    def start(self, handle, now):
+        """Begin a lookup; returns ("failed", reason) straight away or None."""
+        self.cancel()
+        handle = mona_dna.clean_handle(handle)
+        if not handle:
+            return self._fail("no handle to look up")
+        self.handle = handle
+        self.started = now
+        self.status = "asking GitHub..."
+        self.requests = self.load("requests")
+        if self.requests is None:
+            return self._fail("no network on this badge")
+        self.state = FETCHING
+        return None
+
+    def update(self, now):
+        """Advance; returns ("profile", dict) or ("failed", reason) once."""
+        if self.state == IDLE:
+            return None
+        if now - self.started > GIVE_UP_MS:
+            return self._fail("GitHub timed out")
+        try:
+            return self._get()
+        except Exception as err:
+            return self._fail(mona_dna.clean_text("lookup failed: %s" % err, 40))
+
+    def _get(self):
+        if not self.painted:
+            # a blocking request stalls the frame, so paint the status first
+            self.painted = True
+            return None
+        url = API + self.handle
+        response = self.requests.get(url, headers=headers_for(url, token(self.load)), timeout=REQUEST_TIMEOUT)
+        code = 0
+        data = None
+        try:
+            code = response.status_code
+            try:
+                data = response.json()
+            except Exception:
+                data = None
+        finally:
+            try:
+                response.close()
+            except Exception:
+                pass
+        if code != 200:
+            return self._fail(reason(data, code))
+        return self._finish(data, code)
+
+    def _finish(self, data, code):
+        profile = slim(data)
+        if profile is None:
+            return self._fail(reason(data, code))
+        self.cancel()
+        self.status = ""
+        return ("profile", profile)

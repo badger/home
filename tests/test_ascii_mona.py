@@ -1986,6 +1986,35 @@ class TestWheel(unittest.TestCase):
 # Network fakes ---------------------------------------------------------------
 
 
+class FakeResponse:
+    def __init__(self, code, data=None, broken_json=False):
+        self.status_code = code
+        self.data = data
+        self.broken_json = broken_json
+        self.closed = False
+
+    def json(self):
+        if self.broken_json:
+            raise ValueError("syntax error in JSON")
+        return self.data
+
+    def close(self):
+        self.closed = True
+
+
+class FakeRequests:
+    def __init__(self, response=None, error=None):
+        self.response = response
+        self.error = error
+        self.calls = []
+
+    def get(self, url, headers=None, timeout=None):
+        self.calls.append((url, headers, timeout))
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
 class FakeWifi:
     def __init__(self, connected=False, status=(1, "joining"), fail_connect=False):
         self.connected = connected
@@ -2015,6 +2044,13 @@ class TestNet(unittest.TestCase):
 
     def setUp(self):
         self.N = M["mona_net"]
+
+    def run_lookup(self, lookup, start=0, frames=6):
+        for step in range(frames):
+            result = lookup.update(start + step * 10)
+            if result is not None:
+                return result
+        return None
 
     def test_firmware_modules_load_lazily(self):
         N = self.N
@@ -2073,6 +2109,59 @@ class TestNet(unittest.TestCase):
         for data, code, expected in cases:
             self.assertEqual(N.reason(data, code), expected, (data, code))
         self.assertEqual(len(N.reason({"message": "x" * 100}, 422)), 40)
+
+    def test_lookup_needs_a_handle_and_a_network(self):
+        N = self.N
+        lookup = N.Lookup(loader())
+        for handle in ("  ", "bad handle!", None):
+            self.assertEqual(lookup.start(handle, 0), ("failed", "no handle to look up"))
+        self.assertEqual(lookup.start("octocat", 0), ("failed", "no network on this badge"))
+        self.assertEqual(lookup.status, "no network on this badge")
+        self.assertFalse(lookup.busy)
+        self.assertIsNone(lookup.update(10))
+        requests = FakeRequests(FakeResponse(200, {"login": "mona"}))
+        lookup = N.Lookup(loader(requests=requests))
+        self.assertIsNone(lookup.start("mona", 0))
+        self.assertTrue(lookup.busy)
+        lookup.cancel()
+        self.assertFalse(lookup.busy)
+        self.assertIsNone(lookup.update(10))
+        self.assertEqual(requests.calls, [])
+
+    def test_blocking_request_paints_a_frame_first(self):
+        N = self.N
+        response = FakeResponse(200, {"login": "octocat", "public_repos": 8, "email": "x"})
+        requests = FakeRequests(response)
+        secrets = types.SimpleNamespace(GITHUB_TOKEN="tok")
+        lookup = N.Lookup(loader(requests=requests, wifi=FakeWifi(connected=True), secrets=secrets))
+        self.assertIsNone(lookup.start("@Octocat", 0))
+        self.assertEqual((lookup.state, lookup.status), (N.FETCHING, "asking GitHub..."))
+        self.assertIsNone(lookup.update(10))
+        self.assertEqual(requests.calls, [])
+        self.assertEqual(lookup.update(20), ("profile", {"login": "octocat", "public_repos": 8}))
+        url = N.API + "octocat"
+        self.assertEqual(requests.calls, [(url, N.headers_for(url, "tok"), N.REQUEST_TIMEOUT)])
+        self.assertTrue(response.closed)
+        self.assertEqual((lookup.busy, lookup.status), (False, ""))
+
+    def test_blocking_request_failures(self):
+        N = self.N
+        cases = (
+            (FakeRequests(FakeResponse(404, {"message": "Not Found"})), "no such GitHub user"),
+            (FakeRequests(FakeResponse(403, {"message": "API rate limit exceeded"})), "GitHub rate limit, try later"),
+            (FakeRequests(FakeResponse(500, broken_json=True)), "GitHub said 500"),
+            (FakeRequests(FakeResponse(200, broken_json=True)), "bad reply from GitHub"),
+            (FakeRequests(FakeResponse(200, {"message": "hi"})), "hi"),
+            (FakeRequests(error=OSError("ETIMEDOUT")), "lookup failed: ETIMEDOUT"),
+        )
+        for requests, expected in cases:
+            lookup = N.Lookup(loader(requests=requests))
+            self.assertIsNone(lookup.start("mona", 0))
+            self.assertEqual(self.run_lookup(lookup), ("failed", expected))
+            self.assertEqual(lookup.status, expected)
+            self.assertFalse(lookup.busy)
+            if requests.response is not None:
+                self.assertTrue(requests.response.closed)
 
 
 # App files -------------------------------------------------------------------
