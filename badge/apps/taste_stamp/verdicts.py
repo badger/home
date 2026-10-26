@@ -1,5 +1,5 @@
-# Verdicts for Taste Stamp. MicroPython dicts are unordered, so every
-# ordered collection here is a tuple.
+# Verdicts and Creative 8-Ball prompts. MicroPython dicts are unordered, so
+# every ordered collection here is a tuple.
 
 VERDICTS = (
     "SHIP IT",
@@ -34,6 +34,30 @@ FOOTERS = (
 )
 
 STAMP_HEADER = "CREATIVE DIRECTOR"
+
+# One prompt per icosahedron face: the Creative 8-Ball is a d20.
+PROMPTS = (
+    "WHAT'S THE ONE THING?",
+    "CUT IT IN HALF",
+    "SHOW THE CODE",
+    "EARN THE FIRST 3 SECONDS",
+    "KILL YOUR DARLINGS",
+    "SAY IT LIKE A DEV WOULD",
+    "MORE CONTRAST, LESS GRADIENT",
+    "NAME THE ENEMY",
+    "MAKE IT WEIRDER",
+    "ONE IDEA PER FRAME",
+    "TRUST THE WHITESPACE",
+    "WRITE THE HEADLINE FIRST",
+    "STEAL FROM THE TERMINAL",
+    "PUT A HUMAN IN IT",
+    "GO BOLDER, THEN EDIT",
+    "WOULD A DEV SCREENSHOT THIS?",
+    "LOSE THE STOCK PHOTO",
+    "FEWER WORDS, SHARPER VERBS",
+    "SHIP THE ROUGH CUT",
+    "WHAT WOULD MONA DO?",
+)
 
 
 class Rng:

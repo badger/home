@@ -1,6 +1,6 @@
 # The Creative 8-Ball: a d20 (icosahedron) that tumbles while the badge is
 # shaken and settles with one numbered face turned to the viewer, number
-# upright.
+# upright. Face number n answers with PROMPTS[n - 1].
 #
 # Pure maths with no badge APIs, so the tests can drive it. World space has
 # x right, y up and z towards the viewer; the camera sits at (0, 0, CAMERA).

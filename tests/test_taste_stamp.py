@@ -74,7 +74,7 @@ class VerdictsTests(unittest.TestCase):
         ))
 
     def test_ordered_collections_are_tuples(self):
-        for value in (V.VERDICTS, V.INKS, V.FOOTERS):
+        for value in (V.VERDICTS, V.INKS, V.FOOTERS, V.PROMPTS):
             self.assertIsInstance(value, tuple)
 
     def test_every_verdict_has_an_ink_and_a_footer(self):
@@ -96,6 +96,17 @@ class VerdictsTests(unittest.TestCase):
         for i, a in enumerate(V.INKS):
             for b in V.INKS[i + 1:]:
                 self.assertGreaterEqual(math.dist(a, b), 40, (a, b))
+
+    def test_prompts_fill_a_d20_and_are_drawable(self):
+        self.assertEqual(len(V.PROMPTS), 20)
+        self.assertEqual(len(set(V.PROMPTS)), 20)
+        self.assertEqual(V.PROMPTS[12], "STEAL FROM THE TERMINAL")
+        for prompt in V.PROMPTS:
+            self.assertEqual(prompt, prompt.upper())
+            self.assertLessEqual(set(prompt) - {" "}, set(S.GLYPHS), prompt)
+            lines = S.wrap(prompt, 14)
+            self.assertTrue(1 <= len(lines) <= 2)
+            self.assertTrue(all(lines))
 
     def test_rng_reference_values(self):
         self.assertEqual(V.Rng(1).next_u32(), 270369)
@@ -131,7 +142,7 @@ class VerdictsTests(unittest.TestCase):
 
 class StampTests(unittest.TestCase):
     def all_text(self):
-        texts = list(V.VERDICTS) + list(V.FOOTERS) + [V.STAMP_HEADER]
+        texts = list(V.VERDICTS) + list(V.FOOTERS) + [V.STAMP_HEADER] + list(V.PROMPTS)
         return texts
 
     def test_glyphs_cover_every_string_the_app_draws(self):
@@ -167,6 +178,9 @@ class StampTests(unittest.TestCase):
         self.assertEqual(S.wrap("YES, AND", 14), ("YES, AND",))
         self.assertEqual(S.wrap("SHIP IT, NOW", 9), ("SHIP IT", "NOW"))
         self.assertEqual(S.wrap(", WORD", 5), (",", "WORD"))
+        for prompt in V.PROMPTS:
+            for line in S.wrap(prompt, 14)[:-1]:
+                self.assertFalse(line.endswith(","), prompt)
 
     def test_every_stamp_is_centred_and_well_wound(self):
         for i, verdict in enumerate(V.VERDICTS):
