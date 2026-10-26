@@ -165,6 +165,20 @@ class FakeImage:
         return len([call for call in self.calls if call[0] == kind])
 
 
+def circle_raw(width=48, height=54, rgb=(110, 84, 240)):
+    """Premultiplied RGBA: an opaque disc on a transparent background."""
+    raw = bytearray(width * height * 4)
+    cx = width // 2
+    cy = height // 2
+    r2 = (min(width, height) * 2 // 5) ** 2
+    for y in range(height):
+        for x in range(width):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= r2:
+                j = (y * width + x) * 4
+                raw[j:j + 4] = bytes((rgb[0], rgb[1], rgb[2], 255))
+    return raw
+
+
 def png_size(path):
     data = Path(path).read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
@@ -924,6 +938,26 @@ class TestAscii(unittest.TestCase):
                     out = A.colour_for(p, rgb, level)
                     self.assertEqual(len(out), 3)
                     self.assertTrue(all(isinstance(c, int) and 0 <= c <= 255 for c in out))
+
+    def test_levels_and_cell_sampling(self):
+        A = self.A
+        raw = circle_raw()
+        count = A.SAMPLE_W * A.SAMPLE_H
+        levels = A.levels_from_raw(raw, count)
+        self.assertEqual(len(levels), count)
+        opaque = sum(1 for i in range(count) if raw[i * 4 + 3])
+        self.assertEqual(sum(1 for value in levels if value), opaque)
+        self.assertEqual(levels[0], 0)
+        self.assertGreaterEqual(min(value for value in levels if value), A.FLOOR)
+        self.assertEqual(max(levels), 255)
+        self.assertEqual(A.cell_samples(levels, 12, 9), (255,) * 6)
+        self.assertEqual(A.cell_samples(levels, 0, 0), (0,) * 6)
+        self.assertEqual(A.cell_rgba(raw, 12, 9), (110, 84, 240, 255))
+        self.assertEqual(A.cell_rgba(raw, 0, 0), (0, 0, 0, 0))
+        means = A.cell_means(levels)
+        self.assertEqual(len(means), A.COLS * A.ROWS)
+        self.assertEqual((means[0], max(means)), (0, 255))
+        self.assertEqual(max(A.levels_from_raw(bytearray(count * 4), count)), 0)
 
 
 # App files -------------------------------------------------------------------

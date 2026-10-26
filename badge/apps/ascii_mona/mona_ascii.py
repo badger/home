@@ -5,7 +5,17 @@ The technique ideas come from Cameron Foxly's Ascii-Motion
 matching, Bayer 4x4 ordered dithering and ANSI/Phosphor/Amber/Primer
 character and colour palettes. This module is written from scratch for the
 badge and shares no code with it.
+
+Each 8x12 teatime cell covers a 2x3 block of samples, which gives the
+six-number "shape vector" for that cell. Covered samples get a minimum
+level, which keeps dark bodies visible on a dark terminal.
 """
+
+COLS = 24
+ROWS = 18
+SAMPLE_W = COLS * 2
+SAMPLE_H = ROWS * 3
+FLOOR = 64  # level of a fully covered black sample
 
 PALETTE_NAMES = ("Primer", "ANSI", "Phosphor", "Amber")
 PRIMER = 0
@@ -62,6 +72,7 @@ def _glyphs():
 
 GLYPHS = _glyphs()
 GLYPH_COUNT = len(CHARS)
+GAMMA = bytes([int(255 * ((i / 255.0) ** 0.7) + 0.5) for i in range(256)])
 
 _shape_cache = {}
 
@@ -162,3 +173,72 @@ def colour_for(palette, rgb, level):
             break
     # Pale colours (Mona's lavender face) stay pale instead of turning grey.
     return blend(PRIMER_FG, tone, sat * 3 if sat < 33 else 100)
+
+
+def levels_from_raw(raw, count, floor=FLOOR):
+    """Per-sample levels from premultiplied RGBA: coverage-floored
+    luminance, stretched so the brightest sample is 255, then gamma 0.7.
+    Transparent samples stay 0 (blank)."""
+    lum = bytearray(count)
+    keep = 255 - floor
+    hi = 0
+    j = 0
+    for i in range(count):
+        a = raw[j + 3]
+        if a:
+            v = (54 * raw[j] + 183 * raw[j + 1] + 19 * raw[j + 2]) >> 8
+            v = (floor * a + v * keep) // 255
+            if v > 255:
+                v = 255
+            lum[i] = v
+            if v > hi:
+                hi = v
+        j += 4
+    if hi < 24:
+        hi = 255
+    lut = bytearray(256)
+    for v in range(256):
+        s = v * 255 // hi
+        lut[v] = GAMMA[s if s < 255 else 255]
+    for i in range(count):
+        lum[i] = lut[lum[i]]
+    return lum
+
+
+def cell_samples(levels, x, y, sample_w=SAMPLE_W):
+    i = y * 3 * sample_w + x * 2
+    return (
+        levels[i], levels[i + 1],
+        levels[i + sample_w], levels[i + sample_w + 1],
+        levels[i + 2 * sample_w], levels[i + 2 * sample_w + 1],
+    )
+
+
+def cell_rgba(raw, x, y, sample_w=SAMPLE_W):
+    """Average colour of a cell's covered samples (raw is premultiplied)
+    and its coverage, 0..255."""
+    r = 0
+    g = 0
+    b = 0
+    a = 0
+    for dy in range(3):
+        j = ((y * 3 + dy) * sample_w + x * 2) * 4
+        r += raw[j] + raw[j + 4]
+        g += raw[j + 1] + raw[j + 5]
+        b += raw[j + 2] + raw[j + 6]
+        a += raw[j + 3] + raw[j + 7]
+    if a <= 0:
+        return (0, 0, 0, 0)
+    r = r * 255 // a
+    g = g * 255 // a
+    b = b * 255 // a
+    return (r if r < 255 else 255, g if g < 255 else 255, b if b < 255 else 255, a // 6)
+
+
+def cell_means(levels, cols=COLS, rows=ROWS):
+    means = bytearray(cols * rows)
+    for y in range(rows):
+        for x in range(cols):
+            s = cell_samples(levels, x, y, cols * 2)
+            means[y * cols + x] = (s[0] + s[1] + s[2] + s[3] + s[4] + s[5]) // 6
+    return means
