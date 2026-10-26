@@ -17,6 +17,10 @@ SAMPLE_W = COLS * 2
 SAMPLE_H = ROWS * 3
 FLOOR = 64  # level of a fully covered black sample
 
+SHAPES = 1
+DITHER = 2
+EDGES = 3
+
 PALETTE_NAMES = ("Primer", "ANSI", "Phosphor", "Amber")
 PRIMER = 0
 ANSI = 1
@@ -26,6 +30,10 @@ AMBER = 3
 RAMPS = (" .:+*o%e&@", " .-=?o%S&@", " .:;!*xtk$", " .-=~*oO0@")
 BACKS = ((13, 17, 23), (0, 0, 0), (2, 14, 6), (16, 9, 0))
 TINTS = (None, None, (51, 255, 102), (255, 176, 0))
+# How strongly a covered cell's background takes its glyph colour, per
+# style (vector, shapes, dither, edges), like ANSI art's background colours.
+BG_PERCENT = (0, 24, 16, 0)
+COVERED = 96  # cell coverage (0..255) that earns a background tint
 
 # Primer dark-theme foreground tokens, picked by hue band (upper bound, rgb)
 PRIMER_FG = (230, 237, 243)
@@ -282,3 +290,43 @@ def cell_means(levels, cols=COLS, rows=ROWS):
             s = cell_samples(levels, x, y, cols * 2)
             means[y * cols + x] = (s[0] + s[1] + s[2] + s[3] + s[4] + s[5]) // 6
     return means
+
+
+def convert_row(style, palette, raw, levels, means, y, cols=COLS, rows=ROWS):
+    """(char, fg, bg) for every cell of grid row y; fg and bg are rgb
+    tuples, or None for a blank glyph or an untinted background."""
+    ramp = RAMPS[palette]
+    steps = len(ramp)
+    back = BACKS[palette]
+    pct = BG_PERCENT[style] if 0 <= style < len(BG_PERCENT) else 0
+    out = []
+    for x in range(cols):
+        s = cell_samples(levels, x, y, cols * 2)
+        mean = (s[0] + s[1] + s[2] + s[3] + s[4] + s[5]) // 6
+        if style == EDGES and means is not None:
+            ch = edge_char(means, x, y, ramp, cols, rows)
+        elif style == DITHER:
+            ch = ramp[dither_index(mean, x, y, steps)]
+        else:
+            ch = CHARS[match_shape(s)]
+        tinted = False
+        if pct:
+            r, g, b, cover = cell_rgba(raw, x, y, cols * 2)
+            tinted = cover >= COVERED
+        if ch == " " and not tinted:
+            out.append((ch, None, None))
+            continue
+        if not pct:
+            r, g, b, cover = cell_rgba(raw, x, y, cols * 2)
+        level = mean
+        if style == EDGES and level < 140:
+            level = 140
+        tone = colour_for(palette, (r, g, b), level)
+        bg = blend(back, tone, pct * cover // 255) if tinted else None
+        out.append((ch, None if ch == " " else tone, bg))
+    return out
+
+
+def grid_text(cells):
+    """Rows of (char, fg, bg) cells as plain text lines (for tests and logs)."""
+    return ["".join(cell[0] for cell in row) for row in cells]

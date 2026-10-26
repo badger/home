@@ -960,6 +960,36 @@ class TestAscii(unittest.TestCase):
         self.assertEqual(A.edge_char(bytearray(A.COLS * A.ROWS), 5, 5, A.RAMPS[0]), " ")
         self.assertEqual(max(A.levels_from_raw(bytearray(count * 4), count)), 0)
 
+    def test_every_style_and_palette_converts(self):
+        A = self.A
+        raw = circle_raw()
+        levels = A.levels_from_raw(raw, A.SAMPLE_W * A.SAMPLE_H)
+        means = A.cell_means(levels)
+        centre = {
+            A.SHAPES: '  "$$$$$$$$$$$$$$$$$$(  ',
+            A.DITHER: "  .@@@@@@@@@@@@@@@@@@%  ",
+            A.EDGES: "  ||::::::::::::::::||| ",
+        }
+        for style in (A.SHAPES, A.DITHER, A.EDGES):
+            for palette in range(len(A.PALETTE_NAMES)):
+                rows = [A.convert_row(style, palette, raw, levels, means if style == A.EDGES else None, y)
+                        for y in range(A.ROWS)]
+                self.assertEqual([len(row) for row in rows], [A.COLS] * A.ROWS)
+                text = A.grid_text(rows)
+                self.assertEqual(text[0], " " * A.COLS)
+                self.assertEqual(text[-1], " " * A.COLS)
+                self.assertGreaterEqual(len(text[9].strip()), 18)
+                if palette == A.PRIMER:
+                    self.assertEqual(text[9], centre[style])
+                for row in rows:
+                    for ch, fg, bg in row:
+                        self.assertEqual(len(ch), 1)
+                        for rgb in (fg, bg):
+                            if rgb is not None:
+                                self.assertTrue(all(0 <= c <= 255 for c in rgb), rgb)
+                        if style == A.EDGES:
+                            self.assertIsNone(bg)
+
 
 # App files -------------------------------------------------------------------
 
