@@ -10,9 +10,10 @@ The painted Mona (192x216, transparent around her) is halved twice into a
 transparent 48x54 sample image, so every sample keeps her coverage as alpha.
 Covered samples get a minimum level, which keeps dark bodies visible on a
 dark terminal. Each 8x12 teatime cell covers a 2x3 block of samples, which
-gives the six-number "shape vector" for that cell. The grid is built a couple of rows per frame
-into a cached image, so it types itself in like a terminal, and is only
-rebuilt when the Mona, style or palette changes.
+gives the six-number "shape vector" for that cell. The grid types itself into
+a cached image like a terminal, one row every ROW_MS of badge time and never
+more than a couple of rows a frame, and is only rebuilt when the Mona, style
+or palette changes.
 """
 
 COLS = 24
@@ -26,6 +27,7 @@ HALF_H = HEIGHT // 2
 SAMPLE_W = COLS * 2
 SAMPLE_H = ROWS * 3
 BLINK_MS = 500
+ROW_MS = 25  # the type-in adds one grid row every ROW_MS of badge.ticks time
 FLOOR = 64  # level of a fully covered black sample
 
 SHAPES = 1
@@ -352,7 +354,7 @@ def cursor_colour(palette):
 
 
 class AsciiView:
-    """Converts the painted Mona into a cached grid image, a few rows a frame."""
+    """Converts the painted Mona into a cached grid image, a row every ROW_MS."""
 
     def __init__(self):
         self.half = None
@@ -362,6 +364,7 @@ class AsciiView:
         self.style = SHAPES
         self.palette = PRIMER
         self.row = 0
+        self.since = None
         self.raw = None
         self.levels = None
         self.means = None
@@ -404,6 +407,7 @@ class AsciiView:
 
     def restart(self):
         self.row = 0
+        self.since = None
         self.ready = False
         self.dirty = self.source is not None
         self.raw = None
@@ -431,10 +435,16 @@ class AsciiView:
         self.levels = levels_from_raw(self.raw, SAMPLE_W * SAMPLE_H)
         self.means = cell_means(self.levels) if self.style == EDGES else None
 
-    def step(self, rows=2):
-        """Convert up to rows grid rows; True when the grid completes."""
+    def step(self, rows=2, now=None):
+        """Type the grid rows due by badge time now, one every ROW_MS from the
+        first step but at most rows a frame (rows a call when now is None);
+        True when the grid completes."""
         if not self.typing or not self._images():
             return False
+        if now is not None:
+            if self.since is None:
+                self.since = now
+            rows = min(rows, (now - self.since) // ROW_MS + 1 - self.row)
         for _ in range(rows):
             if self.raw is None:
                 self._sample()

@@ -8,7 +8,8 @@ its SVG parts into octocat.bin, and mona_parts indexes that file. Octocat art
 compose() applies the builder's paint order and hide rules (a hat hides big
 hair, a prop replaces the waving hand, a long top hides the trousers) and is
 plain Python, so the host tests share it with the badge. Painter streams one
-outfit's polygons from flash into an offscreen image a few layers per frame.
+outfit's polygons from flash into an offscreen image, paced by badge time
+(one layer every LAYER_MS) and capped by a per-frame time budget.
 """
 
 from array import array
@@ -26,6 +27,8 @@ except ImportError:
     def ticks_diff(a, b):
         return a - b
 
+
+LAYER_MS = 4  # the paint-in lays one layer every LAYER_MS of badge.ticks time
 
 EYES = 0
 MOUTHS = 1
@@ -211,6 +214,8 @@ class Painter:
         self.done = True
         self.drawn = 0
         self.errors = 0
+        self.laid = 0
+        self.since = None
 
     def _open(self):
         if self.file is not None or self.failed:
@@ -245,6 +250,8 @@ class Painter:
         self.transform = mat3().translate(x, y).scale(k)
         self.drawn = 0
         self.errors = 0
+        self.laid = 0
+        self.since = None
         self.done = not self._open()
         target.antialias = image.X4
         target.fill_rule = image.NON_ZERO
@@ -281,13 +288,17 @@ class Painter:
             rgb = self.colours[role] if role < len(self.colours) else 0
         return color.rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, alpha)
 
-    def step(self, budget_ms=18):
-        """Paint for about budget_ms; returns True once the outfit is done."""
+    def step(self, budget_ms=18, now=None):
+        """Lay the layers due by badge time now, one every LAYER_MS from the
+        first step (all of them when now is None), stopping once this frame
+        has spent about budget_ms; returns True once the outfit is done."""
         if self.done:
             return True
+        if now is not None and self.since is None:
+            self.since = now
         began = ticks_ms()
         target = self.target
-        while True:
+        while now is None or self.laid <= (now - self.since) // LAYER_MS:
             layer = self._next_layer()
             if layer is None:
                 self.done = True
@@ -295,6 +306,7 @@ class Painter:
                 return True
             role, rgb, alpha, variant, contours = layer
             if variant != self.skip and contours:
+                self.laid += 1
                 try:
                     made = shape.custom(*[array("f", array("h", c)) for c in contours])
                     made.transform = self.transform
@@ -305,4 +317,5 @@ class Painter:
                     self.errors += 1
             if ticks_diff(ticks_ms(), began) >= budget_ms:
                 return False
+        return False
 

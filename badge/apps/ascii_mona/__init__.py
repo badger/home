@@ -910,7 +910,7 @@ class MonaApp:
             budget = 12
         else:
             budget = 20
-        if self.painter.step(budget):
+        if self.painter.step(budget, now):
             self.painted = True
             if self.painter.failed:
                 if not self.art_warned:
@@ -1061,7 +1061,7 @@ class MonaApp:
             view = self.ascii
             if not view.failed:
                 view.set_mode(ASCII_STYLE[self.style], self.palette)
-                view.step(1 if self.ir.beaming else 2)
+                view.step(1 if self.ir.beaming else 2, now)
             if not view.failed:
                 screen.pen = pen_of(mona_ascii.BACKS[self.palette])
                 screen.clear()

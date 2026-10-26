@@ -1157,6 +1157,51 @@ class TestOcto(unittest.TestCase):
         self.assertIsNone(painter.file)
         painter.close()
 
+    def test_painter_paces_the_paint_in_by_badge_time(self):
+        O = self.O
+        self.paint_kit()
+        blocks, flags, palette = self.outfit()
+        total = self.expected_layers(blocks, flags)
+        end = (total * O.LAYER_MS // 80 + 1) * 80
+
+        def reveal(frame_ms):
+            painter = O.Painter(self.path)
+            self.addCleanup(painter.close)
+            painter.start(FakeImage(192, 216), blocks, flags, palette, 0.1, 5, 7)
+            seen = []
+            for elapsed in range(0, end + 1, frame_ms):
+                done = painter.step(10 ** 9, 7000 + elapsed)
+                if elapsed % 80 == 0:
+                    seen.append((elapsed, painter.laid, done))
+            return seen
+
+        fast, slow = reveal(16), reveal(40)
+        self.assertEqual(fast, slow)
+        self.assertEqual(len(fast), end // 80 + 1)
+        for elapsed, laid, done in fast:
+            self.assertEqual(laid, min(total, elapsed // O.LAYER_MS + 1))
+            self.assertEqual(done, elapsed >= total * O.LAYER_MS)
+        self.assertTrue(fast[-1][2])
+
+    def test_painter_budget_still_caps_a_late_frame(self):
+        O = self.O
+        self.paint_kit()
+        blocks, flags, palette = self.outfit("ada")
+        painter = O.Painter(self.path)
+        self.addCleanup(painter.close)
+        painter.start(FakeImage(), blocks, flags, palette, 0.1, 0, 0)
+        self.assertFalse(painter.step(-1, 0))
+        self.assertEqual(painter.laid, 1)
+        self.assertFalse(painter.step(10 ** 9, 0))
+        self.assertEqual(painter.laid, 1)
+        for second in range(1, 4):
+            laid = painter.laid
+            self.assertFalse(painter.step(-1, second * 1000))
+            self.assertLessEqual(painter.laid, laid + 1)
+        self.assertTrue(painter.step(10 ** 9, 60000))
+        self.assertEqual(painter.laid, painter.drawn)
+        self.assertEqual(painter.drawn, self.expected_layers(blocks, flags))
+
     def test_painter_survives_missing_bad_and_short_art(self):
         O = self.O
         self.paint_kit()
@@ -1348,6 +1393,50 @@ class TestAscii(unittest.TestCase):
         view.clear()
         self.assertFalse(view.typing)
         self.assertFalse(view.step())
+
+    def test_view_paces_the_type_in_by_badge_time(self):
+        A = self.A
+        end = ((A.ROWS - 1) * A.ROW_MS // 80 + 1) * 80
+
+        def reveal(frame_ms):
+            view = A.AsciiView()
+            view.set_source(FakeImage(A.WIDTH, A.HEIGHT))
+            self.assertTrue(view._images())
+            view.sample.raw = circle_raw()
+            seen = []
+            for elapsed in range(0, end + 1, frame_ms):
+                view.step(2, 9000 + elapsed)
+                if elapsed % 80 == 0:
+                    seen.append((elapsed, A.ROWS if view.ready else view.row, view.ready))
+            return seen
+
+        fast, slow = reveal(16), reveal(40)
+        self.assertEqual(fast, slow)
+        for elapsed, typed, ready in fast:
+            due = elapsed // A.ROW_MS + 1
+            self.assertEqual(typed, min(A.ROWS, due))
+            self.assertEqual(ready, due >= A.ROWS)
+        self.assertTrue(fast[-1][2])
+
+    def test_view_row_cap_still_bounds_a_late_frame(self):
+        A = self.A
+        view = A.AsciiView()
+        view.set_source(FakeImage(A.WIDTH, A.HEIGHT))
+        self.assertTrue(view._images())
+        view.sample.raw = circle_raw()
+        self.assertFalse(view.step(2, 0))
+        self.assertEqual(view.row, 1)
+        self.assertFalse(view.step(2, 0))
+        self.assertEqual(view.row, 1)
+        self.assertFalse(view.step(2, 60000))
+        self.assertEqual(view.row, 3)
+        self.assertFalse(view.step(1, 120000))
+        self.assertEqual(view.row, 4)
+        view.set_mode(A.EDGES, 2)
+        self.assertFalse(view.step(2, 180000))
+        self.assertEqual(view.row, 1)
+        self.assertFalse(view.step(2, 180000 + A.ROW_MS))
+        self.assertEqual(view.row, 2)
 
     def test_view_without_memory_degrades(self):
         A = self.A
@@ -2354,6 +2443,12 @@ class TestAppFiles(unittest.TestCase):
         width, height = png_size(APP_DIR / "icon.png")
         self.assertEqual(width, height)
         self.assertGreaterEqual(width, 24)
+
+    def test_app_paces_both_reveals_with_the_frame_time(self):
+        source = (APP_DIR / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("now = badge.ticks", source)
+        self.assertIn("self.painter.step(budget, now)", source)
+        self.assertIn("view.step(1 if self.ir.beaming else 2, now)", source)
 
     def test_readme_passes_the_repository_check(self):
         path = ROOT / ".github" / "scripts" / "validate_app_readmes.py"
