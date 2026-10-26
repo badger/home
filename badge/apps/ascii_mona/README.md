@@ -102,3 +102,22 @@ The three ASCII styles redraw the Mona as a 24 x 18 grid of 8 x 12 pixel charact
 - **Edges** traces the outlines with a Sobel filter and draws them as line art.
 
 UP cycles the Primer, ANSI, Phosphor and Amber palettes. If the badge runs short of memory, the ASCII styles fall back to Vector.
+
+## Hardware and network
+
+- **IR:** NEC frames go out through GPIO16 (IR TX) and come in through GPIO17 (IR RX). A Mona travels on address `0x4C` as a packet of one-byte frames:
+  - `A5 5A` and a length byte
+  - a version byte, the 19 DNA bytes and the handle in ASCII
+  - a CRC-8
+
+  The beam sends the packet twice, then the quest code. Each frame takes about 80 ms, so a beam for an eight-letter handle takes about six seconds. The receiver ignores its own echo, and repeats of a Mona it caught in the last 15 seconds.
+- **Bluetooth badge link (`badgeware.link`):** carries the back-to-back swap. Both badges must be running ASCII Mona.
+- **Wi-Fi (optional):** used only for the GitHub profile lookup, on the network saved in Settings. To raise the GitHub API rate limit, set `GITHUB_TOKEN` in `secrets.py` on the badge. The app sends it only to `api.github.com`.
+- **Case lights:** flash while beaming and follow the proximity swap the way Contacts does. They turn off when you leave the app.
+- **Memory:** the app reads the MyOctocat art from `octocat.bin` on demand and caches only the parts the Mona on screen wears. Retained heap is about 1 MB.
+
+The app saves your style, palette, recent Monas, profiles, your tweaked Mona and the last handle you typed in `/state/ascii_mona.json`.
+
+## Simulator
+
+The Badge Simulator has no IR or badge link. There, a beam runs with the same timing, the badge shows "Simulated beam: no IR sender here", and no Mona arrives from another badge. Everything else works, including the letter wheel, Tweak, every style and the DNA card. The GitHub lookup uses your computer's network.
