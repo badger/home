@@ -525,6 +525,20 @@ class EightBallTests(unittest.TestCase):
         self.assertLess(abs(starts[0] - starts[1]), 50)
         self.assertAlmostEqual(starts[0], E.FRICTION_TAU * math.log(18 / E.LAND_SPEED), delta=60)
 
+    def test_projection_stays_inside_the_liquid(self):
+        rng = V.Rng(12)
+        ball = E.Ball(rng.random)
+        for _ in range(200):
+            ball.q = random_quaternion(rng)
+            points, visible = ball.project(160, 100, 24)
+            self.assertEqual(len(points), 12)
+            for x, y in points:
+                self.assertLess(math.hypot(x - 160, y - 100), 54)
+            self.assertIn(ball.facing_face(), [entry[0] for entry in visible])
+            for i, level, nz in visible:
+                self.assertIn(level, range(E.LEVELS + 1))
+                self.assertGreater(nz, 0)
+
     def test_quaternion_helpers(self):
         q = E.q_axis_angle((0.0, 0.0, 1.0), math.pi / 2)
         for a, b in zip(rotate(q, (1.0, 0.0, 0.0)), (0.0, 1.0, 0.0)):
@@ -558,6 +572,41 @@ class EightBallTests(unittest.TestCase):
             borders[g] += 1
         self.assertEqual(borders, [3] * len(self.faces))
         self.assertEqual(E.Ball(V.Rng(1).random).edges, edges)
+
+    def test_projection_and_culling_match_the_3d_camera(self):
+        # project() culls by screen winding; in perspective that must agree
+        # with facing the camera at (0, 0, CAMERA) in 3D.
+        rng = V.Rng(22)
+        ball = E.Ball(rng.random)
+        cx, cy, scale = 160, 100, 24
+        checked = 0
+        for _ in range(300):
+            ball.q = random_quaternion(rng)
+            m = E.q_matrix(ball.q)
+
+            def world(v):
+                return [m[r][0] * v[0] + m[r][1] * v[1] + m[r][2] * v[2] for r in range(3)]
+
+            points, visible = ball.project(cx, cy, scale)
+            for v, p in zip(ball.verts, points):
+                x, y, z = world(v)
+                k = scale * E.CAMERA / (E.CAMERA - z)
+                self.assertAlmostEqual(p[0], cx + x * k, places=6)
+                self.assertAlmostEqual(p[1], cy - y * k, places=6)
+            shown = {}
+            for i, level, nz in visible:
+                shown[i] = nz
+            for i in range(len(ball.faces)):
+                n = world(ball.normals[i])
+                c = world(ball.centres[i])
+                facing = -c[0] * n[0] - c[1] * n[1] + (E.CAMERA - c[2]) * n[2]
+                if i in shown:
+                    self.assertAlmostEqual(shown[i], n[2], places=9)
+                if abs(facing) < 1e-6:
+                    continue
+                self.assertEqual(i in shown, facing > 0, (i, facing))
+                checked += 1
+        self.assertGreater(checked, 5900)
 
 
 def read_png(path):

@@ -3,11 +3,14 @@
 # upright.
 #
 # Pure maths with no badge APIs, so the tests can drive it. World space has
-# x right, y up and z towards the viewer.
+# x right, y up and z towards the viewer; the camera sits at (0, 0, CAMERA).
 
 import math
 
 PHI = (1.0 + math.sqrt(5.0)) * 0.5
+CAMERA = 8.0
+LIGHT = (-0.38, 0.53, 0.76)
+LEVELS = 16
 
 IDLE, SPINNING, SETTLING, LANDED = 0, 1, 2, 3
 
@@ -326,3 +329,43 @@ class Ball:
         if self.face is None:
             return None
         return self.numbers[self.face]
+
+    def project(self, cx, cy, scale):
+        # Returns (points, visible): points are the 12 screen positions and
+        # visible lists (face index, shade level 0-LEVELS, facing z) for the
+        # faces turned towards the camera.
+        # Runs every frame, so it keeps float maths (each result allocates
+        # on the badge) to the vertices and the faces that are drawn.
+        m = q_matrix(self.q)
+        a0, a1, a2 = m[0]
+        b0, b1, b2 = m[1]
+        c0, c1, c2 = m[2]
+        k0 = scale * CAMERA
+        points = []
+        for v in self.verts:
+            x, y, z = v
+            k = k0 / (CAMERA - (c0 * x + c1 * y + c2 * z))
+            points.append((cx + (a0 * x + a1 * y + a2 * z) * k, cy - (b0 * x + b1 * y + b2 * z) * k))
+        # The light turned into body space, so a face needs one dot product.
+        lx, ly, lz = LIGHT
+        bx = a0 * lx + b0 * ly + c0 * lz
+        by = a1 * lx + b1 * ly + c1 * lz
+        bz = a2 * lx + b2 * ly + c2 * lz
+        faces = self.faces
+        normals = self.normals
+        visible = []
+        for i in range(len(faces)):
+            face = faces[i]
+            p = points[face[0]]
+            q = points[face[1]]
+            r = points[face[2]]
+            # Faces wind counter-clockwise seen from outside, so a face
+            # turned to the camera winds clockwise on the y-down screen.
+            # In perspective this matches the 3D test against the camera.
+            if (q[0] - p[0]) * (r[1] - p[1]) >= (q[1] - p[1]) * (r[0] - p[0]):
+                continue
+            n = normals[i]
+            light = n[0] * bx + n[1] * by + n[2] * bz
+            level = int(LEVELS * (0.22 + 0.78 * max(0.0, light)) + 0.5)
+            visible.append((i, min(LEVELS, level), c0 * n[0] + c1 * n[1] + c2 * n[2]))
+        return points, visible
