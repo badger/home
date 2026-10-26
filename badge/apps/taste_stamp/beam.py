@@ -4,6 +4,9 @@
 # burst. The NEC protocol already carries a checksum for the address and
 # the command. Beams only reach badges that are running Taste Stamp, since
 # the receiver is bound by this app.
+#
+# The Badge Simulator has no IR hardware. Every IR call is guarded, so the
+# app runs there and reports that the beam was only simulated.
 
 ADDRESS = 0x53
 TX_PIN = 16

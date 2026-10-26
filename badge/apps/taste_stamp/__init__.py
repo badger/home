@@ -4,6 +4,8 @@
 # verdict onto the brief, with screen shake and a case-light strobe.
 # 8-Ball mode: shake the badge (or press DOWN) to tumble a dithered d20 that
 # lands on a Studio creative direction.
+# SELECT beams the verdict or prompt over IR to nearby badges that are
+# running Taste Stamp.
 
 import os
 import random
@@ -32,7 +34,7 @@ sys.path.insert(0, APP_DIR)
 
 # The helpers have generic names, so drop copies another app may have left
 # in sys.modules before importing this app's own.
-HELPERS = ("eightball", "motion", "stamp", "verdicts")
+HELPERS = ("beam", "eightball", "motion", "stamp", "verdicts")
 
 
 def forget_helpers():
@@ -43,6 +45,7 @@ def forget_helpers():
 
 forget_helpers()
 
+import beam  # noqa: E402
 import eightball  # noqa: E402
 import motion  # noqa: E402
 import stamp  # noqa: E402
@@ -139,6 +142,8 @@ NUMBER_HW = 0.065
 GLOW_MS = 400
 
 TOAST_MS = 1800
+STAMP_HINT = "STAMP SOMETHING FIRST"
+SPIN_HINT = "SHAKE TO SPIN FIRST"
 
 STAMP_MODE = 0
 BALL_MODE = 1
@@ -381,6 +386,7 @@ class App:
         self.bag = verdicts.ShuffleBag(len(verdicts.VERDICTS), rng)
         self.slam = None
         self.marks = []
+        self.last_verdict = None
         self.desk = screen_like_image()
         self.desk.antialias = image.X2
         # The brief's header is vector text, which needs EVEN_ODD.
@@ -397,6 +403,7 @@ class App:
         self.toast_until = 0
         self.glow_start = None
         self.lights = None
+        self.link = beam.Beam(len(verdicts.VERDICTS), len(verdicts.PROMPTS), beam.make_sender())
         self.render_desk()
 
     # Frame loop.
@@ -417,6 +424,7 @@ class App:
             on_exit()
             return False
         self.handle_motion(now, flipped, chopped, shaking, reversal)
+        self.handle_ir(now)
         if self.slam is not None:
             self.advance_slam(now, dt)
         if self.mode == BALL_MODE and self.ball.update(dt, now, shaking):
@@ -442,9 +450,13 @@ class App:
                 self.cycle_choice(now)
             if badge.pressed(BUTTON_DOWN):
                 self.start_slam(self.next_verdict(), now)
+            if badge.pressed(BUTTON_SELECT):
+                self.beam_verdict(now)
         else:
             if badge.pressed(BUTTON_DOWN) or badge.pressed(BUTTON_UP):
                 self.kick(18, now)
+            if badge.pressed(BUTTON_SELECT):
+                self.beam_prompt(now)
         return True
 
     def back(self, now):
@@ -452,6 +464,7 @@ class App:
             if self.slam is not None or self.marks:
                 self.finish_slam()
                 self.marks = []
+                self.last_verdict = None
                 self.render_desk()
                 self.toast("FRESH PAPER", now)
                 return True
@@ -477,6 +490,10 @@ class App:
             elif reversal:
                 self.kick(5, now)
         self.was_shaking = shaking
+
+    def handle_ir(self, now):
+        if not self.link.pump(now):
+            self.toast("IR SEND FAILED", now)
 
     # Modes and choices.
 
@@ -516,6 +533,30 @@ class App:
         self.toast_text = text
         self.toast_until = now + TOAST_MS
 
+    # Beaming.
+
+    def beam_verdict(self, now):
+        if self.last_verdict is None:
+            self.toast(STAMP_HINT, now)
+            return
+        self.send_beam(beam.VERDICT, self.last_verdict, now)
+
+    def beam_prompt(self, now):
+        number = self.ball.number()
+        if self.ball.state != eightball.LANDED or number is None:
+            self.toast(SPIN_HINT, now)
+            return
+        self.send_beam(beam.PROMPT, number - 1, now)
+
+    def send_beam(self, kind, index, now):
+        if self.link.busy():
+            self.toast("STILL BEAMING", now)
+            return
+        if self.link.send(kind, index, now):
+            self.toast("BEAMING TO NEARBY BADGES", now)
+        else:
+            self.toast("NO IR HERE: BEAM SIMULATED", now)
+
     # Stamp slams.
 
     def start_slam(self, index, now):
@@ -525,6 +566,7 @@ class App:
         if self.marks:
             self.render_desk()
         self.slam = Slam(index, now)
+        self.last_verdict = index
 
     def advance_slam(self, now, dt):
         s = self.slam
@@ -641,6 +683,10 @@ class App:
         else:
             screen.pen = rgb(lighten(verdicts.INKS[self.choice], 0.45))
         screen.text("NEXT: " + self.choice_label(), PAPER_X, BOTTOM_Y)
+        if self.last_verdict is not None:
+            hint = "SELECT: BEAM"
+            screen.pen = DIM_C
+            screen.text(hint, W - PAPER_X - text_width(hint), BOTTOM_Y)
         screen.font = UI_FONT
 
     def draw_falling(self, s, t, ox, oy):
@@ -762,6 +808,9 @@ class App:
             for i in range(min(shown, len(self.prompt))):
                 screen.shape(self.prompt[i])
             screen.fill_rule = image.EVEN_ODD
+            screen.font = SMALL_FONT
+            self.centred("SELECT: BEAM IT", CARD_Y + CARD_H - 15, DIM_C)
+            screen.font = UI_FONT
         elif state == eightball.IDLE:
             screen.font = UI_FONT
             self.centred("SHAKE FOR A CREATIVE DIRECTION", CARD_Y + 12, WHITE_C)
@@ -818,6 +867,10 @@ def update():
 
 def on_exit():
     set_lights(None)
+    try:
+        app.link.close()
+    except Exception:
+        pass
     try:
         badge.default_clear = previous_clear
     except Exception:
