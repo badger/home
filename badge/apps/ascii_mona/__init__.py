@@ -1,8 +1,9 @@
 """ASCII Mona: a custom MyOctocat for any GitHub handle.
 
 A handle becomes 19 numbers of Mona DNA that pick parts and colours from
-GitHub's own MyOctocat library (myoctocat.com). The badge paints its owner's
-Mona as vector art, or as ASCII art built with Ascii-Motion's techniques.
+GitHub's own MyOctocat library (myoctocat.com). The badge paints that outfit
+as vector art, or as ASCII art built with Ascii-Motion's techniques. Handles
+come from the badge owner and from saved Contacts cards.
 """
 
 import gc
@@ -34,6 +35,7 @@ except ImportError:
 
 import mona_ascii
 import mona_dna
+import mona_link
 import mona_net
 import mona_octo
 
@@ -86,7 +88,10 @@ def _art_file():
 ART_FILE = _art_file()
 
 STATE_KEY = "ascii_mona"
+CONTACTS_FILE = "/state/contacts.json"
 BADGE_USER_FILE = "/state/badge_user.json"
+MAX_RECENT = 8
+MAX_CONTACTS = 24
 
 WIDTH = 320
 HEIGHT = 240
@@ -103,19 +108,32 @@ PANEL_W = WIDTH - PANEL_X - 2
 TITLE_SIZE = 15
 BODY_SIZE = 14
 SMALL_SIZE = 12
+WHO_ROWS = 6
 
 TOAST_MS = 2600
 HINT_SWAP_MS = 4000
 
+MAIN = 0
+WHO = 1
+
 STYLES = ("Vector", "Shapes", "Dither", "Edges")
 VECTOR = 0
 ASCII_STYLE = (0, mona_ascii.SHAPES, mona_ascii.DITHER, mona_ascii.EDGES)
+# (saved value, what the panel calls it)
+VIAS = (
+    ("you", "Your Mona"),
+    ("contact", "From Contacts"),
+    ("surprise", "Surprise Mona"),
+    ("saved", "Saved Mona"),
+)
 
 WHITE = color.rgb(240, 246, 252)
 DIM = color.rgb(255, 255, 255, 150)
 FAINT = color.rgb(255, 255, 255, 50)
+INK = color.rgb(1, 4, 9)
 BAR = color.rgb(22, 27, 34)
 PANEL = color.rgb(13, 17, 23, 238)
+PICKED = color.rgb(110, 64, 201, 170)
 ACCENT = color.rgb(191, 135, 255)
 GREEN = color.rgb(86, 211, 100)
 RED = color.rgb(255, 123, 114)
@@ -207,6 +225,10 @@ def new_image(w, h):
         return None
 
 
+ROW_PICK = 1
+ROW_SURPRISE = 2
+
+
 # -- identity and saved Monas -------------------------------------------
 
 def secret(key):
@@ -247,6 +269,35 @@ def badge_uid():
         return "badge"
 
 
+def via_label(via):
+    for key, label in VIAS:
+        if key == via:
+            return label
+    return "Saved Mona"
+
+
+def known_via(via):
+    for key, _ in VIAS:
+        if key == via:
+            return True
+    return False
+
+
+def make_record(handle, dna, name, via):
+    return {"github": handle, "dna": mona_dna.dna_hex(dna), "name": name, "via": via}
+
+
+def read_record(value):
+    """(handle, dna, name, via) from a saved record, or None."""
+    card = mona_link.read_card(value)
+    if card is None:
+        return None
+    via = value.get("via")
+    if not known_via(via):
+        via = "saved"
+    return (card[0], card[1], card[2], via)
+
+
 def load_owner():
     """(handle, dna, name, profile) for whoever wears this badge."""
     profile = mona_net.slim(read_json(BADGE_USER_FILE))
@@ -265,6 +316,21 @@ def load_owner():
     return (handle, dna, name, profile)
 
 
+def load_contacts():
+    """(handle, dna, name) for cards saved by the Contacts app, newest first."""
+    data = read_json(CONTACTS_FILE)
+    cards = data.get("cards") if isinstance(data, dict) else None
+    out = []
+    if isinstance(cards, list):
+        for card in cards:
+            got = mona_link.read_card(card)
+            if got is not None and got[0]:
+                out.append(got)
+                if len(out) >= MAX_CONTACTS:
+                    break
+    return out
+
+
 def who_label(handle, dna):
     if handle:
         return "@" + handle
@@ -279,11 +345,14 @@ def backdrop_key(handle, dna):
 
 class MonaApp:
     def __init__(self):
+        self.recent = []
         self.style = VECTOR
         self.palette = mona_ascii.PRIMER
+        self.current = None
         self.load()
         self.owner = load_owner()
-        self.current = self.me()
+        if self.current is None or self.current[3] == "you":
+            self.current = self.me()
 
         self.art = new_image(ART_W, ART_H)
         self.back = new_image(WIDTH, FOOT_Y)
@@ -299,8 +368,12 @@ class MonaApp:
         self.art_warned = False
         self.ascii = mona_ascii.AsciiView()
         self.ascii_warned = False
+        self.rng = mona_dna.Rng(mona_dna.fmix32((mona_dna.seed_of(badge_uid()) ^ badge.ticks) & mona_dna.MASK))
 
+        self.view = MAIN
         self.info = False
+        self.rows = []
+        self.row = 0
         self.toast = ""
         self.toast_pen = WHITE
         self.toast_until = 0
@@ -310,7 +383,7 @@ class MonaApp:
         return (self.owner[0], self.owner[1], self.owner[2], "you")
 
     def load(self):
-        data = {"style": VECTOR, "palette": 0}
+        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0}
         try:
             STORE.load(STATE_KEY, data)
         except Exception:
@@ -321,9 +394,18 @@ class MonaApp:
         palette = data.get("palette")
         if isinstance(palette, int) and 0 <= palette < len(mona_ascii.PALETTE_NAMES):
             self.palette = palette
+        recent = data.get("recent")
+        if isinstance(recent, list):
+            for item in recent:
+                rec = read_record(item)
+                if rec is not None and len(self.recent) < MAX_RECENT:
+                    self.recent.append(rec)
+        self.current = read_record(data.get("current"))
 
     def save(self):
         data = {
+            "current": make_record(self.current[0], self.current[1], self.current[2], self.current[3]),
+            "recent": [make_record(r[0], r[1], r[2], r[3]) for r in self.recent],
             "style": self.style,
             "palette": self.palette,
         }
@@ -331,6 +413,35 @@ class MonaApp:
             STORE.save(STATE_KEY, data)
         except Exception:
             pass
+
+    def remember(self, rec):
+        """Put a Mona at the top of the recent list (not you, no repeats)."""
+        handle, dna = rec[0], rec[1]
+        if rec[3] == "you" or same(handle, self.owner[0]):
+            return
+        keep = [rec]
+        for old in self.recent:
+            if handle and same(old[0], handle):
+                continue
+            if not handle and not old[0] and old[1] == dna:
+                continue
+            if len(keep) < MAX_RECENT:
+                keep.append(old)
+        self.recent = keep
+
+    def tuned(self, handle):
+        """Mona DNA for a handle."""
+        return mona_dna.dna_for(handle)
+
+    def adopt(self, handle, dna, name, via):
+        rec = (handle or "", tuple(dna), name or "", via)
+        self.remember(rec)
+        self.info = False
+        self.show(rec)
+        self.save()
+
+    def show(self, rec):
+        self.current = rec
 
     def say(self, text, pen=WHITE):
         self.toast = mona_dna.clean_text(text, 60)
@@ -350,6 +461,8 @@ class MonaApp:
             else:
                 self.palette = (self.palette + 1) % len(mona_ascii.PALETTE_NAMES)
                 self.save()
+        elif badge.pressed(BUTTON_DOWN):
+            self.open_who()
         elif badge.pressed(BUTTON_BACK):
             if self.info:
                 self.info = False
@@ -360,6 +473,53 @@ class MonaApp:
         self.style = style % len(STYLES)
         self.info = False
         self.save()
+
+    def open_who(self):
+        """The handle picker: you, recent Monas, contacts, surprise."""
+        me = self.me()
+        rows = [(ROW_PICK, who_label(me[0], me[1]), "you", me)]
+        seen = [me[0].lower()] if me[0] else []
+        for rec in self.recent:
+            if rec[0]:
+                if rec[0].lower() in seen:
+                    continue
+                seen.append(rec[0].lower())
+            rows.append((ROW_PICK, who_label(rec[0], rec[1]), via_label(rec[3]), rec))
+        for handle, dna, name in load_contacts():
+            if handle.lower() in seen:
+                continue
+            seen.append(handle.lower())
+            rows.append((ROW_PICK, "@" + handle, name or "contact", (handle, self.tuned(handle), name, "contact")))
+        rows.append((ROW_SURPRISE, "Surprise me", "random DNA", None))
+        self.rows = rows
+        self.row = 0
+        for i in range(len(rows)):
+            rec = rows[i][3]
+            if rec is not None and rec[0] == self.current[0] and rec[1] == self.current[1]:
+                self.row = i
+                break
+        self.view = WHO
+
+    def who_input(self, now):
+        count = len(self.rows)
+        if badge.pressed(BUTTON_UP):
+            self.row = (self.row - 1) % count
+        elif badge.pressed(BUTTON_DOWN):
+            self.row = (self.row + 1) % count
+        elif badge.pressed(BUTTON_SELECT):
+            self.pick(self.rows[self.row], now)
+        elif badge.pressed(BUTTON_BACK) or badge.pressed(BUTTON_LEFT):
+            self.view = MAIN
+
+    def pick(self, row, now):
+        kind, rec = row[0], row[3]
+        self.view = MAIN
+        if kind == ROW_SURPRISE:
+            dna = mona_dna.random_dna((self.rng.next() ^ now) & mona_dna.MASK)
+            self.adopt("", dna, "", "surprise")
+            self.say("A mystery Mona appears", ACCENT)
+        else:
+            self.adopt(rec[0], rec[1], rec[2], rec[3])
 
     # -- painting ---------------------------------------------------------------
 
@@ -459,7 +619,10 @@ class MonaApp:
         if self.closed:
             return
         now = badge.ticks
-        self.main_input(now)
+        if self.view == WHO:
+            self.who_input(now)
+        else:
+            self.main_input(now)
         if self.closed:
             return
         self.paint(now)
@@ -482,11 +645,14 @@ class MonaApp:
     # -- drawing ----------------------------------------------------------------
 
     def draw(self, now):
-        self.draw_stage(now)
-        if self.info:
-            self.draw_info()
+        if self.view == WHO:
+            self.draw_who()
         else:
-            self.draw_panel(now)
+            self.draw_stage(now)
+            if self.info:
+                self.draw_info()
+            else:
+                self.draw_panel(now)
         self.draw_footer(now)
         if self.toast and now - self.toast_until < 0:
             self.draw_toast()
@@ -576,7 +742,7 @@ class MonaApp:
             screen.shape(shape.circle(left + 3, ty + 7, 2))
             write(item, left + 10, ty, SMALL_SIZE, WHITE, room - 10)
             ty += 17
-        write("Your Mona", left, y + 150, SMALL_SIZE, DIM, room)
+        write(via_label(via), left, y + 150, SMALL_SIZE, DIM, room)
         write(self.style_label(), left, y + 166, SMALL_SIZE, DIM, room)
         text, pen, percent = self.status(now)
         write(text, left, y + 186, SMALL_SIZE, pen, room)
@@ -587,7 +753,7 @@ class MonaApp:
         x, y, w, h = 6, 4, 308, 212
         box(x, y, w, h, PANEL, 10)
         handle, dna, name, via = self.current
-        via_text = write("Your Mona", x + w - 10, y + 9, SMALL_SIZE, DIM, 0, "r")
+        via_text = write(via_label(via), x + w - 10, y + 9, SMALL_SIZE, DIM, 0, "r")
         write(who_label(handle, dna), x + 10, y + 6, TITLE_SIZE, WHITE, w - 30 - measure(via_text, SMALL_SIZE))
         rows = mona_dna.describe(dna)
         half = (len(rows) + 1) // 2
@@ -603,11 +769,29 @@ class MonaApp:
             write("Mystery Mona: no GitHub profile", x + 10, y + 148, SMALL_SIZE, DIM, w - 20)
         write("DNA " + mona_dna.dna_hex(dna), x + 10, y + 196, SMALL_SIZE, DIM, w - 20)
 
+    def draw_who(self):
+        screen.pen = INK
+        screen.clear()
+        count = len(self.rows)
+        write("Who gets a Mona?", 16, 8, TITLE_SIZE, WHITE)
+        write("%d/%d" % (self.row + 1, count), WIDTH - 16, 10, SMALL_SIZE, DIM, 0, "r")
+        first = max(0, min(self.row - WHO_ROWS // 2, count - WHO_ROWS))
+        for i in range(first, min(count, first + WHO_ROWS)):
+            kind, label, note, rec = self.rows[i]
+            y = 34 + (i - first) * 27
+            if i == self.row:
+                box(10, y, WIDTH - 20, 25, PICKED, 6)
+            note = write(note, WIDTH - 18, y + 6, SMALL_SIZE, DIM, 110, "r") if note else ""
+            room = WIDTH - 52 - (measure(note, SMALL_SIZE) if note else 0)
+            write(label, 18, y + 4, BODY_SIZE, WHITE if kind == ROW_PICK else ACCENT, room)
+
     def hints(self):
+        if self.view == WHO:
+            return ("UP/DOWN choose  SELECT pick  BACK close",)
         if self.info:
             return ("UP/BACK close",)
         first = "LEFT/RIGHT style  UP " + ("info" if self.style == VECTOR else "colours")
-        second = "BACK exit"
+        second = "DOWN pick a handle  BACK exit"
         return (first, second)
 
     def draw_footer(self, now):
