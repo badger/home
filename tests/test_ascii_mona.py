@@ -293,6 +293,41 @@ def install_sender(test, sender):
     install_modules(test, {"aye_arr": package, "aye_arr.nec": nec})
 
 
+class FakePartner:
+    def __init__(self, ident, name):
+        self.id = ident
+        self.name = name
+
+
+class FakeProximity:
+    def __init__(self, link):
+        self.link = link
+        self.updates = 0
+        self.rested = []
+        self.cleared = 0
+
+    def update(self, now):
+        self.updates += 1
+
+    def rest(self, partner_id, now):
+        self.rested.append(partner_id)
+
+    def clear(self):
+        self.cleared += 1
+
+    def lights(self, now):
+        return (0.25,)
+
+    def syncing(self):
+        return None
+
+    def progress(self, now):
+        return 0
+
+    def cooling(self, now):
+        return None
+
+
 class FakeLink:
     """badgeware.link.Link: messages sent go straight into the peer's queue."""
 
@@ -340,6 +375,22 @@ class FakeLink:
 
     def close(self):
         self.closed = True
+
+
+def link_module(link):
+    def make(game):
+        link.games.append(game)
+        return link
+
+    return types.SimpleNamespace(Link=make, Proximity=FakeProximity)
+
+
+def pair(a, b, a_name="Ann", b_name="Bea"):
+    a.peer = b
+    b.peer = a
+    a.linked = b.linked = True
+    a.partner = FakePartner("id-b", b_name)
+    b.partner = FakePartner("id-a", a_name)
 
 
 def circle_raw(width=48, height=54, rgb=(110, 84, 240)):
@@ -1604,6 +1655,25 @@ class TestLink(unittest.TestCase):
         self.L = M["mona_link"]
         self.D = M["mona_dna"]
 
+    def badge(self, handle, name, capacity=48):
+        L, D = self.L, self.D
+        link = FakeLink(capacity)
+        mona = L.MonaLink(L.make_card(handle, D.dna_for(handle), name))
+        self.assertTrue(mona.open(link_module(link)))
+        self.assertEqual(link.games, [L.GAME])
+        return mona, link
+
+    def frames(self, badges, start, count, step=50, idle=True):
+        got = [[] for _ in badges]
+        now = start
+        for _ in range(count):
+            for index, mona in enumerate(badges):
+                found = mona.update(now, idle)
+                if found is not None:
+                    got[index].append(found)
+            now += step
+        return got, now
+
     def test_cards_round_trip_and_accept_contacts_cards(self):
         L, D = self.L, self.D
         dna = D.dna_for("octocat")
@@ -1649,6 +1719,126 @@ class TestLink(unittest.TestCase):
         inbox.add(b"C\x00\x03a")
         self.assertIsNone(inbox.add(b"C\x00\x02b"))
         self.assertEqual(inbox.add(b"C\x01\x02c"), b"bc")
+
+    def test_two_badges_swap_cards_then_share(self):
+        L, D = self.L, self.D
+        ann, ann_link = self.badge("octocat", "Ann")
+        bea, bea_link = self.badge("ada", "Bea", capacity=20)
+        self.assertIsNone(ann.hint(0))
+        self.assertEqual(ann.lights(0, True), (0.25,))
+        self.assertIsNone(ann.update(0, True))
+        pair(ann_link, bea_link)
+        got, now = self.frames((ann, bea), 100, 3)
+        self.assertEqual(got[0], [("card", "ada", D.dna_for("ada"), "Bea")])
+        self.assertEqual(got[1], [("card", "octocat", D.dna_for("octocat"), "Ann")])
+        for mona in (ann, bea):
+            self.assertTrue(mona.lingering)
+            self.assertEqual(mona.status, "swapped")
+            self.assertEqual(mona.hint(now), ("linked: SELECT shares by link too", None))
+        self.assertGreater(len(bea_link.sent), 2)
+        shared = D.dna_for("mona")
+        self.assertTrue(ann.share_mona("mona", shared, "Mona", now))
+        got, now = self.frames((ann, bea), now, 2)
+        self.assertEqual(got, [[], [("share", "mona", shared, "Mona")]])
+        got, now = self.frames((ann, bea), now + L.LINGER_MS, 2)
+        self.assertEqual(got, [[], []])
+        self.assertEqual((ann.state, bea.state), (L.IDLE, L.IDLE))
+        self.assertFalse(ann_link.linked)
+        self.assertEqual(ann.prox.rested[-1], "id-b")
+        self.assertFalse(ann.share_mona("mona", shared, "", now))
+
+    def test_swap_progress_hints_and_lights(self):
+        L = self.L
+        ann, ann_link = self.badge("octocat", "Ann")
+        bea, bea_link = self.badge("ada", "Bea")
+        pair(ann_link, bea_link)
+        ann.update(0, True)
+        self.assertTrue(ann.swapping)
+        self.assertEqual(ann.partner_name, "Bea")
+        self.assertEqual(ann.hint(0), ("swapping with Bea", None))
+        self.assertEqual(ann.lights(0, True), (0.5,))
+        self.assertIsNone(bea.lights(0, False))
+
+    def test_busy_badges_refuse_a_link(self):
+        L = self.L
+        ann, ann_link = self.badge("octocat", "Ann")
+        bea, bea_link = self.badge("ada", "Bea")
+        pair(ann_link, bea_link)
+        self.assertIsNone(ann.update(0, False))
+        self.assertEqual(ann.state, L.IDLE)
+        self.assertEqual(ann_link.left, 1)
+        self.assertFalse(bea_link.linked)
+
+    def test_walking_away_mid_swap(self):
+        L, D = self.L, self.D
+        ann, ann_link = self.badge("octocat", "Ann")
+        bea, bea_link = self.badge("ada", "Bea")
+        pair(ann_link, bea_link)
+        ann.update(0, True)
+        ann_link.linked = False
+        self.assertIsNone(ann.update(50, True))
+        self.assertEqual(ann.status, "they walked away")
+        self.assertEqual(ann.prox.cleared, 1)
+        self.assertEqual(ann.state, L.IDLE)
+        carol, carol_link = self.badge("octocat", "Carol")
+        dan, dan_link = self.badge("hubot", "Dan")
+        pair(carol_link, dan_link)
+        dan.update(0, True)
+        carol.update(0, True)
+        self.assertIsNotNone(carol.got)
+        self.assertFalse(carol.acked)
+        carol_link.linked = False
+        self.assertEqual(carol.update(50, True), ("card", "hubot", D.dna_for("hubot"), "Dan"))
+        self.assertEqual(carol.prox.rested, ["id-b"])
+
+    def test_silent_partner_times_out(self):
+        L = self.L
+        ann, ann_link = self.badge("octocat", "Ann")
+        _bea, bea_link = self.badge("ada", "Bea")
+        pair(ann_link, bea_link)
+        ann.update(0, True)
+        self.assertIsNone(ann.update(L.SWAP_MS - 1, True))
+        self.assertTrue(ann.swapping)
+        self.assertIsNone(ann.update(L.SWAP_MS + 1, True))
+        self.assertEqual(ann.status, "swap failed, try again")
+        self.assertEqual(ann_link.left, 1)
+        self.assertEqual(ann.state, L.IDLE)
+
+    def test_missing_or_broken_link_never_crashes(self):
+        L, D = self.L, self.D
+        install_modules(self, {"badgeware": None, "badgeware.link": None})
+        mona = L.MonaLink(L.make_card("octocat", D.dna_for("octocat")))
+        self.assertFalse(mona.open())
+        self.assertEqual(mona.error, "badge link unavailable")
+        self.assertFalse(mona.available)
+        self.assertIsNone(mona.update(0, True))
+        self.assertIsNone(mona.lights(0, True))
+        self.assertIsNone(mona.hint(0))
+        self.assertFalse(mona.share_mona("ada", D.dna_for("ada"), "", 0))
+        mona.close()
+
+        def refuse(game):
+            raise OSError("radio off")
+
+        self.assertFalse(L.MonaLink({}).open(types.SimpleNamespace(Link=refuse, Proximity=FakeProximity)))
+        ann, ann_link = self.badge("octocat", "Ann")
+        bea, bea_link = self.badge("ada", "Bea")
+        pair(ann_link, bea_link)
+        ann.update(0, True)
+
+        def explode():
+            raise OSError("radio glitch")
+
+        ann_link.receive = explode
+        self.assertIsNone(ann.update(10, True))
+        self.assertEqual(ann.error, "link error: radio glitch")
+        self.assertEqual(ann.state, L.IDLE)
+        ann.set_card(L.make_card("mona", D.dna_for("mona")))
+        self.assertEqual(ann.card["github"], "mona")
+        ann.close()
+        self.assertTrue(ann_link.closed)
+        self.assertFalse(ann.available)
+        ann.close()
 
 
 class TestWheel(unittest.TestCase):
