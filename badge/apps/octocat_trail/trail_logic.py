@@ -48,6 +48,9 @@ RATIONS = (
     ("Drip", 0.2, 1),
     ("Decaf", 0.1, -1),
 )
+TRAIL_WEAR = 1
+REST_HEAL = 5
+DRY_STRAIN = 7
 # (stop, supply or "health", amount, line) granted on the first visit.
 SIGHTS = (
     (2, "lgtm", 20, "The maintainers stamped 20 LGTMs for the road."),
@@ -63,6 +66,21 @@ MONTHS = (
     ("May", 31), ("June", 30), ("July", 31), ("August", 31),
 )
 WEATHER = ("Foggy", "Sunny", "Breezy", "Foggy", "Drizzle", "Karl the Fog", "Sunny", "Cool")
+
+CAUSES = (
+    "node_modules dysentery",
+    "AI Slop Fever",
+    "YAML indentation fatigue",
+    "a merge-queue migraine",
+    "exhaustion",
+    "caffeine withdrawal",
+    "an unresolved merge conflict",
+    "DNS propagation",
+    "a Python 2 dependency",
+    "a Friday force-push",
+)
+CAUSE_EXHAUSTION = 4
+CAUSE_WITHDRAWAL = 5
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
@@ -203,8 +221,15 @@ class Rng:
 
 class Member:
     def __init__(self, name):
+        self.name = name
         self.health = 100
         self.alive = True
+        self.cause = -1
+
+    def status(self):
+        if not self.alive:
+            return "Died of " + CAUSES[self.cause]
+        return health_label(self.health)
 
 
 class Trail:
@@ -218,6 +243,7 @@ class Trail:
         self.y = tm.START[1]
         self.facing = 1
         self.steps = 0
+        self.day_ms = 0
         self.pending_ms = 0
         self.day = 1
         self.pace = 0
@@ -226,6 +252,8 @@ class Trail:
         self.visited = 1
         self.deployed = 0
         self.basket = {}
+        self.last_cause = CAUSE_EXHAUSTION
+        self.ticker = "Outfit the wagon at the Gatehouse store."
         self._guide = None
         self._guide_key = -1
 
@@ -380,6 +408,14 @@ class Trail:
         lines = []
         if self.all_dead():
             return lines, "game_over"
+        self.day_ms += self.pending_ms
+        self.pending_ms = 0
+        while self.day_ms >= DAY_MS:
+            self.day_ms -= DAY_MS
+            self._upkeep(lines)
+            self._end_day()
+            if self.all_dead():
+                return lines, "game_over"
         stop = tm.stop_at(self.x, self.y)
         if stop < 0 or stop == self.at:
             return lines, None
@@ -450,3 +486,49 @@ class Trail:
         self.basket[key] -= quantity
         self.supplies["credits"] += quantity * self.price(key)
         return quantity
+
+    # ----- daily upkeep -----------------------------------------------------
+    def _kill(self, member, cause, lines):
+        member.alive = False
+        member.health = 0
+        member.cause = cause
+        self.last_cause = cause
+        lines.append("%s has died of %s." % (member.name, CAUSES[cause]))
+
+    def _upkeep(self, lines, resting=False):
+        living = self.living()
+        if not living:
+            return
+        need = len(living) * RATIONS[self.rations][1]
+        dry = self.supplies["brew"] + 0.0001 < need
+        self.supplies["brew"] = max(0.0, self.supplies["brew"] - need)
+        for member in living:
+            delta = -DRY_STRAIN if dry else RATIONS[self.rations][2]
+            if resting:
+                delta += REST_HEAL
+            else:
+                delta += PACES[self.pace][2] - TRAIL_WEAR
+            member.health = clamp(member.health + delta, 0, 100)
+            if member.health <= 0:
+                if dry:
+                    cause = CAUSE_WITHDRAWAL
+                else:
+                    cause = CAUSE_EXHAUSTION
+                self._kill(member, cause, lines)
+        if dry:
+            self.ticker = "Out of Cold Brew Kegs! The party is fading."
+
+    def _end_day(self):
+        self.day += 1
+
+    def idle_days(self, days, lines, resting=False):
+        for _ in range(days):
+            if self.all_dead():
+                return
+            self._upkeep(lines, resting)
+            self._end_day()
+
+    def rest_day(self):
+        lines = []
+        self.idle_days(1, lines, resting=True)
+        return lines

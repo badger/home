@@ -113,6 +113,28 @@ def stocked(role=0, rng=None, brew=200.0, lgtm=50, patches=0):
     return trail
 
 
+def walk_to(trail, stop, limit=3000):
+    """Walk the shortest route to a stop's door, passing time as the game does."""
+    door = tm.STOPS[stop]
+    dist = tm.distances(door[3], door[4], trail.deployed)
+    lines = []
+    outcome = None
+    for _ in range(limit):
+        if (trail.x, trail.y) == (door[3], door[4]):
+            return lines, outcome
+        here = dist[trail.y * tm.W + trail.x]
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            x, y = trail.x + dx, trail.y + dy
+            if tm.walkable(x, y, trail.deployed) and dist[y * tm.W + x] == here - 1:
+                break
+        else:
+            raise AssertionError("no way forward from %r" % ((trail.x, trail.y),))
+        trail.step(dx, dy)
+        more, outcome = trail.after_step()
+        lines.extend(more)
+    raise AssertionError("walk did not finish")
+
+
 class HelperTests(unittest.TestCase):
 
     def test_number_formatting(self):
@@ -194,6 +216,21 @@ class RngTests(unittest.TestCase):
 
 
 class TrailTests(unittest.TestCase):
+    def test_new_trail(self):
+        trail = tl.Trail(0, QuietRng())
+        self.assertEqual(trail.supplies, {"credits": 1600, "brew": 0.0, "lgtm": 0, "patches": 0})
+        self.assertEqual([member.name for member in trail.members], list(tl.PARTY))
+        self.assertEqual((trail.x, trail.y), tm.START)
+        self.assertEqual((trail.at, trail.day, trail.steps), (0, 1, 0))
+        self.assertEqual(trail.current_stop(), tm.STOPS[0])
+        self.assertTrue(trail.at_kind("store"))
+        self.assertEqual(trail.ticker, "Outfit the wagon at the Gatehouse store.")
+        self.assertEqual(trail.next_stop(), 1)
+        self.assertEqual([tl.Trail(r, QuietRng()).supplies["credits"] for r in range(3)], [1600, 1000, 600])
+        self.assertEqual([tl.Trail(r, QuietRng()).multiplier() for r in range(3)], [1, 2, 3])
+        self.assertEqual(tl.Trail(9, QuietRng()).role, 2)
+        self.assertEqual(tl.Trail(-3, QuietRng()).role, 0)
+        self.assertEqual(tl.Trail("x", QuietRng()).role, 0)
 
     def test_calendar(self):
         trail = tl.Trail(0, QuietRng())
@@ -206,6 +243,23 @@ class TrailTests(unittest.TestCase):
             self.assertEqual(trail.weekday(), weekday)
             self.assertIn(trail.weather(), tl.WEATHER)
             self.assertEqual(trail.weather(), trail.weather())
+
+    def test_walk_to_the_shop(self):
+        trail = stocked()
+        door = tm.STOPS[1]
+        tiles = tm.distances(door[3], door[4])[tm.START[1] * tm.W + tm.START[0]]
+        self.assertEqual(trail.steps_to_next(), tiles * tm.STEPS_PER_TILE)
+        self.assertIs(trail.guide(), trail.guide())
+        self.assertEqual(trail.tile_ms(), 256)
+        lines, outcome = walk_to(trail, 1)
+        self.assertEqual((outcome, trail.at, lines), ("stop", 1, []))
+        self.assertEqual(trail.steps, tiles * tm.STEPS_PER_TILE)
+        days = tiles * 256 // tl.DAY_MS
+        self.assertEqual(trail.day, 1 + days)
+        self.assertAlmostEqual(trail.supplies["brew"], 200.0 - days)
+        self.assertEqual([member.health for member in trail.members], [100] * 5)
+        self.assertTrue(trail.has_visited(1))
+        self.assertEqual(trail.next_stop(), tm.MERGE)
 
     def test_step(self):
         trail = stocked()
@@ -222,6 +276,22 @@ class TrailTests(unittest.TestCase):
         self.assertEqual(trail.step(1, 0), 0)
         self.assertEqual(trail.facing, 1)
         self.assertEqual((trail.x, trail.y, trail.steps), (0, 0, 8))
+
+    def test_after_step_passes_days(self):
+        trail = stocked()
+        trail.pending_ms = tl.DAY_MS * 2 + 5
+        self.assertEqual(trail.after_step(), ([], None))
+        self.assertEqual((trail.day, trail.day_ms, trail.pending_ms), (3, 5, 0))
+        self.assertAlmostEqual(trail.supplies["brew"], 198.0)
+
+    def test_rest_day_heals(self):
+        trail = stocked()
+        for member in trail.members:
+            member.health = 50
+        self.assertEqual(trail.rest_day(), [])
+        self.assertEqual([member.health for member in trail.members], [56] * 5)
+        self.assertEqual(trail.day, 2)
+        self.assertAlmostEqual(trail.supplies["brew"], 199.0)
 
 
 class TrailEventTests(unittest.TestCase):
