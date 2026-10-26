@@ -13,7 +13,8 @@ check out, so a dropped frame just means the second copy, or the next press,
 gets through. An 8 character handle takes about six seconds to beam.
 
 Sending blocks for about 77 ms a frame, so the app sends at most one frame
-per update.
+per update. Without a working NEC sender (the simulator has none) the beam is
+simulated with the same pacing so the rest of the app still works.
 """
 
 import mona_dna
@@ -26,7 +27,10 @@ SYNC_B = 0x5A
 MIN_LEN = 1 + mona_dna.SIZE
 MAX_LEN = MIN_LEN + mona_dna.MAX_HANDLE
 
+TX_PIN = 16
 RX_PIN = 17
+# PIO0 SM0 is left for the receiver
+TX_SLOTS = ((0, 1), (0, 2), (0, 3))
 
 FRAME_MS = 80
 COPIES = 2
@@ -200,13 +204,16 @@ class Beam:
 
 
 class IrPort:
-    """Owns the badgeware.ir binds for the app's lifetime."""
+    """Owns the NEC sender and the badgeware.ir binds for the app's lifetime."""
 
     def __init__(self):
+        self.tx = None
+        self.tx_tried = False
         self.ir = None
         self.listening = False
         self.inbox = []
         self.decoder = Decoder()
+        self.beam = None
         self.note = ""
 
     # Receiver callbacks only record what arrived; update() does the work.
@@ -236,9 +243,53 @@ class IrPort:
             self.note = "IR receive busy"
         return self.listening
 
+    def open_sender(self):
+        if self.tx_tried:
+            return self.tx is not None
+        self.tx_tried = True
+        try:
+            from aye_arr.nec import NECSender
+        except Exception:
+            self.note = "IR send unavailable: simulated beam"
+            return False
+        for pio, sm in TX_SLOTS:
+            tx = None
+            try:
+                tx = NECSender(TX_PIN, pio, sm)
+                tx.start()
+                self.tx = tx
+                return True
+            except Exception:
+                _stop(tx)
+        self.note = "IR send busy: simulated beam"
+        return False
+
+    @property
+    def beaming(self):
+        return self.beam is not None and not self.beam.done
+
+    def start_beam(self, handle, dna):
+        if self.beaming:
+            return False
+        live = self.open_sender()
+        self.beam = Beam(handle, dna, live)
+        self.decoder.reset()
+        return True
+
+    def send(self, address, command):
+        self.tx.send_addr_cmd(address, command)
+
     def update(self, now):
-        """Decode what arrived; returns a list of ("mona", handle, dna) events."""
+        """Advance the beam and decode what arrived; returns a list of events.
+
+        Events are ("sent", ok, error) and ("mona", handle, dna).
+        """
         events = []
+        beam = self.beam
+        if beam is not None and not beam.done:
+            beam.step(now, self.send if beam.live and self.tx is not None else None)
+            if beam.done:
+                events.append(("sent", not beam.error, beam.error))
         if self.inbox:
             inbox = self.inbox
             self.inbox = []
@@ -249,6 +300,9 @@ class IrPort:
         return events
 
     def close(self):
+        self.beam = None
+        _stop(self.tx)
+        self.tx = None
         if self.ir is not None:
             try:
                 self.ir.close()
@@ -256,3 +310,12 @@ class IrPort:
                 pass
             self.ir = None
         self.listening = False
+
+
+def _stop(tx):
+    if tx is None:
+        return
+    try:
+        tx.stop()
+    except Exception:
+        pass

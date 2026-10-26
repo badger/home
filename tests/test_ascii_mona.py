@@ -230,6 +230,48 @@ def install_ir(test, busy=()):
     return ir
 
 
+def sender_class(fail_construct=(), fail_start=(), fail_send=False):
+    """An aye_arr.nec.NECSender stand-in that records every frame."""
+
+    class Sender:
+        made = []
+
+        def __init__(self, pin, pio, sm):
+            if (pio, sm) in fail_construct:
+                raise OSError("state machine in use")
+            self.pin = pin
+            self.pio = pio
+            self.sm = sm
+            self.started = False
+            self.stopped = False
+            self.sent = []
+            Sender.made.append(self)
+
+        def start(self):
+            if (self.pio, self.sm) in fail_start:
+                raise OSError("could not start")
+            self.started = True
+
+        def stop(self):
+            self.stopped = True
+
+        def send_addr_cmd(self, address, command):
+            if fail_send:
+                raise OSError("pio stalled")
+            self.sent.append((address, command))
+
+    Sender.made = []
+    return Sender
+
+
+def install_sender(test, sender):
+    package = types.ModuleType("aye_arr")
+    nec = types.ModuleType("aye_arr.nec")
+    nec.NECSender = sender
+    package.nec = nec
+    install_modules(test, {"aye_arr": package, "aye_arr.nec": nec})
+
+
 def circle_raw(width=48, height=54, rgb=(110, 84, 240)):
     """Premultiplied RGBA: an opaque disc on a transparent background."""
     raw = bytearray(width * height * 4)
@@ -1278,6 +1320,60 @@ class TestIr(unittest.TestCase):
         self.assertEqual(port.note, "IR receive unavailable")
         self.assertEqual(port.update(0), [])
         port.close()
+
+    def test_sender_slots_skip_busy_state_machines(self):
+        I = self.I
+        sender = sender_class()
+        install_sender(self, sender)
+        port = I.IrPort()
+        self.assertTrue(port.open_sender())
+        self.assertTrue(port.open_sender())
+        self.assertEqual(len(sender.made), 1)
+        tx = sender.made[0]
+        self.assertEqual((tx.pin, tx.pio, tx.sm, tx.started), (16, 0, 1, True))
+        port.close()
+        self.assertTrue(tx.stopped)
+        sender = sender_class(fail_construct=((0, 1),), fail_start=((0, 2),))
+        install_sender(self, sender)
+        port = I.IrPort()
+        self.assertTrue(port.open_sender())
+        self.assertEqual([(t.pio, t.sm) for t in sender.made], [(0, 2), (0, 3)])
+        self.assertTrue(sender.made[0].stopped)
+        self.assertIs(port.tx, sender.made[1])
+        sender = sender_class(fail_construct=I.TX_SLOTS)
+        install_sender(self, sender)
+        port = I.IrPort()
+        self.assertFalse(port.open_sender())
+        self.assertEqual(port.note, "IR send busy: simulated beam")
+        install_modules(self, {"aye_arr": None, "aye_arr.nec": None})
+        port = I.IrPort()
+        self.assertFalse(port.open_sender())
+        self.assertEqual(port.note, "IR send unavailable: simulated beam")
+
+    def run_beam(self, port, now=0, limit=3000):
+        events = []
+        for _ in range(limit):
+            now += 20
+            got = port.update(now)
+            events.extend(got)
+            if any(event[0] == "sent" for event in got):
+                return events, now
+        self.fail("beam never finished")
+
+    def test_beam_failures_and_simulated_beams(self):
+        I, D = self.I, self.D
+        install_sender(self, sender_class(fail_send=True))
+        port = I.IrPort()
+        port.start_beam("ada", D.dna_for("ada"))
+        events, _ = self.run_beam(port)
+        self.assertEqual(events, [("sent", False, "IR send failed: pio stalled")])
+        install_modules(self, {"aye_arr": None, "aye_arr.nec": None})
+        port = I.IrPort()
+        self.assertTrue(port.start_beam("", D.dna_for("mystery")))
+        self.assertFalse(port.beam.live)
+        events, _ = self.run_beam(port)
+        self.assertEqual(events, [("sent", True, "")])
+        self.assertEqual(port.note, "IR send unavailable: simulated beam")
 
 
 class TestWheel(unittest.TestCase):
