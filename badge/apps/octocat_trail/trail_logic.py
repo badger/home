@@ -87,6 +87,7 @@ CAUSES = (
 CAUSE_EXHAUSTION = 4
 CAUSE_WITHDRAWAL = 5
 CAUSE_PYTHON2 = 8
+CAUSE_FORCE_PUSH = 9
 
 # (cause index, fewest sick days, most sick days, daily health drain)
 ILLNESSES = (
@@ -99,6 +100,7 @@ ILLNESSES = (
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
 EVENT_CHANCE = 0.09
+FRIDAY_FORCE_PUSH = 0.12
 ILLNESS_CHANCE = 0.06
 
 MASK32 = 0xFFFFFFFF
@@ -612,7 +614,9 @@ class Trail:
 
     def _roll_event(self, lines):
         rng = self.rng
-        if rng.chance(self._illness_chance()):
+        if self.weekday() == "Fri" and rng.chance(FRIDAY_FORCE_PUSH):
+            self._force_push(lines)
+        elif rng.chance(self._illness_chance()):
             self._fall_ill(lines)
         elif rng.chance(EVENT_CHANCE):
             event = rng.weighted((
@@ -644,6 +648,22 @@ class Trail:
         cause, low, high, _drain = ILLNESSES[member.illness]
         member.sick_days = self.rng.randint(low, high)
         lines.append("%s has %s." % (member.name, CAUSES[cause]))
+
+    def _force_push(self, lines):
+        lines.append("Force-pushed to main on Friday!")
+        if self.supplies["patches"] > 0:
+            lines.append("A Hotfix Patch reverted it. Lost 1 day.")
+            self._use_patch(lines)
+            self.idle_days(1, lines)
+        else:
+            lines.append("No Hotfix Patch. Rebuilding history by hand: lost 3 days.")
+            self.idle_days(3, lines)
+            living = self.living()
+            if living:
+                member = self.rng.choice(living)
+                member.health = clamp(member.health - 15, 0, 100)
+                if member.health <= 0:
+                    self._kill(member, CAUSE_FORCE_PUSH, lines)
 
     def _broken_ci(self, lines):
         lines.append("A CI axle broke on the trail.")

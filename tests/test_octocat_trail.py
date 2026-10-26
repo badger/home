@@ -342,6 +342,30 @@ class TrailEventTests(unittest.TestCase):
             member.health = 45
         self.assertAlmostEqual(trail._illness_chance(), 0.165)
 
+    def test_friday_force_push_without_patch(self):
+        trail = stocked(rng=QuietRng(chances=(True,)))
+        trail.day = 4
+        lines = []
+        trail._roll_event(lines)
+        self.assertEqual(lines[:2], ["Force-pushed to main on Friday!",
+                                     "No Hotfix Patch. Rebuilding history by hand: lost 3 days."])
+        self.assertEqual(trail.day, 7)
+        self.assertEqual(trail.members[0].health, 85)
+        self.assertEqual(trail.rng.asked[0], tl.FRIDAY_FORCE_PUSH)
+
+    def test_friday_force_push_with_patch(self):
+        for role, healed in ((0, False), (tl.RUSTACEAN, True)):
+            trail = stocked(role, QuietRng(chances=(True,)), patches=2)
+            trail.day = 4
+            for member in trail.members:
+                member.health = 50
+            lines = []
+            trail._roll_event(lines)
+            self.assertEqual(lines[:2], ["Force-pushed to main on Friday!", "A Hotfix Patch reverted it. Lost 1 day."])
+            self.assertEqual((trail.supplies["patches"], trail.day), (1, 5))
+            self.assertEqual("Rustacean hotfix: the party feels better." in lines, healed)
+            self.assertEqual(trail.members[0].health, 60 if healed else 50)
+
     def test_weekday_skips_force_push(self):
         trail = stocked(rng=QuietRng(chances=(True,), randints=(1, 3)))
         lines = []
