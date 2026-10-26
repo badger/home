@@ -9,10 +9,13 @@ import ast
 import copy
 import math
 import struct
+import sys
 import types
 import unittest
 import zlib
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "badge" / "apps" / "taste_stamp"
@@ -37,6 +40,141 @@ README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "t
 REST_UP = (0, 16384, 0, 0, 0, 0)  # hardware, badge upright
 REST_SIM = (0, -16384, 0, 0, 0, 0)  # Badge Simulator, badge upright
 SPIKE = (30000, 16384, 0, 0, 0, 0)
+
+IR_MODULES = (
+    "aye_arr",
+    "aye_arr.nec",
+    "aye_arr.nec.remotes",
+    "aye_arr.nec.remotes.descriptor",
+    "badgeware",
+    "badgeware.ir",
+)
+
+
+class FakeIR:
+    # Stands in for aye_arr's NECSender and RemoteDescriptor and for the
+    # badgeware.ir receiver. present=False makes every IR import fail;
+    # sender=False and descriptor=False mimic the simulator's empty aye_arr.
+
+    def __init__(self, clock=None, present=True, sender=True, descriptor=True, bind_returns="self",
+                 init_error=None, start_error=None, send_error=None, stop_error=None,
+                 bind_error=None, close_error=None):
+        self.clock = clock or (lambda: 0)
+        self.present = present
+        self.sender = sender
+        self.descriptor = descriptor
+        self.bind_returns = bind_returns
+        self.init_error = init_error
+        self.start_error = start_error
+        self.send_error = send_error
+        self.stop_error = stop_error
+        self.bind_error = bind_error
+        self.close_error = close_error
+        self.senders = []
+        self.bound = []
+        self.stubs = []
+        self.closed = 0
+        self.descriptor_inits = 0
+
+    @property
+    def frames(self):
+        out = []
+        for sender in self.senders:
+            out.extend(sender.frames)
+        return out
+
+    def deliver(self, cmd):
+        # Calls the on_any handler the app left on whatever ir.bind returned.
+        target = self.stubs[-1] if self.bind_returns == "stub" else self.bound[-1]
+        target.on_any(cmd)
+        target.on_known(cmd)
+
+    def modules(self):
+        mods = dict.fromkeys(IR_MODULES)
+        if not self.present:
+            return mods
+        fake = self
+
+        class NECSender:
+            def __init__(self, pin, pio, sm):
+                if fake.init_error is not None:
+                    raise fake.init_error
+                self.args = (pin, pio, sm)
+                self.started = False
+                self.stopped = 0
+                self.frames = []
+                fake.senders.append(self)
+
+            def start(self):
+                if fake.start_error is not None:
+                    raise fake.start_error
+                self.started = True
+
+            def stop(self):
+                self.stopped += 1
+                if fake.stop_error is not None:
+                    raise fake.stop_error
+
+            def send_addr_cmd(self, address, cmd):
+                if fake.send_error is not None:
+                    raise fake.send_error
+                self.frames.append((address, cmd, fake.clock()))
+
+        class RemoteDescriptor:
+            def __init__(self):
+                fake.descriptor_inits += 1
+                self.on_known = None
+                self.on_any = None
+
+        class Port:
+            def bind(self, descriptor):
+                if fake.bind_error is not None:
+                    raise fake.bind_error
+                fake.bound.append(descriptor)
+                if fake.bind_returns == "self":
+                    return descriptor
+                if fake.bind_returns == "stub":
+                    stub = SimpleNamespace()
+                    fake.stubs.append(stub)
+                    return stub
+                return None
+
+            def close(self):
+                fake.closed += 1
+                if fake.close_error is not None:
+                    raise fake.close_error
+
+        aye = types.ModuleType("aye_arr")
+        mods["aye_arr"] = aye
+        if self.sender or self.descriptor:
+            aye.__path__ = []
+            nec = types.ModuleType("aye_arr.nec")
+            nec.__path__ = []
+            aye.nec = nec
+            mods["aye_arr.nec"] = nec
+            if self.sender:
+                nec.NECSender = NECSender
+            if self.descriptor:
+                remotes = types.ModuleType("aye_arr.nec.remotes")
+                remotes.__path__ = []
+                descriptor = types.ModuleType("aye_arr.nec.remotes.descriptor")
+                descriptor.RemoteDescriptor = RemoteDescriptor
+                remotes.descriptor = descriptor
+                nec.remotes = remotes
+                mods["aye_arr.nec.remotes"] = remotes
+                mods["aye_arr.nec.remotes.descriptor"] = descriptor
+        package = types.ModuleType("badgeware")
+        package.__path__ = []
+        ir_module = types.ModuleType("badgeware.ir")
+        ir_module.ir = Port()
+        package.ir = ir_module
+        mods["badgeware"] = package
+        mods["badgeware.ir"] = ir_module
+        self.RemoteDescriptor = RemoteDescriptor
+        return mods
+
+    def patch(self):
+        return mock.patch.dict(sys.modules, self.modules())
 
 
 def luminance(c):
@@ -766,6 +904,10 @@ class EightBallTests(unittest.TestCase):
 
 
 class BeamTests(unittest.TestCase):
+    def make_sender(self, fake):
+        with fake.patch():
+            return B.make_sender()
+
     def test_codes_round_trip_and_fit_in_a_byte(self):
         vc, pc = len(V.VERDICTS), len(V.PROMPTS)
         codes = set()
@@ -782,6 +924,11 @@ class BeamTests(unittest.TestCase):
             self.assertIsNone(B.decode(cmd, 7, 20))
         self.assertEqual(B.decode(0x53, 7, 20), (B.PROMPT, 19))
 
+    def test_beams_use_their_own_nec_address_and_pins(self):
+        self.assertEqual(B.ADDRESS, 0x53)
+        self.assertNotIn(B.ADDRESS, (0x45, 0x4C, 0x54))
+        self.assertEqual((B.TX_PIN, B.TX_PIO, B.TX_SM), (16, 0, 1))
+
     def test_lights_chase_then_stop(self):
         self.assertIsNone(B.lights(-1))
         self.assertIsNone(B.lights(B.LIGHT_MS))
@@ -791,6 +938,29 @@ class BeamTests(unittest.TestCase):
             self.assertEqual(sorted(levels), [0.1, 0.1, 0.1, 1.0])
             lit.add(levels.index(1.0))
         self.assertEqual(lit, {0, 1, 2, 3})
+
+    def test_make_sender_claims_pio0_sm1_on_gpio16(self):
+        fake = FakeIR()
+        tx = self.make_sender(fake)
+        self.assertIs(tx, fake.senders[0])
+        self.assertEqual(tx.args, (16, 0, 1))
+        self.assertTrue(tx.started)
+
+    def test_make_sender_degrades_without_ir(self):
+        cases = (
+            FakeIR(present=False),
+            FakeIR(sender=False, descriptor=False),
+            FakeIR(init_error=OSError("busy")),
+        )
+        for fake in cases:
+            self.assertIsNone(self.make_sender(fake))
+
+    def test_make_sender_releases_a_sender_that_fails_to_start(self):
+        fake = FakeIR(start_error=OSError("pio full"))
+        self.assertIsNone(self.make_sender(fake))
+        self.assertEqual(fake.senders[0].stopped, 1)
+        fake = FakeIR(start_error=OSError("pio full"), stop_error=OSError("again"))
+        self.assertIsNone(self.make_sender(fake))
 
 
 def read_png(path):

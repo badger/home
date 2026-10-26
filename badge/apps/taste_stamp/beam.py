@@ -4,6 +4,10 @@
 # already carries a checksum for the address and the command.
 
 ADDRESS = 0x53
+TX_PIN = 16
+# Leave PIO0 state machine 0 to the badge's IR receiver.
+TX_PIO = 0
+TX_SM = 1
 
 VERDICT = 1
 PROMPT = 2
@@ -40,3 +44,26 @@ def lights(t):
     for i in range(4):
         levels.append(1.0 if i == lit else 0.1)
     return tuple(levels)
+
+
+def make_sender():
+    try:
+        from aye_arr.nec import NECSender
+        tx = NECSender(TX_PIN, TX_PIO, TX_SM)
+    except Exception:
+        return None
+    try:
+        tx.start()
+    except Exception:
+        stop_sender(tx)
+        return None
+    return tx
+
+
+def stop_sender(tx):
+    # Releases the state machine and its PIO program memory, so a later
+    # launch can claim them again.
+    try:
+        tx.stop()
+    except Exception:
+        pass
