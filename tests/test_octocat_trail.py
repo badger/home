@@ -193,6 +193,35 @@ class ArtTests(unittest.TestCase):
             self.assertGreater(rgb[1], rgb[0])
             self.assertGreater(rgb[1], rgb[2])
 
+    def test_compile_rows_example_and_bad_letter(self):
+        self.assertEqual(ta.compile_rows(("KK.W",)), (4, 1, ((0, 0, 2, 0), (3, 0, 1, 1))))
+        with self.assertRaises(ValueError):
+            ta.compile_rows(("KZ",))
+
+    def test_mirror_and_sprite_cache(self):
+        self.assertEqual(ta.mirror_runs(4, ((0, 0, 2, 0), (3, 0, 1, 1))), ((2, 0, 2, 0), (0, 0, 1, 1)))
+        rows = ta.MONA[0]
+        plain = ta.sprite(rows)
+        mirrored = ta.sprite(rows, True)
+        self.assertIs(plain, ta.sprite(rows))
+        self.assertIs(mirrored, ta.sprite(rows, True))
+        self.assertEqual(plain[:2], mirrored[:2])
+        self.assertEqual(sorted(ta.mirror_runs(plain[0], mirrored[2])), sorted(plain[2]))
+        self.assertEqual(ta.size(rows), plain[:2])
+
+    def test_wagon_token_fits_its_box(self):
+        self.assertEqual(ta.token_parts(2), ta.token_parts(0))
+        for frame in (0, 1):
+            parts = ta.token_parts(frame)
+            self.assertEqual(len(parts), 5)
+            self.assertIs(parts[0][0], ta.WAGON)
+            self.assertIs(parts[-1][0], ta.DUCK[frame])
+            for rows, x, y in parts:
+                width, height = ta.size(rows)
+                self.assertTrue(x >= 0 and y >= 0)
+                self.assertLessEqual(x + width, ta.TOKEN_W)
+                self.assertLessEqual(y + height, ta.TOKEN_H)
+
 
 class QuietRng(tl.Rng):
     """Deterministic test RNG. chance() follows a script, then answers False;
