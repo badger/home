@@ -8,8 +8,10 @@ apps' tests that vendor helpers with generic names.
 import ast
 import copy
 import math
+import re
 import struct
 import sys
+import tokenize
 import types
 import unittest
 import zlib
@@ -19,6 +21,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "badge" / "apps" / "taste_stamp"
+HELPERS = ("beam", "eightball", "motion", "stamp", "verdicts")
+APP_FILES = ("__init__.py",) + tuple(name + ".py" for name in HELPERS)
 
 
 def load(path, name):
@@ -1253,6 +1257,244 @@ class ReadmeTests(unittest.TestCase):
             "Creative 8-Ball for a Studio creative direction, and beam either one to nearby "
             "badges over IR."
         ))
+
+
+STR_METHODS = {"isalnum", "ljust", "rjust", "title", "zfill", "capitalize", "removeprefix",
+               "removesuffix", "casefold", "swapcase", "isnumeric", "isprintable", "format_map"}
+MODULE_ATTRS = {
+    "random": {"shuffle", "sample", "choices", "Random"},
+    "math": {"hypot", "dist", "prod", "gcd", "fsum"},
+    "time": {"monotonic", "perf_counter", "strftime"},
+    "hashlib": {"md5", "sha1"},
+    "collections": {"Counter"},
+    "json": {"JSONDecodeError"},
+    "functools": {"lru_cache", "cache", "cmp_to_key"},
+    "operator": {"itemgetter"},
+    "itertools": {"product", "permutations", "combinations", "groupby", "zip_longest",
+                  "takewhile", "dropwhile", "pairwise"},
+    "os": {"urandom", "environ", "walk", "replace"},
+    "os.path": {"splitext", "getsize"},
+}
+BANNED_MODULES = {"textwrap", "dataclasses", "typing", "enum", "bisect", "__future__", "abc",
+                  "datetime", "pathlib"}
+BANNED_EXCEPTIONS = {
+    "FileNotFoundError", "FileExistsError", "PermissionError", "IsADirectoryError",
+    "NotADirectoryError", "TimeoutError", "ConnectionError", "ConnectionResetError",
+    "ConnectionAbortedError", "ConnectionRefusedError", "BrokenPipeError", "InterruptedError",
+    "BlockingIOError", "ChildProcessError", "ProcessLookupError", "UnicodeDecodeError",
+    "UnicodeEncodeError", "ModuleNotFoundError", "RecursionError", "UnboundLocalError", "IOError",
+    "EnvironmentError", "Warning", "UserWarning", "DeprecationWarning", "RuntimeWarning",
+    "FutureWarning", "PendingDeprecationWarning", "SyntaxWarning", "ImportWarning",
+    "UnicodeWarning", "BytesWarning", "ResourceWarning", "EncodingWarning",
+}
+BANNED_ATTRS = {"bit_length", "hexdigest", "_replace", "_asdict", "__doc__", "__qualname__"}
+# App policy: dict and set order is hash order on the badge, and sorts are unstable.
+POLICY_METHODS = {"sort", "keys", "values", "items"}
+ALLOWED_IMPORTS = {"os", "random", "sys", "array", "math", "aye_arr.nec",
+                   "aye_arr.nec.remotes.descriptor", "badgeware.ir"} | set(HELPERS)
+
+
+def dotted(node):
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def check_call(node):
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else None
+    attr = func.attr if isinstance(func, ast.Attribute) else None
+    words = {k.arg for k in node.keywords}
+    nargs = len(node.args)
+    if attr in STR_METHODS:
+        yield "str." + attr + "() is missing"
+    if attr == "split" and words:
+        yield "str.split takes no keywords"
+    if attr == "center" and nargs > 1:
+        yield "str.center takes no fillchar"
+    if attr == "union" and nargs > 1:
+        yield "set.union takes one argument"
+    if attr == "from_bytes" and "signed" in words:
+        yield "from_bytes(signed=) is a TypeError"
+    if "deque" in (name, attr) and (words or nargs != 2):
+        yield "deque needs exactly (iterable, maxlen)"
+    if dotted(func) in ("json.dumps", "json.dump") and words:
+        yield "json.dumps takes no keywords"
+    if name == "open" and "newline" in words:
+        yield "open(newline=) is a TypeError"
+    if (name == "sum" and "start" in words) or (name == "round" and "ndigits" in words):
+        yield name + "() keyword is a TypeError"
+    if name == "iter" and nargs == 2:
+        yield "iter(callable, sentinel) is missing"
+    if name == "isinstance" and nargs == 2 and isinstance(node.args[1], ast.BinOp):
+        yield "isinstance(x, A | B) is a TypeError"
+    if name in ("vars", "hash"):
+        yield name + "() is missing or differs"
+    if name == "sorted" or attr in POLICY_METHODS:
+        yield "unstable sort or hash-ordered dict view"
+    if dotted(func) == "random.getrandbits":
+        arg = node.args[0] if node.args else None
+        if not (isinstance(arg, ast.Constant) and isinstance(arg.value, int) and arg.value <= 32):
+            yield "getrandbits needs a constant <= 32"
+
+
+def check_node(node, parent):
+    if isinstance(node, ast.Call):
+        yield from check_call(node)
+    elif isinstance(node, ast.Attribute):
+        module, _, attr = (dotted(node) or "").rpartition(".")
+        if attr in MODULE_ATTRS.get(module, ()):
+            yield module + "." + attr + " is missing"
+        if node.attr in BANNED_ATTRS:
+            yield node.attr + " is missing"
+    elif isinstance(node, ast.Name):
+        if node.id in BANNED_EXCEPTIONS or node.id == "__builtins__":
+            yield node.id + " is undefined"
+    elif isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name.split(".")[0] in BANNED_MODULES:
+                yield "module " + alias.name + " is missing"
+    elif isinstance(node, ast.ImportFrom):
+        module = node.module or ""
+        if module.split(".")[0] in BANNED_MODULES:
+            yield "module " + module + " is missing"
+        for alias in node.names:
+            if alias.name in MODULE_ATTRS.get(module, ()):
+                yield module + "." + alias.name + " is missing"
+    elif isinstance(node, ast.Slice):
+        if node.step is not None:
+            yield "step slices raise NotImplementedError"
+    elif isinstance(node, ast.Starred):
+        if isinstance(parent, (ast.List, ast.Tuple, ast.Set)) and isinstance(node.ctx, ast.Load):
+            yield "starred display is a SyntaxError"
+    elif isinstance(node, ast.Dict):
+        if None in node.keys:
+            yield "dict ** display is a SyntaxError"
+    elif isinstance(node, ast.ClassDef):
+        if any(k.arg == "metaclass" for k in node.keywords):
+            yield "metaclass= is unsupported"
+    elif isinstance(node, ast.FunctionDef):
+        if node.name == "__init_subclass__":
+            yield "__init_subclass__ is never called"
+    for name in ("Match", "TryStar", "TypeAlias"):
+        cls = getattr(ast, name, None)
+        if cls is not None and isinstance(node, cls):
+            yield name + " syntax is unsupported"
+
+
+def parenthesized_with(source):
+    tokens = [t for t in tokenize.generate_tokens(iter(source.splitlines(True)).__next__)
+              if t.type not in (tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT)]
+    for i, tok in enumerate(tokens[:-1]):
+        if tok.string == "with" and tokens[i + 1].string == "(":
+            depth = 0
+            for later in tokens[i + 1:]:
+                depth += {"(": 1, ")": -1}.get(later.string, 0)
+                if depth == 1 and later.string == "as":
+                    yield tok.start[0]
+                    break
+                if depth == 0:
+                    break
+
+
+def scan(source):
+    tree = ast.parse(source)
+    parents = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+    found = []
+    for node in ast.walk(tree):
+        for message in check_node(node, parents.get(node)):
+            found.append((getattr(node, "lineno", 0), message))
+    for line in parenthesized_with(source):
+        found.append((line, "parenthesized with-items are a SyntaxError"))
+    return found
+
+
+BAD_SNIPPETS = (
+    "s.ljust(4)", "s.rjust(4)", "s.zfill(3)", "s.title()", "s.isalnum()", "s.capitalize()",
+    "s.removeprefix('a')", "s.casefold()", "s.swapcase()", "s.isnumeric()", "s.isprintable()",
+    "s.format_map({})", "s.split(sep=' ')", "s.split(' ', maxsplit=1)", "s.center(9, '*')",
+    "random.shuffle(x)", "random.sample(x, 2)", "random.choices(x)", "random.Random(3)",
+    "from random import shuffle", "math.hypot(1, 2)", "math.dist(a, b)", "math.prod(x)",
+    "math.gcd(4, 6)", "math.fsum(x)", "n.bit_length()", "time.monotonic()",
+    "time.perf_counter()", "time.strftime('%H')", "hashlib.md5(b'')", "hashlib.sha1(b'')",
+    "h.hexdigest()", "from collections import Counter", "collections.Counter(x)",
+    "deque((), maxlen=4)", "deque()", "deque(x)", "json.dumps(x, indent=2)",
+    "json.dumps(x, ensure_ascii=False)", "json.JSONDecodeError", "import textwrap",
+    "import dataclasses", "from typing import List", "import enum", "import bisect",
+    "from __future__ import annotations", "import abc", "import datetime",
+    "from pathlib import Path", "functools.lru_cache(None)", "from functools import cache",
+    "from operator import itemgetter", "itertools.product(a, b)", "from itertools import groupby",
+    "itertools.zip_longest(a, b)", "os.path.splitext(p)", "os.path.getsize(p)", "os.urandom(4)",
+    "os.environ", "os.walk('.')", "os.replace(a, b)", "vars(x)", "hash(x)", "__builtins__",
+    "p._replace(x=1)", "p._asdict()", "f.__doc__", "f.__qualname__",
+    "class A:\n    def __init_subclass__(cls):\n        pass\n",
+    "open(p, newline='')", "int.from_bytes(b, 'big', signed=True)", "sum(x, start=1)",
+    "round(x, ndigits=2)", "iter(f, None)", "a.union(b, c)", "class A(metaclass=M):\n    pass\n",
+    "isinstance(x, int | float)", "with (open(a) as f, open(b) as g):\n    pass\n",
+    "s[::-1]", "x[::2]", "del x[::2]", "x[1:9:3]", "[*a, *b]", "(*a, b)", "{*a}", "{**d, 'k': 1}",
+    "def f():\n    return *a, b\n", "try:\n    pass\nexcept FileNotFoundError:\n    pass\n",
+    "try:\n    pass\nexcept (ValueError, IOError):\n    pass\n", "raise ModuleNotFoundError()",
+    "except_ = TimeoutError", "UnicodeDecodeError", "RecursionError", "EnvironmentError",
+    "ConnectionResetError", "UserWarning", "sorted(x)", "x.sort()", "d.keys()", "d.values()",
+    "d.items()", "random.getrandbits(40)", "random.getrandbits(n)",
+)
+
+GOOD_SNIPPETS = (
+    "s.center(9)", "s.split(' ', 1)", "s.split()", "s.upper().strip()", "random.randint(0, 3)",
+    "random.getrandbits(32)", "random.choice(x)", "math.sqrt(2)", "deque((), 4)",
+    "json.dumps(x)", "a, *rest = x", "for a, *b in x:\n    pass\n", "f(*a, **kw)",
+    "shape.custom(*[array('f', c) for c in cs])", "x[1:3]", "x[:]", "x[::]", "del x[:2]",
+    "with open(p) as f:\n    pass\n", "with (open(p)) as f:\n    pass\n",
+    "try:\n    pass\nexcept OSError:\n    pass\n",
+    "try:\n    pass\nexcept (ValueError, ImportError, UnicodeError):\n    pass\n",
+    "isinstance(x, (int, float))", "open(p, encoding='utf-8')", "import os",
+    "''.join(reversed(s))", "round(x, 2)", "iter(x)", "a.union(b)", "sum(x)",
+    "int.from_bytes(b, 'big')", "class A(B):\n    pass\n", "def f(x: int) -> int:\n    return x\n",
+    "self.title_text = 1", "self.items_count += 1", "d = {'k': 1}", "t = (a, b)", "s = {a, b}",
+    "import builtins", "x = 0x53",
+)
+
+
+class MicroPythonCompatibilityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.sources = {name: (APP / name).read_text(encoding="utf-8") for name in APP_FILES}
+        cls.trees = {name: ast.parse(src, name) for name, src in cls.sources.items()}
+
+    def test_scanner_flags_known_badge_crashes(self):
+        for snippet in BAD_SNIPPETS:
+            self.assertTrue(scan(snippet), snippet)
+
+    def test_scanner_allows_badge_safe_forms(self):
+        for snippet in GOOD_SNIPPETS:
+            self.assertEqual(scan(snippet), [], snippet)
+
+    def test_app_sources_are_badge_safe(self):
+        problems = []
+        for name, source in self.sources.items():
+            for line, message in scan(source):
+                problems.append("%s:%d %s" % (name, line, message))
+        self.assertEqual(problems, [])
+
+    def test_imports_are_on_the_allowlist(self):
+        for name, tree in self.trees.items():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    modules = [node.module]
+                else:
+                    continue
+                for module in modules:
+                    self.assertIn(module, ALLOWED_IMPORTS, name + " imports " + str(module))
 
 
 if __name__ == "__main__":
