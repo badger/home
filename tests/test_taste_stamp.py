@@ -904,6 +904,9 @@ class EightBallTests(unittest.TestCase):
 
 
 class BeamTests(unittest.TestCase):
+    def make_beam(self, sender=None):
+        return B.Beam(sender)
+
     def make_sender(self, fake):
         with fake.patch():
             return B.make_sender()
@@ -961,6 +964,58 @@ class BeamTests(unittest.TestCase):
         self.assertEqual(fake.senders[0].stopped, 1)
         fake = FakeIR(start_error=OSError("pio full"), stop_error=OSError("again"))
         self.assertIsNone(self.make_sender(fake))
+
+    def test_without_a_transmitter_nothing_is_queued(self):
+        link = self.make_beam()
+        self.assertFalse(link.can_send())
+        self.assertFalse(link.send(B.VERDICT, 0, 1000))
+        self.assertFalse(link.busy())
+        self.assertTrue(link.pump(1000))
+
+    def test_bursts_go_out_one_frame_per_update(self):
+        clock = [0]
+        fake = FakeIR(clock=lambda: clock[0])
+        link = self.make_beam(self.make_sender(fake))
+        self.assertTrue(link.can_send())
+        self.assertTrue(link.send(B.PROMPT, 12, 1000))
+        self.assertTrue(link.busy())
+        for now in (1000, 1100, 1166, 1167, 1200, 1334, 2000):
+            clock[0] = now
+            self.assertTrue(link.pump(now))
+        cmd = B.encode(B.PROMPT, 12)
+        self.assertEqual(fake.frames, [(0x53, cmd, 1000), (0x53, cmd, 1167), (0x53, cmd, 1334)])
+        self.assertFalse(link.busy())
+        self.assertEqual(link.last_send, 1334)
+
+    def test_a_late_update_still_sends_only_one_frame(self):
+        fake = FakeIR()
+        link = self.make_beam(self.make_sender(fake))
+        link.send(B.VERDICT, 1, 1000)
+        link.pump(5000)
+        self.assertEqual(len(fake.frames), 1)
+        self.assertEqual(link.next_due, 5000 + B.FRAME_MS + B.GAP_MS)
+
+    def test_a_new_beam_waits_for_the_frame_gap(self):
+        fake = FakeIR()
+        link = self.make_beam(self.make_sender(fake))
+        link.send(B.VERDICT, 1, 1000)
+        link.pump(1000)
+        link.send(B.VERDICT, 2, 1050)
+        self.assertEqual(link.queue, [2] * B.BURST)
+        link.pump(1050)
+        self.assertEqual(len(fake.frames), 1)
+        link.pump(1167)
+        self.assertEqual([frame[1] for frame in fake.frames], [1, 2])
+
+    def test_a_failed_send_drops_and_releases_the_transmitter(self):
+        fake = FakeIR(send_error=OSError("pio"))
+        link = self.make_beam(self.make_sender(fake))
+        self.assertTrue(link.send(B.VERDICT, 0, 1000))
+        self.assertFalse(link.pump(1000))
+        self.assertFalse(link.busy())
+        self.assertIsNone(link.tx)
+        self.assertEqual(fake.senders[0].stopped, 1)
+        self.assertFalse(link.send(B.VERDICT, 0, 2000))
 
 
 def read_png(path):
