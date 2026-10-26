@@ -562,6 +562,9 @@ class Trail:
         if rng.chance(EVENT_CHANCE):
             event = rng.weighted((
                 (3, self._broken_ci),
+                (2, self._dependabot),
+                (2, self._abandoned_wagon),
+                (2, self._typosquatter),
             ))
             event(lines)
 
@@ -580,3 +583,27 @@ class Trail:
         else:
             lines.append("No Hotfix Patch. Rebuilt it from source: lost 2 days.")
             self.idle_days(2, lines)
+
+    def _dependabot(self, lines):
+        kegs = min(self.rng.randint(8, 24), int(carry_limit("brew") - self.supplies["brew"]))
+        if kegs <= 0:
+            lines.append("A Dependabot caravan waved hello.")
+            return
+        self.supplies["brew"] += kegs
+        lines.append("A Dependabot caravan shared %s." % plural(kegs, "Cold Brew Keg"))
+
+    def _abandoned_wagon(self, lines):
+        stamps = max(0, min(self.rng.randint(10, 30), carry_limit("lgtm") - int(self.supplies["lgtm"])))
+        self.supplies["lgtm"] += stamps
+        lines.append("You found an abandoned wagon with %s." % plural(stamps, "LGTM Stamp"))
+        if self.rng.chance(0.35) and self.supplies["patches"] < carry_limit("patches"):
+            self.supplies["patches"] += 1
+            lines.append("There was a Hotfix Patch inside, too.")
+
+    def _typosquatter(self, lines):
+        kegs = min(self.rng.randint(5, 15), int(self.supplies["brew"]))
+        if kegs <= 0:
+            lines.append("An npm typosquatter found nothing worth taking.")
+            return
+        self.supplies["brew"] -= kegs
+        lines.append("An npm typosquatter made off with %s." % plural(kegs, "keg"))
