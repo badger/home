@@ -144,6 +144,7 @@ GLOW_MS = 400
 TOAST_MS = 1800
 STAMP_HINT = "STAMP SOMETHING FIRST"
 SPIN_HINT = "SHAKE TO SPIN FIRST"
+HINTS = (STAMP_HINT, SPIN_HINT)
 RING_COUNT = 3
 RING_GAP_MS = 140
 RING_MS = 560
@@ -549,10 +550,16 @@ class App:
     def kick(self, strength, now, forced=None):
         self.ball.kick(strength, now, forced)
         self.prompt = None
+        self.drop_hint()
 
     def toast(self, text, now):
         self.toast_text = text
         self.toast_until = now + TOAST_MS
+
+    def drop_hint(self):
+        # A "do this first" hint is stale once the user has done it.
+        if self.toast_text in HINTS:
+            self.toast_text = None
 
     # Beaming.
 
@@ -590,6 +597,7 @@ class App:
             self.render_desk()
         self.slam = Slam(index, now)
         self.last_verdict = index
+        self.drop_hint()
 
     def advance_slam(self, now, dt):
         s = self.slam
