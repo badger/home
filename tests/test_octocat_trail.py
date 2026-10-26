@@ -9,6 +9,7 @@ runtime globals are patched onto the app modules, never onto builtins.
 import ast
 import importlib.util
 import io
+import json
 import re
 import sys
 import tokenize
@@ -784,6 +785,86 @@ class TrailScoreSaveTests(unittest.TestCase):
         trail.members[0].health = 30
         trail.members[1].alive = False
         self.assertEqual(trail.score(), 300 + 1500 + 50 + 6 + 2 + 10 + 320 + 40)
+
+    def test_save_round_trip(self):
+        trail = at_river(tm.MERGE, rng=QuietRng(randints=(33, 150)), lgtm=7, patches=2)
+        trail.supplies["brew"] = 12.34
+        trail.steps, trail.day, trail.pace, trail.rations = 777, 40, 1, 2
+        trail.day_ms, trail.turbo_cooldown, trail.tailwind, trail.healed_day = 300, 4, 1, 30
+        trail.members[1].illness, trail.members[1].sick_days, trail.members[1].health = 2, 3, 61
+        trail.members[4].alive, trail.members[4].health, trail.members[4].cause = False, 0, 9
+        data = trail.to_dict()
+        self.assertEqual((data["v"], data["brew"], data["river"]), (2, 123, [33, 150]))
+        restored = tl.Trail.from_dict(json.loads(json.dumps(data)), QuietRng())
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.to_dict(), data)
+        self.assertAlmostEqual(restored.supplies["brew"], 12.3)
+        self.assertEqual(restored.ticker, "Welcome back to Fort Mason.")
+        self.assertEqual(restored.members[4].status(), "Died of a Friday force-push")
+        self.assertEqual(restored.members[1].status(), "Has YAML indentation fatigue")
+
+
+class TrailRestoreTests(unittest.TestCase):
+    def setUp(self):
+        self.base = tl.Trail(0, QuietRng()).to_dict()
+
+    def restore(self, **changes):
+        data = dict(self.base)
+        data.update(changes)
+        return tl.Trail.from_dict(data, QuietRng())
+
+    def test_rejects_unusable_saves(self):
+        self.assertIsNone(tl.Trail.from_dict(None, QuietRng()))
+        self.assertIsNone(tl.Trail.from_dict([], QuietRng()))
+        self.assertIsNone(self.restore(v=1))
+        missing = dict(self.base)
+        del missing["party"]
+        self.assertIsNone(tl.Trail.from_dict(missing, QuietRng()))
+        self.assertIsNone(self.restore(x=0, y=0))
+        self.assertIsNone(self.restore(party=self.base["party"][:4]))
+        self.assertIsNone(self.restore(party=[[1, 2]] + self.base["party"][1:]))
+        self.assertIsNone(self.restore(party="nope"))
+        self.assertIsNone(self.restore(party=[[0, -1, 0, 0, 1]] * 5))
+        both = tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS)
+        end = tm.STOPS[tm.END]
+        self.assertIsNone(self.restore(x=end[3], y=end[4], at=tm.END, deployed=both))
+
+    def test_far_pier_needs_the_crossing(self):
+        x, y = tm.landing(tm.MERGE)
+        self.assertIsNone(self.restore(x=x, y=y))
+        trail = self.restore(x=x, y=y, deployed=tm.deployed_bit(tm.MERGE))
+        self.assertIsNotNone(trail)
+        self.assertEqual(trail.next_stop(), 9)
+
+    def test_clamps_values(self):
+        trail = self.restore(credits=-5, brew=99999, lgtm=-1, patches=99, role=7, pace=9, rations=-2, day=0,
+                             deployed=(1 << len(tm.STOPS)) - 1, visited=0, facing=7, tail="x", last=None, healed=None)
+        self.assertEqual(trail.supplies, {"credits": 0, "brew": 500.0, "lgtm": 0, "patches": 9})
+        self.assertEqual((trail.role, trail.pace, trail.rations, trail.day), (2, 2, 0, 1))
+        both = tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS)
+        self.assertEqual((trail.deployed, trail.visited), (both, both | 1))
+        self.assertEqual((trail.facing, trail.tailwind, trail.last_cause), (1, 0, tl.CAUSE_EXHAUSTION))
+        self.assertEqual(trail.healed_day, -tl.HEAL_DAYS)
+        party = [list(entry) for entry in self.base["party"]]
+        party[0] = [0, 9, 99, 1, 3]
+        party[1] = [55, 2, 4, 0, 99]
+        trail = self.restore(party=party)
+        first, second = trail.members[0], trail.members[1]
+        self.assertEqual((first.health, first.illness, first.sick_days, first.alive), (1, 3, 30, True))
+        self.assertEqual((second.health, second.illness, second.alive, second.cause), (0, -1, False, len(tl.CAUSES) - 1))
+
+    def test_stop_must_match_position(self):
+        self.assertEqual(self.restore(at=3).at, -1)
+        self.assertEqual(self.restore(at=0).at, 0)
+
+    def test_river_resume(self):
+        door = tm.STOPS[tm.MERGE]
+        trail = self.restore(x=door[3], y=door[4], at=tm.MERGE, river=None)
+        self.assertEqual((trail.at, trail.river), (tm.MERGE, [20, 140]))
+        trail = self.restore(x=door[3], y=door[4], at=tm.MERGE, river=[0, 9999])
+        self.assertEqual(trail.river, [16, 180])
+        trail = self.restore(x=door[3], y=door[4], at=tm.MERGE, deployed=tm.deployed_bit(tm.MERGE))
+        self.assertEqual((trail.at, trail.river), (-1, None))
 
 
 class HuntTests(unittest.TestCase):

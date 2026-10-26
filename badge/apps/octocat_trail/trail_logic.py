@@ -938,6 +938,110 @@ class Trail:
     def tombstone(self, epitaph=0):
         return tombstone_record(self.steps, self.last_cause, epitaph, self.role, False)
 
+    # ----- persistence ------------------------------------------------------
+    def to_dict(self):
+        party = []
+        for member in self.members:
+            party.append([int(member.health), member.illness, member.sick_days, 1 if member.alive else 0, member.cause])
+        return {
+            "v": 2,
+            "role": self.role,
+            "credits": int(self.supplies["credits"]),
+            "brew": int(self.supplies["brew"] * 10 + 0.5),
+            "lgtm": int(self.supplies["lgtm"]),
+            "patches": int(self.supplies["patches"]),
+            "x": self.x,
+            "y": self.y,
+            "facing": self.facing,
+            "steps": self.steps,
+            "day_ms": self.day_ms,
+            "day": self.day,
+            "pace": self.pace,
+            "rations": self.rations,
+            "at": self.at,
+            "visited": self.visited,
+            "deployed": self.deployed,
+            "healed": self.healed_day,
+            "river": list(self.river) if self.river else None,
+            "turbo": self.turbo_days,
+            "cool": self.turbo_cooldown,
+            "tail": self.tailwind,
+            "last": self.last_cause,
+            "party": party,
+        }
+
+    @staticmethod
+    def from_dict(data, rng):
+        """Rebuild a saved journey, or return None if the data is unusable."""
+        try:
+            if not isinstance(data, dict) or data.get("v") != 2:
+                return None
+            trail = Trail(clamp_int(data["role"], 0, len(ROLES) - 1), rng)
+            trail.supplies["credits"] = clamp_int(data["credits"], 0, 100000)
+            trail.supplies["brew"] = clamp_int(data["brew"], 0, carry_limit("brew") * 10) / 10.0
+            trail.supplies["lgtm"] = clamp_int(data["lgtm"], 0, carry_limit("lgtm"))
+            trail.supplies["patches"] = clamp_int(data["patches"], 0, carry_limit("patches"))
+            every = (1 << len(tm.STOPS)) - 1
+            trail.deployed = clamp_int(data["deployed"], 0, every) & (
+                tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS))
+            trail.visited = clamp_int(data["visited"], 0, every) | trail.deployed | 1
+            x = clamp_int(data["x"], 0, tm.W - 1)
+            y = clamp_int(data["y"], 0, tm.H - 1)
+            if tm.distances(x, y, trail.deployed)[tm.START[1] * tm.W + tm.START[0]] == tm.UNREACHED:
+                return None
+            trail.x = x
+            trail.y = y
+            trail.facing = -1 if data.get("facing") == -1 else 1
+            trail.steps = clamp_int(data["steps"], 0, MAX_STEPS)
+            trail.day_ms = clamp_int(data.get("day_ms"), 0, DAY_MS - 1, 0)
+            trail.day = clamp_int(data["day"], 1, 9999)
+            trail.pace = clamp_int(data["pace"], 0, len(PACES) - 1)
+            trail.rations = clamp_int(data["rations"], 0, len(RATIONS) - 1)
+            trail.healed_day = clamp_int(data.get("healed"), -HEAL_DAYS, trail.day, -HEAL_DAYS)
+            trail.turbo_days = clamp_int(data["turbo"], 0, TURBO_DAYS)
+            trail.turbo_cooldown = clamp_int(data["cool"], 0, TURBO_COOLDOWN)
+            trail.tailwind = clamp_int(data.get("tail"), 0, 2, 0)
+            trail.last_cause = clamp_int(data.get("last"), 0, len(CAUSES) - 1, CAUSE_EXHAUSTION)
+            party = data["party"]
+            if not isinstance(party, list) or len(party) != len(PARTY):
+                return None
+            for member, saved in zip(trail.members, party):
+                if not isinstance(saved, list) or len(saved) != 5:
+                    return None
+                health, illness, sick_days, alive, cause = saved
+                member.alive = bool(alive)
+                if member.alive:
+                    member.health = clamp_int(health, 1, 100)
+                    member.illness = clamp_int(illness, -1, len(ILLNESSES) - 1)
+                    member.sick_days = clamp_int(sick_days, 0, 30) if member.illness >= 0 else 0
+                    member.cause = -1
+                else:
+                    member.health = 0
+                    member.illness = -1
+                    member.sick_days = 0
+                    member.cause = clamp_int(cause, 0, len(CAUSES) - 1)
+            if trail.all_dead():
+                return None
+            at = clamp_int(data.get("at"), -1, len(tm.STOPS) - 1, -1)
+            trail.at = at if at >= 0 and tm.stop_at(x, y) == at else -1
+            if trail.at == tm.END:
+                return None
+            if trail.at_kind("river"):
+                if trail.deployed & tm.deployed_bit(trail.at):
+                    trail.at = -1
+                else:
+                    spec = trail.river_spec()
+                    river = data.get("river")
+                    if isinstance(river, list) and len(river) == 2:
+                        trail.river = [clamp_int(river[0], spec[1] * 8 // 10, spec[2]),
+                                       clamp_int(river[1], spec[3], spec[4])]
+                    else:
+                        trail.arrive_river()
+            trail.ticker = "Welcome back to Fort Mason."
+            return trail
+        except Exception:
+            return None
+
 
 # ----- hunt mini-game -------------------------------------------------------
 HUNT_MS = 30000
