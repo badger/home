@@ -129,10 +129,11 @@ class Beam:
     # Queues outgoing bursts one frame per update and filters incoming
     # frames for echoes and repeats.
 
-    def __init__(self, verdict_count, prompt_count, sender=None):
+    def __init__(self, verdict_count, prompt_count, sender=None, receiving=False):
         self.verdict_count = verdict_count
         self.prompt_count = prompt_count
         self.tx = sender
+        self.receiving = receiving
         self.queue = []
         self.next_due = 0
         self.last_send = None
@@ -204,3 +205,11 @@ class Beam:
             self.last_seen = now
             found = message
         return found
+
+    def close(self):
+        if self.tx is not None:
+            stop_sender(self.tx)
+            self.tx = None
+        if self.receiving:
+            stop_listening()
+            self.receiving = False

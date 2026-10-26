@@ -904,8 +904,8 @@ class EightBallTests(unittest.TestCase):
 
 
 class BeamTests(unittest.TestCase):
-    def make_beam(self, sender=None):
-        return B.Beam(len(V.VERDICTS), len(V.PROMPTS), sender)
+    def make_beam(self, sender=None, receiving=False):
+        return B.Beam(len(V.VERDICTS), len(V.PROMPTS), sender, receiving)
 
     def make_sender(self, fake):
         with fake.patch():
@@ -1129,6 +1129,26 @@ class BeamTests(unittest.TestCase):
         self.assertEqual(results, [(B.VERDICT, 3), None, None, (B.VERDICT, 3)])
         link.heard(4)
         self.assertEqual(link.receive(12950), (B.VERDICT, 4))
+
+    def test_close_releases_ir_once(self):
+        fake = FakeIR()
+        with fake.patch():
+            link = self.make_beam(B.make_sender(), receiving=True)
+            link.close()
+            link.close()
+        self.assertEqual(fake.senders[0].stopped, 1)
+        self.assertEqual(fake.closed, 1)
+        self.assertIsNone(link.tx)
+        self.assertFalse(link.receiving)
+        self.assertFalse(link.can_send())
+
+    def test_close_swallows_ir_errors(self):
+        fake = FakeIR(stop_error=OSError("stop"), close_error=OSError("close"))
+        with fake.patch():
+            link = self.make_beam(B.make_sender(), receiving=True)
+            link.close()
+        self.assertIsNone(link.tx)
+        self.assertFalse(link.receiving)
 
 
 def read_png(path):
