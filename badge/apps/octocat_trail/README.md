@@ -70,3 +70,14 @@ Spend a day hunting for cold brew bounties. You have 30 seconds and at most thre
 ### Trail events
 
 Expect node_modules dysentery, AI Slop Fever, YAML indentation fatigue, merge-queue migraines, broken CI, Dependabot caravans, typosquatters, stale READMEs, Python 2 dependencies, Copilot shortcuts, the GitHub unicorn, and Force-pushed to main on Friday. When the whole party is lost, choose an epitaph for the tombstone.
+
+## Hardware
+
+Every hardware feature is optional and guarded, so the app also runs in the Badge Simulator:
+
+- **IMU turbo sprint**: shake the badge three times within 1.2 seconds for a 6-day sprint at 7/4 speed. It drinks 1.5x the cold brew, costs 2 health a day and then needs 8 days to cool down. Detection uses changes in acceleration magnitude, so it works whichever way up the badge is. BACK while walking also sprints.
+- **Ambient light Dark Mode Camp**: the phototransistor on GPIO43/ADC3 (`badge.light_level()`, falling back to `machine.ADC(43)`) is compared with the room's recent brightness. When it falls below 30% of that level for 1.2 seconds, the party makes camp and rests, and it breaks camp when the light returns. Turn the sensor off on the title screen, or choose **Make camp and rest** from the menu for a manual camp of up to 3 days.
+- **IR beaming**: SELECT on a tombstone, the graveyard or the victory screen beams it over NEC infrared on address `0x54` (transmit on GPIO16, receive on GPIO17 through `badgeware.ir`). A beam repeats a 9-byte checksummed packet three times and takes about 2 seconds. Beams only reach badges that are running The Octocat Trail at the time. Received tombstones join the graveyard and received victories appear as a notice. Without IR, the beam is simulated.
+- **Case lights** chase while beaming and on victory, flicker at camp and pulse while sprinting.
+
+In the Badge Simulator the IMU and light sensor are static and IR is unavailable, so use BACK to sprint, the menu to camp and the simulated beam.
