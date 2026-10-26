@@ -2030,6 +2030,28 @@ class AppTests(unittest.TestCase):
                 return op
         return None
 
+    def landed(self):
+        return self.app.ball.state == self.A.eightball.LANDED
+
+    def check_d20(self):
+        A = self.A
+        ops = self.shapes()
+        faces = [op for op in ops if op[2].kind == "custom" and len(op[2].arrays) == 1
+                 and op[2].arrays[0] is A.FACE_POINTS]
+        self.assertTrue(5 <= len(faces) <= 20, len(faces))
+        for op in faces:
+            self.assertIn(op[1], A.SHADES)
+            self.assertIsNone(op[4])
+        lines = [op for op in ops if op[2].kind == "line"]
+        self.assertTrue(1 <= len(lines) <= 30, len(lines))
+        for op in lines:
+            self.assertEqual((op[1], op[2].args[4]), (A.EDGE_C, 1.3))
+        numbers = [op for op in ops if any(op[2] is s for s in A.NUMBER_SHAPES[1:])]
+        for op in numbers:
+            self.assertEqual(op[3], "NON_ZERO")
+            self.assertIsInstance(op[4], FakeMat3)
+        return numbers
+
     def test_launch_sets_up_the_screen_ir_and_desk(self):
         A = self.launch()
         rt, ir, app, badge, screen = self.rt, self.ir, self.app, self.badge, self.screen
@@ -2245,6 +2267,93 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.badge.lights[-2:], [(1.0,) * 4, (0,)])
         self.assertEqual(len(app.marks), 4)
         self.assertIs(app.marks[-1], s)
+
+    def test_eight_ball_tumbles_lands_and_reveals_a_prompt(self):
+        A = self.launch()
+        app, badge = self.app, self.badge
+        self.step("RIGHT")
+        self.assertEqual(app.mode, A.BALL_MODE)
+        texts = self.texts()
+        for text in ("CREATIVE 8-BALL", "< STAMP >", "SHAKE FOR A CREATIVE DIRECTION", "OR PRESS DOWN"):
+            self.assertIn(text, texts)
+        self.assertTrue(self.check_d20())
+        self.step("DOWN")
+        self.assertEqual(app.ball.state, A.eightball.SPINNING)
+        self.assertEqual(self.check_d20(), [])
+        base = "CONSULTING THE STUDIO"
+        consulting = [t for t in self.texts() if t.startswith(base)]
+        self.assertEqual(len(consulting), 1)
+        self.assertIn(consulting[0][len(base):], (".", "..", "..."))
+        lit = len(badge.lights)
+        end = badge.ticks + 4000
+        while not self.landed():
+            self.assertLess(badge.ticks, end)
+            self.step()
+            self.check_d20()
+            if not self.landed():
+                self.assertEqual(len(badge.lights), lit)
+        n = app.ball.number()
+        self.assertTrue(1 <= n <= 20)
+        self.assertEqual(badge.lights[lit:], [(0.5,) * 4])
+        prompt = app.prompt
+        self.assertEqual(len(prompt), len(app.build_prompt(A.verdicts.PROMPTS[n - 1])))
+        drawn = [op for op in self.shapes(kind="custom") if any(op[2] is p for p in prompt)]
+        self.assertEqual([op[2] for op in drawn], prompt[:1])
+        self.assertEqual((drawn[0][1], drawn[0][3]), (A.WHITE_C, "NON_ZERO"))
+        self.assertIn("SELECT: BEAM IT", self.texts())
+        self.run_for(18 * len(prompt))
+        drawn = [op[2] for op in self.shapes(kind="custom") if any(op[2] is p for p in prompt)]
+        self.assertEqual(drawn, prompt)
+        top = [op for op in self.check_d20() if op[2] is A.NUMBER_SHAPES[n]]
+        self.assertEqual([op[1] for op in top], [pen(A.WHITE)])
+        self.run_for(500)
+        tail = badge.lights[lit:]
+        self.assertEqual(tail[0], (0.5,) * 4)
+        self.assertEqual(tail[-1], (0,))
+        glow = [levels[0] for levels in tail[:-1]]
+        for levels in tail[:-1]:
+            self.assertEqual(len(set(levels)), 1)
+            self.assertEqual(len(levels), 4)
+        self.assertTrue(all(a > b > 0 for a, b in zip(glow, glow[1:])), glow)
+
+    def test_place_number_maps_face_corners_through_the_firmware_transform(self):
+        A = self.launch()
+        r = V.Rng(77)
+        checked = 0
+        while checked < 100:
+            top = (r.uniform(40, 280), r.uniform(20, 180))
+            left = (r.uniform(40, 280), r.uniform(20, 180))
+            right = (r.uniform(40, 280), r.uniform(20, 180))
+            cross = (left[0] - top[0]) * (right[1] - top[1]) - (left[1] - top[1]) * (right[0] - top[0])
+            if abs(cross) < 50:
+                continue
+            n = 1 + checked % 20
+            s = A.place_number(n, top, left, right)
+            self.assertIs(s, A.NUMBER_SHAPES[n])
+            for uv, want in (((0, 0), top), ((1, 0), left), ((0, 1), right)):
+                got = s.transform.apply(*uv)
+                self.assertAlmostEqual(got[0], want[0], delta=1e-6)
+                self.assertAlmostEqual(got[1], want[1], delta=1e-6)
+            checked += 1
+        # Every number sits inside its face triangle.
+        for n in range(1, 21):
+            for a in A.NUMBER_SHAPES[n].arrays:
+                for i in range(0, len(a), 2):
+                    s, t = a[i], a[i + 1]
+                    self.assertTrue(s >= 0 and t >= 0 and s + t <= 1, (n, s, t))
+        self.assertEqual(self.rt.problems, [])
+
+    def test_ball_mode_shakes_and_flips_kick_the_d20(self):
+        self.launch()
+        self.step("RIGHT")
+        kick = self.spy("kick")
+        for reading in shake_pattern(16384, 6):
+            self.step(imu_value=reading)
+        self.assertEqual([c.args[0] for c in kick.call_args_list], [5, 14, 5, 5, 5])
+        self.run_until(self.landed, 5000, imu_value=REST_UP)
+        kick.reset_mock()
+        self.run_for(300, flipped=True)
+        self.assertEqual([c.args[0] for c in kick.call_args_list], [16])
 
 
 if __name__ == "__main__":
