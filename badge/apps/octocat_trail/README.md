@@ -52,3 +52,21 @@ The map is an original top-down tile map inspired by the Fort Mason Center campu
 - **The Great Meadow** is the best hunting ground.
 
 Every step passes time and drinks cold brew. Set the pace (Sustainable, Crunch or Death March) and rations (Nitro, Drip or Decaf) from the menu. The menu also has the wagon, the venue map, camp, attendee tips, the store at stores, the hunt, a turbo sprint and Save and quit.
+
+### Production Deployments
+
+The piers sit across open water. At **Merge Conflict River** and **DNS Propagation Rapids**, choose how to cross:
+
+- **YOLO deploy (ford)**: free, but risky when the diff is deep.
+- **Ship with 2 LGTMs**: spend two LGTM Stamps to lower the gangway.
+- **Ask Copilot (ferry)**: the safest crossing; it costs 40 credits at the river or 70 at the rapids, plus a 1 to 3 day wait.
+- **Wait for review**: lose a day while the depth changes.
+- **Plan it out**: open the menu without crossing.
+
+### Bug & AI Slop Hunt
+
+Spend a day hunting for cold brew bounties. You have 30 seconds and at most three stamps in flight. Bugs take one stamp and pay 6 kegs; AI slop blobs take two and pay 25. Trees, bushes and rocks block both Mona and her stamps, and you can haul at most 100 kegs back to the wagon.
+
+### Trail events
+
+Expect node_modules dysentery, AI Slop Fever, YAML indentation fatigue, merge-queue migraines, broken CI, Dependabot caravans, typosquatters, stale READMEs, Python 2 dependencies, Copilot shortcuts, the GitHub unicorn, and Force-pushed to main on Friday. When the whole party is lost, choose an epitaph for the tombstone.
