@@ -66,3 +66,27 @@ When you tweak your own Mona, that becomes the Mona you beam and swap. When you 
 - **Beam it.** SELECT sends the Mona on screen over IR. Any badge in range that is running ASCII Mona catches it and adds it to its recent Monas. It appears straight away, or when that badge's owner closes the letter wheel.
 
 A badge only receives a Mona while it's running ASCII Mona.
+
+### The quest code
+
+After the Mona, a beam sends command `0x88` on address `0x45` three times. That's the Universe quest beacon code for quest 8. What it unlocks depends on what the other badge is running:
+
+- The Quest app completes quest 8, "Octocat Generator".
+- The menu's Mona's Expedition counts it as "Level Up Lounge".
+- ASCII Mona records quest 8 in the Quest app's progress (`/state/quest.json`) and shows "Quest 8 complete: Octocat Generator".
+
+ASCII Mona never sends the beacon's reset code.
+
+### GitHub profile lookup
+
+MENU, or SELECT on the DNA card, fetches the public profile from `https://api.github.com/users/<handle>`. It tunes the Mona only from what the profile states, and never infers anything personal such as gender, ethnicity or faith:
+
+- **Title:** a bio keyword sets it, such as maintain, design, docs, mentor or research. Without one, 100 or more public repos makes a Maintainer and 20 or more public gists makes a Hacker.
+- **Ship It Squirrel:** for GitHub staff and anyone who lists GitHub as their company.
+- **Crown:** for 1,000 or more followers.
+- **Classic Octocat body colour:** for accounts created in 2010 or earlier.
+- **Bio interests** add items, for example:
+  - music adds a guitar, games a controller and space an astronaut suit
+  - tea or coffee adds a mug, Ruby a gem and photography a camera
+
+The DNA card shows the first two notes about what changed. The badge keeps the last eight profiles, so tuned Monas stay tuned offline. Without a lookup, the Mona comes from the handle alone.
