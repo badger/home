@@ -58,6 +58,18 @@ _APP = load_modules()
 tm = _APP["trail_map"]
 tl = _APP["trail_logic"]
 
+BOTH_RIVERS = tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS)
+
+
+def reachable_stops(deployed):
+    dist = tm.distances(tm.START[0], tm.START[1], deployed)
+    found = []
+    for index in range(len(tm.STOPS)):
+        stop = tm.STOPS[index]
+        if dist[stop[4] * tm.W + stop[3]] != tm.UNREACHED:
+            found.append(index)
+    return found
+
 
 class LoaderTests(unittest.TestCase):
     def test_modules_load_under_unique_names_without_leaking(self):
@@ -68,6 +80,84 @@ class LoaderTests(unittest.TestCase):
 
 
 class MapTests(unittest.TestCase):
+
+    def test_out_of_bounds_is_bay_water(self):
+        for x, y in ((-1, 0), (0, -1), (tm.W, 0), (0, tm.H), (-5, -5)):
+            self.assertEqual(tm.terrain(x, y), tm.WATER)
+            self.assertFalse(tm.walkable(x, y, BOTH_RIVERS))
+            self.assertEqual(tm.stop_at(x, y), -1)
+
+    def test_walkable_codes(self):
+        walk = (tm.LOT, tm.GRASS, tm.DECK, tm.PATH, tm.DOOR, tm.DOCK, tm.FLAG)
+        for code in range(len(tm.WALK)):
+            self.assertEqual(tm.passable(code), code in walk, code)
+        for code in (tm.WATER, tm.ROOF, tm.FENCE, tm.TREE):
+            self.assertFalse(tm.passable(code, BOTH_RIVERS))
+
+    def test_gangways_need_their_deployment(self):
+        merge = tm.deployed_bit(tm.MERGE)
+        dns = tm.deployed_bit(tm.DNS)
+        self.assertEqual(merge, 1 << 8)
+        self.assertFalse(tm.passable(tm.GANG1))
+        self.assertTrue(tm.passable(tm.GANG1, merge))
+        self.assertFalse(tm.passable(tm.GANG1, dns))
+        self.assertFalse(tm.passable(tm.GANG2, merge))
+        self.assertTrue(tm.passable(tm.GANG2, dns))
+
+    def test_docks_span_the_water_to_their_landings(self):
+        self.assertEqual(tm.landing(tm.MERGE), (34, 32))
+        self.assertEqual(tm.landing(tm.DNS), (66, 36))
+        self.assertIsNone(tm.landing(0))
+        self.assertIsNone(tm.dock(tm.END))
+        for x0, y, x1, gang, stop in tm.DOCKS:
+            self.assertEqual(tm.dock(stop), (x0, y, x1, gang, stop))
+            self.assertEqual(tm.terrain(x0, y), tm.DOCK)
+            self.assertEqual(tm.stop_at(x0, y), stop)
+            self.assertTrue(tm.walkable(x1, y))
+            for x in range(x0 + 1, x1):
+                self.assertEqual(tm.terrain(x, y), gang)
+                self.assertFalse(tm.walkable(x, y))
+                self.assertTrue(tm.walkable(x, y, tm.deployed_bit(stop)))
+
+    def test_stops_have_walkable_unique_doors(self):
+        self.assertEqual(len(tm.STOPS), 13)
+        doors = set()
+        for index in range(len(tm.STOPS)):
+            name, short, kind, x, y = tm.STOPS[index]
+            self.assertIn(kind, ("store", "sight", "heal", "meadow", "river", "end"))
+            self.assertTrue(name and short)
+            self.assertTrue(tm.walkable(x, y, BOTH_RIVERS), name)
+            self.assertEqual(tm.stop_at(x, y), index)
+            doors.add((x, y))
+        self.assertEqual(len(doors), len(tm.STOPS))
+        self.assertEqual(tm.START, tm.STOPS[0][3:])
+        self.assertEqual(tm.STOPS[tm.MERGE][0], "Merge Conflict River")
+        self.assertEqual(tm.STOPS[tm.DNS][0], "DNS Propagation Rapids")
+        self.assertIn("git init", tm.STOPS[0][0])
+        self.assertIn("GitHub Universe Mainstage", tm.STOPS[tm.END][0])
+        self.assertEqual(tm.STOPS[tm.END][2], "end")
+
+    def test_rivers_gate_the_venue(self):
+        self.assertEqual(reachable_stops(0), list(range(0, 9)))
+        self.assertEqual(reachable_stops(tm.deployed_bit(tm.MERGE)), list(range(0, 12)))
+        self.assertEqual(reachable_stops(BOTH_RIVERS), list(range(0, 13)))
+        self.assertEqual(tm.ROUTE, (0, 1, tm.MERGE, 9, tm.DNS, tm.END))
+
+    def test_distances_are_breadth_first(self):
+        dist = tm.distances(tm.START[0], tm.START[1], BOTH_RIVERS)
+        self.assertEqual(dist[tm.START[1] * tm.W + tm.START[0]], 0)
+        for y in range(tm.H):
+            for x in range(tm.W):
+                here = dist[y * tm.W + x]
+                if here == tm.UNREACHED or here == 0:
+                    continue
+                self.assertTrue(tm.walkable(x, y, BOTH_RIVERS))
+                best = tm.UNREACHED
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < tm.W and 0 <= ny < tm.H:
+                        best = min(best, dist[ny * tm.W + nx])
+                self.assertEqual(best, here - 1, (x, y))
 
     def test_distances_from_water_reach_nothing(self):
         dist = tm.distances(0, 0)
@@ -133,6 +223,19 @@ def walk_to(trail, stop, limit=3000):
         more, outcome = trail.after_step()
         lines.extend(more)
     raise AssertionError("walk did not finish")
+
+
+def edge_of(code, deployed=0):
+    """A reachable cell next to an impassable cell of the given terrain."""
+    dist = tm.distances(tm.START[0], tm.START[1], deployed)
+    for y in range(tm.H):
+        for x in range(tm.W):
+            if dist[y * tm.W + x] == tm.UNREACHED:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                if tm.terrain(x + dx, y + dy) == code and not tm.walkable(x + dx, y + dy, deployed):
+                    return x, y, dx, dy
+    return None
 
 
 class HelperTests(unittest.TestCase):
@@ -290,6 +393,25 @@ class TrailTests(unittest.TestCase):
         self.assertEqual(trail.step(1, 0), 0)
         self.assertEqual(trail.facing, 1)
         self.assertEqual((trail.x, trail.y, trail.steps), (0, 0, 8))
+
+    def test_blocked_reasons(self):
+        trail = stocked()
+        cases = ((tm.FENCE, 0, "Load-in zone: no entry from the plaza."),
+                 (tm.GANG1, 0, "Gangway is up. Cross at the dock."),
+                 (tm.GANG2, tm.deployed_bit(tm.MERGE), "Gangway is up. Cross at the dock."),
+                 (tm.WATER, 0, "That way lies San Francisco Bay."),
+                 (tm.ROOF, 0, ""),
+                 (tm.TREE, 0, ""))
+        for code, deployed, reason in cases:
+            found = edge_of(code, deployed)
+            self.assertIsNotNone(found, code)
+            x, y, dx, dy = found
+            trail.x, trail.y, trail.deployed = x, y, deployed
+            self.assertEqual(trail.blocked_reason(dx, dy), reason, code)
+            self.assertEqual(trail.step(dx, dy), 0)
+            self.assertEqual((trail.x, trail.y), (x, y))
+        trail.x, trail.y = 0, 0
+        self.assertEqual(trail.blocked_reason(-1, 0), "That way lies San Francisco Bay.")
 
     def test_after_step_passes_days(self):
         trail = stocked()

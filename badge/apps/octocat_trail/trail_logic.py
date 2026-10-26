@@ -406,6 +406,10 @@ class Trail:
         if tm.walkable(x, y, self.deployed):
             return ""
         code = tm.terrain(x, y)
+        if code == tm.FENCE:
+            return "Load-in zone: no entry from the plaza."
+        if code == tm.GANG1 or code == tm.GANG2:
+            return "Gangway is up. Cross at the dock."
         if code == tm.WATER:
             return "That way lies San Francisco Bay."
         return ""

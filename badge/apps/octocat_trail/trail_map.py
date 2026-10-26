@@ -30,6 +30,9 @@ BUILDINGS = (
     ("", 85, 53, 91, 57),
     ("", 5, 135, 11, 138),
 )
+FENCES = ((34, 65, 45, 65), (66, 63, 80, 63))
+# Dock x, row, landing x, gangway code, river stop.
+DOCKS = ((14, 32, 34, GANG1, MERGE), (46, 36, 66, GANG2, DNS))
 
 # (name, short name, kind, door x, door y). Order is the stop index.
 STOPS = (
@@ -127,6 +130,8 @@ def build():
         _fill(g, x0, y0, x1, y1, ROOF)
     for building in BUILDINGS:
         _fill(g, building[1], building[2], building[3], building[4], ROOF)
+    for x0, y0, x1, y1 in FENCES:
+        _fill(g, x0, y0, x1, y1, FENCE)
     for points in PATHS:
         for k in range(1, len(points)):
             _line(g, points[k - 1], points[k], PATH)
@@ -134,6 +139,10 @@ def build():
         i = y * W + x
         if g[i] in (LOT, GRASS):
             g[i] = TREE
+    for x, y, land, code, stop in DOCKS:
+        g[y * W + x] = DOCK
+        for gx in range(x + 1, land):
+            g[y * W + gx] = code
     for stop in STOPS:
         if stop[2] != "river":
             g[stop[4] * W + stop[3]] = FLAG if stop[2] == "meadow" else DOOR
@@ -153,9 +162,17 @@ def terrain(x, y):
     return grid()[y * W + x]
 
 
+def deployed_bit(stop):
+    return 1 << stop
+
+
 def passable(code, deployed=0):
     if WALK[code]:
         return True
+    if code == GANG1:
+        return bool(deployed & (1 << MERGE))
+    if code == GANG2:
+        return bool(deployed & (1 << DNS))
     return False
 
 
@@ -174,6 +191,20 @@ def stop_at(x, y):
     if x < 0 or y < 0 or x >= W or y >= H:
         return -1
     return _stops.get(y * W + x, -1)
+
+
+def dock(stop):
+    for entry in DOCKS:
+        if entry[4] == stop:
+            return entry
+    return None
+
+
+def landing(stop):
+    entry = dock(stop)
+    if entry is None:
+        return None
+    return entry[2], entry[1]
 
 
 def distances(gx, gy, deployed=0):
