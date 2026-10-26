@@ -1,7 +1,8 @@
-# Taste Stamp: a Creative Director's rubber stamp.
+# Taste Stamp: a Creative Director's rubber stamp and a Creative 8-Ball.
 #
-# Flip the badge over, karate-chop it or press DOWN to slam a verdict onto
-# the brief, with screen shake and a case-light strobe.
+# Stamp mode: flip the badge over, karate-chop it or press DOWN to slam a
+# verdict onto the brief, with screen shake and a case-light strobe.
+# 8-Ball mode: press DOWN to tumble a dithered d20.
 
 import os
 import random
@@ -30,7 +31,7 @@ sys.path.insert(0, APP_DIR)
 
 # The helpers have generic names, so drop copies another app may have left
 # in sys.modules before importing this app's own.
-HELPERS = ("motion", "stamp", "verdicts")
+HELPERS = ("eightball", "motion", "stamp", "verdicts")
 
 
 def forget_helpers():
@@ -41,6 +42,7 @@ def forget_helpers():
 
 forget_helpers()
 
+import eightball  # noqa: E402
 import motion  # noqa: E402
 import stamp  # noqa: E402
 import verdicts  # noqa: E402
@@ -76,6 +78,7 @@ HEADING_GREY = (186, 178, 162)
 PAPER_TEXT = (150, 142, 128)
 WHITE = (240, 246, 252)
 DIM = (139, 148, 158)
+BLUE = (88, 166, 255)
 
 DESK_C = rgb(DESK)
 PAPER_C = rgb(PAPER)
@@ -87,8 +90,11 @@ SHADOW_C = color.rgb(0, 0, 0, 110)
 WHITE_C = rgb(WHITE)
 DIM_C = rgb(DIM)
 PILL_C = color.rgb(33, 38, 45, 235)
+CARD_C = color.rgb(22, 27, 34)
+CARD_EDGE_C = color.rgb(48, 54, 61)
+EDGE_C = color.rgb(150, 200, 255, 160)
 
-# Layout.
+# Stamp mode layout.
 TITLE_Y = 4
 PAPER_X = 14
 PAPER_Y = 26
@@ -115,7 +121,22 @@ STAMP_MAX_H = 136.0
 STAMP_MAX_SCALE = 5.5
 MOTION_COOLDOWN_MS = 650
 
+# 8-Ball layout.
+BALL_X = W // 2
+BALL_Y = 100
+BALL_R = 76
+WINDOW_R = 57
+LIQUID_R = 54
+D20_SCALE = 24
+CARD_X = 16
+CARD_Y = 180
+CARD_W = W - 2 * CARD_X
+CARD_H = 56
+
 TOAST_MS = 1800
+
+STAMP_MODE = 0
+BALL_MODE = 1
 
 
 def screen_like_image():
@@ -260,6 +281,57 @@ def draw_mark(target, mark, alpha):
             target.shape(shape.circle(d[0], d[1], d[2]))
 
 
+# One reused buffer for the d20's triangles; each is drawn before the next
+# is written.
+FACE_POINTS = array("f", [0.0] * 6)
+
+# Two-colour ordered dithers make a 17-step ramp from navy to GitHub blue.
+SHADE_DARK = color.rgb(10, 14, 46)
+SHADE_MID = color.rgb(30, 62, 160)
+SHADE_LIGHT = rgb(BLUE)
+SHADES = []
+for _level in range(eightball.LEVELS + 1):
+    if _level <= 8:
+        SHADES.append(brush.pattern(SHADE_MID, SHADE_DARK, eightball.bayer_rows(2 * _level)))
+    else:
+        SHADES.append(brush.pattern(SHADE_LIGHT, SHADE_MID, eightball.bayer_rows(2 * (_level - 8))))
+
+
+def build_ball_bg():
+    g = screen_like_image()
+    g.antialias = image.X2
+    g.pen = DESK_C
+    g.clear()
+    g.pen = color.rgb(88, 166, 255, 14)
+    g.shape(shape.circle(BALL_X, BALL_Y, BALL_R + 10))
+    g.pen = color.rgb(88, 166, 255, 10)
+    g.shape(shape.circle(BALL_X, BALL_Y, BALL_R + 5))
+    g.pen = color.rgb(10, 12, 16)
+    g.shape(shape.circle(BALL_X, BALL_Y, BALL_R))
+    # Stacked faint circles drifting up and left make a soft highlight.
+    for i in range(6):
+        g.pen = color.rgb(255, 255, 255, 7)
+        g.shape(shape.circle(BALL_X - 28 * i / 5.0, BALL_Y - 30 * i / 5.0, BALL_R - 9 * i))
+    g.pen = color.rgb(255, 255, 255, 70)
+    g.shape(shape.circle(BALL_X - 40, BALL_Y - 44, 7))
+    g.pen = color.rgb(48, 54, 61)
+    g.shape(shape.circle(BALL_X, BALL_Y, WINDOW_R))
+    g.pen = color.rgb(6, 10, 30)
+    g.shape(shape.circle(BALL_X, BALL_Y, LIQUID_R))
+    g.pen = color.rgb(30, 62, 160, 30)
+    g.shape(shape.circle(BALL_X, BALL_Y, 44))
+    g.pen = color.rgb(30, 62, 160, 24)
+    g.shape(shape.circle(BALL_X, BALL_Y, 30))
+    return g
+
+
+# Shapes that never move are built once rather than every frame.
+CARD = shape.rounded_rectangle(CARD_X, CARD_Y, CARD_W, CARD_H, 8)
+CARD_EDGE = shape.rounded_rectangle(CARD_X, CARD_Y, CARD_W, CARD_H, 8).stroke(1)
+GLINT = shape.circle(BALL_X - 22, BALL_Y - 25, 10)
+GLINT_C = color.rgb(255, 255, 255, 26)
+
+
 def set_lights(levels):
     try:
         if levels is None:
@@ -272,6 +344,7 @@ def set_lights(levels):
 
 class App:
     def __init__(self):
+        self.mode = STAMP_MODE
         self.choice = None
         self.bag = verdicts.ShuffleBag(len(verdicts.VERDICTS), rng)
         self.slam = None
@@ -280,6 +353,8 @@ class App:
         self.desk.antialias = image.X2
         # The brief's header is vector text, which needs EVEN_ODD.
         self.desk.fill_rule = image.EVEN_ODD
+        self.ball_bg = None
+        self.ball = eightball.Ball(rng.random)
         self.flip = motion.FlipDetector(read_upside_down())
         self.chop = motion.ChopDetector()
         self.last_motion = None
@@ -304,7 +379,12 @@ class App:
         self.handle_motion(now, flipped, chopped)
         if self.slam is not None:
             self.advance_slam(now, dt)
-        self.draw_stamp_mode(now)
+        if self.mode == BALL_MODE:
+            self.ball.update(dt, now)
+        if self.mode == STAMP_MODE:
+            self.draw_stamp_mode(now)
+        else:
+            self.draw_ball_mode(now)
         self.draw_toast(now)
         self.update_lights(now)
         if self.slam is None:
@@ -313,31 +393,52 @@ class App:
 
     def handle_buttons(self, now):
         # Returns False when the app should exit.
+        if badge.pressed(BUTTON_LEFT) or badge.pressed(BUTTON_RIGHT):
+            self.switch_mode(BALL_MODE if self.mode == STAMP_MODE else STAMP_MODE)
         if badge.pressed(BUTTON_BACK):
             return self.back(now)
-        if badge.pressed(BUTTON_UP):
-            self.cycle_choice(now)
-        if badge.pressed(BUTTON_DOWN):
-            self.start_slam(self.next_verdict(), now)
+        if self.mode == STAMP_MODE:
+            if badge.pressed(BUTTON_UP):
+                self.cycle_choice(now)
+            if badge.pressed(BUTTON_DOWN):
+                self.start_slam(self.next_verdict(), now)
+        else:
+            if badge.pressed(BUTTON_DOWN) or badge.pressed(BUTTON_UP):
+                self.kick(18, now)
         return True
 
     def back(self, now):
-        if self.slam is not None or self.marks:
-            self.finish_slam()
-            self.marks = []
-            self.render_desk()
-            self.toast("FRESH PAPER", now)
+        if self.mode == STAMP_MODE:
+            if self.slam is not None or self.marks:
+                self.finish_slam()
+                self.marks = []
+                self.render_desk()
+                self.toast("FRESH PAPER", now)
+                return True
+            return False
+        if self.ball.state != eightball.IDLE:
+            self.ball.reset()
             return True
         return False
 
     def handle_motion(self, now, flipped, chopped):
-        if flipped or chopped:
-            # One physical move can read as both a flip and a chop.
-            if self.last_motion is None or now - self.last_motion >= MOTION_COOLDOWN_MS:
-                self.last_motion = now
-                self.start_slam(self.next_verdict(), now)
+        if self.mode == STAMP_MODE:
+            if flipped or chopped:
+                # One physical move can read as both a flip and a chop.
+                if self.last_motion is None or now - self.last_motion >= MOTION_COOLDOWN_MS:
+                    self.last_motion = now
+                    self.start_slam(self.next_verdict(), now)
 
     # Modes and choices.
+
+    def switch_mode(self, mode):
+        if mode == self.mode:
+            return
+        if self.mode == STAMP_MODE:
+            self.finish_slam()
+        self.mode = mode
+        if mode == BALL_MODE and self.ball_bg is None:
+            self.ball_bg = build_ball_bg()
 
     def next_verdict(self):
         if self.choice is not None:
@@ -357,6 +458,9 @@ class App:
         if self.choice is None:
             return "RANDOM"
         return verdicts.VERDICTS[self.choice]
+
+    def kick(self, strength, now):
+        self.ball.kick(strength, now)
 
     def toast(self, text, now):
         self.toast_text = text
@@ -480,7 +584,7 @@ class App:
                 screen.pen = rgb(verdicts.INKS[s.index], INK_ALPHA)
                 for p in s.splats:
                     screen.shape(shape.circle(p[0] + ox, p[1] + oy, p[4]))
-        self.draw_title("TASTE STAMP")
+        self.draw_title("TASTE STAMP", "< 8-BALL >")
         screen.font = SMALL_FONT
         if self.choice is None:
             screen.pen = DIM_C
@@ -517,14 +621,68 @@ class App:
         self.centred("OR PRESS DOWN", y + 32, PAPER_TEXT_C)
         screen.font = UI_FONT
 
-    def draw_title(self, title):
+    def draw_title(self, title, hint):
         screen.font = UI_FONT
         screen.pen = WHITE_C
         screen.text(title, 10, TITLE_Y)
+        screen.font = SMALL_FONT
+        screen.pen = DIM_C
+        screen.text(hint, W - 10 - text_width(hint), TITLE_Y + 2)
+        screen.font = UI_FONT
 
     def centred(self, text, y, pen):
         screen.pen = pen
         screen.text(text, (W - text_width(text)) // 2, y)
+
+    def draw_ball_mode(self, now):
+        if self.ball_bg is None:
+            self.ball_bg = build_ball_bg()
+        screen.blit(self.ball_bg, vec2(0, 0))
+        ball = self.ball
+        points, visible = ball.project(BALL_X, BALL_Y, D20_SCALE)
+        faces = ball.faces
+        buf = FACE_POINTS
+        shown = bytearray(len(faces))
+        for f, level, nz in visible:
+            shown[f] = 1
+            face = faces[f]
+            a = points[face[0]]
+            b = points[face[1]]
+            c = points[face[2]]
+            buf[0] = a[0]
+            buf[1] = a[1]
+            buf[2] = b[0]
+            buf[3] = b[1]
+            buf[4] = c[0]
+            buf[5] = c[1]
+            screen.pen = SHADES[level]
+            screen.shape(shape.custom(buf))
+        screen.pen = EDGE_C
+        for i, j, f, g in ball.edges:
+            if shown[f] or shown[g]:
+                p = points[i]
+                q = points[j]
+                screen.shape(shape.line(p[0], p[1], q[0], q[1], 1.3))
+        screen.pen = GLINT_C
+        screen.shape(GLINT)
+        self.draw_card(now)
+        self.draw_title("CREATIVE 8-BALL", "< STAMP >")
+
+    def draw_card(self, now):
+        screen.pen = CARD_C
+        screen.shape(CARD)
+        screen.pen = CARD_EDGE_C
+        screen.shape(CARD_EDGE)
+        state = self.ball.state
+        if state == eightball.IDLE:
+            screen.font = UI_FONT
+            self.centred("PRESS DOWN TO SPIN THE D20", CARD_Y + 21, WHITE_C)
+        else:
+            base = "CONSULTING THE STUDIO"
+            screen.font = UI_FONT
+            x = (W - text_width(base + "...")) // 2
+            screen.pen = WHITE_C
+            screen.text(base + "." * (1 + (now // 300) % 3), x, CARD_Y + 21)
 
     def draw_toast(self, now):
         if self.toast_text is None:
