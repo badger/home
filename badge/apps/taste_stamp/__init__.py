@@ -213,12 +213,21 @@ class App:
     def handle_buttons(self, now):
         # Returns False when the app should exit.
         if badge.pressed(BUTTON_BACK):
-            return False
+            return self.back(now)
         if badge.pressed(BUTTON_UP):
             self.cycle_choice(now)
         if badge.pressed(BUTTON_DOWN):
             self.start_slam(self.next_verdict(), now)
         return True
+
+    def back(self, now):
+        if self.slam is not None or self.marks:
+            self.finish_slam()
+            self.marks = []
+            self.render_desk()
+            self.toast("FRESH PAPER", now)
+            return True
+        return False
 
     # Modes and choices.
 
