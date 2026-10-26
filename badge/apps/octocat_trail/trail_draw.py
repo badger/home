@@ -25,6 +25,10 @@ TILE = tm.TILE
 SPACE = "   "
 TEXT_DY = 0
 DASHES = "-" * 43
+CHART_X = 4
+CHART_Y = 15
+CHART_W = tm.W * 3 // 2
+CHART_H = tm.H * 3 // 2
 
 BLACK, WHITE, GREEN, VIOLET, ORANGE = ta.BLACK, ta.WHITE, ta.GREEN, ta.VIOLET, ta.ORANGE
 BLUE, NAVY, GREY, DKGREEN, YELLOW = ta.BLUE, ta.NAVY, ta.GREY, ta.DKGREEN, ta.YELLOW
@@ -33,6 +37,7 @@ LTBLUE, GOLD, PLUM = ta.LTBLUE, ta.GOLD, ta.PLUM
 
 # Colour of each map tile code on the walk view (BASE) and the overview (CHART).
 BASE = (NAVY, BLACK, GREEN, GREY, BROWN, ORANGE, BLACK, GREEN, NAVY, NAVY, VIOLET, BROWN, GREEN)
+CHART = (NAVY, BLACK, GREEN, GREY, BROWN, ORANGE, WHITE, DKGREEN, NAVY, NAVY, VIOLET, BROWN, VIOLET)
 FIREHOUSE = 5
 GATEHOUSE = 6
 
@@ -872,6 +877,98 @@ class Renderer:
         for row in note:
             self.centred(row, y)
             y += ROW
+
+    # ----- the venue map ---------------------------------------------------------------------
+    def draw_map(self, view, game):
+        trail = view.data if view.data is not None else game.trail
+        self.bar(view.title)
+        self.chart_image(trail.deployed)
+        blink = (self.now // BLINK_MS) & 1
+        upcoming = trail.next_stop()
+        for stop in range(len(tm.STOPS)):
+            entry = tm.STOPS[stop]
+            mx = CHART_X + entry[3] * 3 // 2
+            my = CHART_Y + entry[4] * 3 // 2
+            if stop == upcoming:
+                if blink:
+                    continue
+                slot = WHITE
+            elif trail.has_visited(stop):
+                slot = GREEN
+            else:
+                slot = VIOLET
+            self.fill(BLACK, mx - 2, my - 2, 5, 5)
+            self.fill(slot, mx - 1, my - 1, 3, 3)
+        if not (self.now // 250) & 1:
+            px = CHART_X + trail.x * 3 // 2
+            py = CHART_Y + trail.y * 3 // 2
+            self.fill(BLACK, px - 3, py - 3, 6, 6)
+            self.fill(YELLOW, px - 2, py - 2, 4, 4)
+        self.pen(WHITE)
+        self.outline(CHART_X - 1, CHART_Y - 1, CHART_W + 2, CHART_H + 2)
+        x = CHART_X + CHART_W + 6
+        width = W - x - 4
+        y = self.lines(view.lines, 20, x, width) + 8
+        for slot, label in ((YELLOW, "Your wagon"), (WHITE, "Next stop"), (GREEN, "Visited"),
+                            (VIOLET, "Not yet"), (BROWN, "Gangway"), (NAVY, "The bay")):
+            self.fill(slot, x, y + 3, 6, 6)
+            self.pen(WHITE)
+            self.text(label, x + 12, y)
+            y += ROW
+        self.hint(view.hint)
+
+    def chart_image(self, deployed):
+        """The whole venue at 1.5 px per tile, cached in a small image while
+        the map is open and dropped as soon as it closes."""
+        key = (self.pen_key, deployed)
+        if self.chart_key != key:
+            self.chart_key = key
+            self.chart = None
+            try:
+                art = image(CHART_W, CHART_H)
+                try:
+                    art.antialias = image.OFF
+                except Exception:
+                    pass
+                self.paint_chart(art, deployed)
+                self.chart = art
+            except Exception:
+                self.chart = None
+        if self.chart is not None:
+            screen.blit(self.chart, vec2(CHART_X, CHART_Y))
+        else:
+            self.paint_chart(None, deployed)
+
+    def paint_chart(self, art, deployed):
+        if art is None:
+            surface = screen
+            ox = CHART_X
+            oy = CHART_Y
+        else:
+            surface = art
+            ox = 0
+            oy = 0
+            surface.pen = self.pens[BLACK]
+            surface.clear()
+        pens = self.pens
+        rows = tm.runs()
+        last = -1
+        for ty in range(tm.H):
+            y0 = ty * 3 // 2
+            h = (ty + 1) * 3 // 2 - y0
+            for x, n, code in rows[ty]:
+                if code == tm.LOT:
+                    continue
+                slot = CHART[code]
+                if code == tm.GANG1 or code == tm.GANG2:
+                    stop = tm.MERGE if code == tm.GANG1 else tm.DNS
+                    slot = BROWN if deployed & (1 << stop) else NAVY
+                if slot != last:
+                    last = slot
+                    surface.pen = pens[slot]
+                x0 = x * 3 // 2
+                surface.rectangle(ox + x0, oy + y0, (x + n) * 3 // 2 - x0, h)
+        self.slot = -1
 
     # ----- Dark Mode Camp ------------------------------------------------------------------------
     def camp_scene(self):
