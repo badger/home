@@ -36,6 +36,23 @@ BASE = (NAVY, BLACK, GREEN, GREY, BROWN, ORANGE, BLACK, GREEN, NAVY, NAVY, VIOLE
 FIREHOUSE = 5
 GATEHOUSE = 6
 
+# Arrival picture for each stop: (style, sign, accent colour).
+FACADES = (
+    ("booth", "GATEHOUSE", WHITE),
+    ("shop", "GITHUB SHOP", VIOLET),
+    ("hall", "OPEN SOURCE ZONE", GREEN),
+    ("hall", "GITHUB CENTRAL", BLUE),
+    ("hall", "EXPERT CENTER", VIOLET),
+    ("hall", "CAREER CORNER", YELLOW),
+    ("fire", "HOTFIX HQ", MAGENTA),
+    ("meadow", "", GREEN),
+    ("river", "", NAVY),
+    ("pavilion", "MAKERSPACE", AQUA),
+    ("theater", "COWELL THEATER", YELLOW),
+    ("river", "", NAVY),
+    ("pavilion", "MAINSTAGE", VIOLET),
+)
+
 
 def dim(rgb):
     """Dark Mode Camp: the whole screen at about half brightness."""
@@ -483,6 +500,112 @@ class Renderer:
             self.text(row, 16, y)
             y += ROW
         self.centred(self.fit(view.hint, W - 24), limit)
+
+    # ----- arriving at a stop ------------------------------------------------------------------
+    def draw_stop(self, view, game):
+        stop = view.data if isinstance(view.data, int) else 3
+        self.facade(stop)
+        y = self.bar(view.title, 128)
+        if view.foot:
+            self.pen(GREY)
+            self.centred(view.foot[0], y)
+            y += ROW + 2
+        self.lines(view.lines, y)
+        self.hint(view.hint)
+
+    def facade(self, stop, party_x=6, frame=0):
+        """A picture of the stop: 128 px of building, scenery and ground."""
+        style, sign, accent = FACADES[stop if 0 <= stop < len(FACADES) else 3]
+        blink = (self.now // BLINK_MS) & 1
+        if style == "meadow":
+            self.bay_scene(48)
+            self.fill(GREEN, 0, 94, W, 18)
+            for tx, ty, scale in ((110, 70, 3), (250, 78, 2), (286, 74, 3), (160, 84, 2)):
+                self.sprite(ta.TREE, tx, ty, scale)
+            self.sprite(ta.FLAG, 220, 88, 3)
+        elif style == "river":
+            self.fill(NAVY, 0, 70, W, 42)
+            self.waves(0, 74, W, 34, 10)
+            self.fill(BROWN, 0, 62, 70, 8)
+            self.fill(BROWN, 250, 62, 70, 8)
+            self.pen(GREY)
+            for px in (8, 30, 52, 258, 280, 302):
+                screen.rectangle(px, 70, 3, 12)
+        elif style == "booth":
+            for fx in range(4, 120, 16):
+                self.fill(WHITE, fx, 92, 2, 20)
+            self.fill(WHITE, 0, 96, 120, 1)
+            self.fill(WHITE, 0, 104, 120, 1)
+            self.fill(WHITE, 128, 64, 48, 48)
+            self.fill(BLUE, 134, 70, 36, 16)
+            self.fill(WHITE, 151, 70, 2, 16)
+            self.fill(NAVY, 140, 90, 14, 22)
+            self.fill(ORANGE, 120, 58, 64, 6)
+            self.fill(ORANGE, 126, 52, 52, 6)
+            self.fill(GREY, 184, 80, 4, 32)
+            for i in range(10):
+                self.fill(WHITE if i & 1 else MAGENTA, 188 + i * 10, 84, 10, 4)
+            self.sign(sign, 152, 32, accent)
+        elif style == "shop":
+            self.fill(WHITE, 40, 44, 240, 68)
+            self.fill(ORANGE, 34, 36, 252, 8)
+            self.sign(sign, 160, 46, accent)
+            for i in range(10):
+                self.fill(accent if i & 1 == 0 else PINK, 60 + i * 20, 64, 20, 8)
+            self.fill(NAVY, 64, 74, 128, 32)
+            self.sprite(ta.MONA[blink], 80, 78, 2)
+            self.sprite(ta.DUCK[0], 132, 82, 2)
+            self.fill(BLACK, 212, 72, 32, 40)
+            self.fill(GREY, 236, 92, 3, 3)
+        elif style == "hall":
+            self.fill(WHITE, 16, 40, 288, 72)
+            self.fill(ORANGE, 10, 30, 300, 10)
+            self.fill(accent, 16, 40, 288, 3)
+            for wx in range(28, 296, 32):
+                self.fill(NAVY, wx, 46, 12, 10)
+                if wx < 136 or wx > 180:
+                    self.fill(NAVY, wx, 82, 12, 16)
+                    self.fill(WHITE, wx + 5, 82, 2, 16)
+            self.sign(sign, 160, 62, accent)
+            self.fill(BLACK, 140, 80, 40, 32)
+        elif style == "fire":
+            self.fill(MAGENTA, 60, 44, 200, 68)
+            self.fill(GREY, 54, 36, 212, 8)
+            self.fill(GREY, 152, 34, 16, 2)
+            self.fill(YELLOW if blink else ORANGE, 156, 24, 8, 10)
+            self.sign(sign, 160, 48, WHITE)
+            self.fill(WHITE, 112, 68, 96, 44)
+            for gy in range(76, 112, 8):
+                self.fill(GREY, 112, gy, 96, 1)
+            for wx in (72, 220):
+                self.fill(NAVY, wx, 70, 28, 20)
+                self.fill(WHITE, wx + 13, 70, 2, 20)
+        elif style == "pavilion":
+            if stop == tm.END:
+                self.line(YELLOW, 60, 54, 20, 0, 2)
+                self.line(YELLOW, 260, 54, 300, 0, 2)
+            self.fill(WHITE, 20, 54, 280, 58)
+            for i in range(14):
+                self.fill(ORANGE, 14 + i * 10, 52 - 2 * i, 292 - 20 * i, 2)
+            for wx in (40, 70, 234, 264):
+                self.fill(NAVY, wx, 66, 16, 20)
+            self.circle(BLACK, 160, 82, 24)
+            self.fill(BLACK, 136, 82, 48, 30)
+            self.sign(sign, 160, 34, accent)
+        elif style == "theater":
+            self.fill(WHITE, 40, 40, 240, 72)
+            self.fill(ORANGE, 34, 32, 252, 8)
+            self.fill(BLACK, 64, 48, 192, 30)
+            for i in range(16):
+                slot = YELLOW if (i + blink) & 1 else ORANGE
+                self.fill(slot, 68 + i * 12, 50, 3, 3)
+                self.fill(slot, 68 + i * 12, 73, 3, 3)
+            self.pen(WHITE)
+            self.centred(sign, 57)
+            for dx in (96, 146, 196):
+                self.fill(BLACK, dx, 86, 28, 26)
+        self.fill(GREEN, 0, 112, W, 16)
+        self.token(party_x, 88, frame, False, 2)
 
     # ----- walking the venue ----------------------------------------------------------------
     def draw_roam(self, view, game):
