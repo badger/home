@@ -103,6 +103,12 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(tl.wrap("  a  b ", 10, len), ["a b"])
         self.assertEqual(tl.wrap("", 10, len), [""])
 
+    def test_store_items(self):
+        self.assertEqual(tl.store_item("brew")[1], 4)
+        self.assertEqual(tl.carry_limit("patches"), 9)
+        with self.assertRaises(KeyError):
+            tl.store_item("credits")
+
 
 class RngTests(unittest.TestCase):
     def test_xorshift_sequence_is_portable(self):

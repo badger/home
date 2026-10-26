@@ -14,6 +14,26 @@ ROLES = (
     ("ATC Control Lead", "@kdaigle", 600, 3, "Calm air traffic: safer deploys at rivers."),
 )
 
+SUPPLIES = (
+    ("credits", "Copilot Credits"),
+    ("brew", "Cold Brew Kegs"),
+    ("lgtm", "LGTM Stamps"),
+    ("patches", "Hotfix Patches"),
+)
+
+# (supply key, base price in credits, quantity per press, carry limit, blurb)
+STORE_ITEMS = (
+    ("brew", 4, 10, 500, "The party drinks about a keg a day."),
+    ("lgtm", 1, 10, 300, "Hunt ammo and deploy approvals."),
+    ("patches", 25, 1, 9, "Fixes broken CI and reverts force-pushes."),
+)
+# (name, kegs per person per day, daily health change)
+RATIONS = (
+    ("Nitro", 0.3, 2),
+    ("Drip", 0.2, 1),
+    ("Decaf", 0.1, -1),
+)
+
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
 MASK32 = 0xFFFFFFFF
@@ -94,6 +114,17 @@ def role_label(index):
     return ROLES[index][0] + " " + ROLES[index][1]
 
 
+def store_item(key):
+    for item in STORE_ITEMS:
+        if item[0] == key:
+            return item
+    raise KeyError(key)
+
+
+def carry_limit(key):
+    return store_item(key)[3]
+
+
 class Rng:
     """Seeded xorshift32 generator; MicroPython has no random.Random class."""
 
@@ -152,6 +183,7 @@ class Trail:
     def __init__(self, role, rng):
         self.role = clamp_int(role, 0, len(ROLES) - 1)
         self.members = [Member(name) for name in PARTY]
+        self.rations = 1
 
     # ----- party -----------------------------------------------------------
     def living(self):
@@ -177,3 +209,7 @@ class Trail:
 
     def multiplier(self):
         return ROLES[self.role][3]
+
+    def brew_per_day(self):
+        need = self.living_count() * RATIONS[self.rations][1]
+        return need
