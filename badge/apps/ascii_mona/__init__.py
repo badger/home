@@ -4,9 +4,9 @@ A handle becomes 19 numbers of Mona DNA that pick parts and colours from
 GitHub's own MyOctocat library (myoctocat.com). The badge paints that outfit
 as vector art, or as ASCII art built with Ascii-Motion's techniques. Handles
 arrive from the badge you hold yours against (Bluetooth badge link), from an
-IR beam, from saved Contacts cards or from the arcade letter wheel. SELECT
-beams the Mona over IR and finishes with the Universe quest code 0x88 on
-address 0x45.
+IR beam, from saved Contacts cards or from the arcade letter wheel, and a
+public GitHub profile can tune the result. SELECT beams the Mona over IR and
+finishes with the Universe quest code 0x88 on address 0x45.
 """
 
 import gc
@@ -125,6 +125,7 @@ STATE_KEY = "ascii_mona"
 CONTACTS_FILE = "/state/contacts.json"
 BADGE_USER_FILE = "/state/badge_user.json"
 MAX_RECENT = 8
+MAX_PROFILES = 8
 MAX_CONTACTS = 24
 
 WIDTH = 320
@@ -418,6 +419,7 @@ def backdrop_key(handle, dna):
 class MonaApp:
     def __init__(self):
         self.recent = []
+        self.profiles = []
         self.style = VECTOR
         self.palette = mona_ascii.PRIMER
         self.typed = ""
@@ -425,9 +427,12 @@ class MonaApp:
         self.mine = None
         self.load()
         self.owner = load_owner(self.mine)
+        if self.owner[3] is not None:
+            self.remember_profile(self.owner[3])
         if self.current is None or self.current[3] == "you":
             self.current = self.me()
 
+        self.notes = []
         self.art = new_image(ART_W, ART_H)
         self.back = new_image(WIDTH, FOOT_Y)
         if self.back is not None:
@@ -446,6 +451,7 @@ class MonaApp:
         self.ascii_warned = False
         self.ir = mona_ir.IrPort()
         self.link = mona_link.MonaLink(self.owner_card())
+        self.lookup = mona_net.Lookup()
         self.rng = mona_dna.Rng(mona_dna.fmix32((mona_dna.seed_of(badge_uid()) ^ badge.ticks) & mona_dna.MASK))
 
         self.view = MAIN
@@ -465,15 +471,20 @@ class MonaApp:
         self.toast_until = 0
         self.lit = None
         self.closed = False
+        self.show(self.current)
 
     def me(self):
         return (self.owner[0], self.owner[1], self.owner[2], "you")
+
+    def has_mine(self):
+        """True when the owner saved a tweaked Mona for their current handle."""
+        return self.mine is not None and self.mine[0].lower() == self.owner[0].lower()
 
     def owner_card(self):
         return mona_link.make_card(self.owner[0], self.owner[1], self.owner[2])
 
     def load(self):
-        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0, "typed": "", "mine": None}
+        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0, "typed": "", "profiles": [], "mine": None}
         try:
             STORE.load(STATE_KEY, data)
         except Exception:
@@ -493,6 +504,12 @@ class MonaApp:
                 rec = read_record(item)
                 if rec is not None and len(self.recent) < MAX_RECENT:
                     self.recent.append(rec)
+        profiles = data.get("profiles")
+        if isinstance(profiles, list):
+            for item in profiles:
+                profile = mona_net.slim(item)
+                if profile is not None and len(self.profiles) < MAX_PROFILES:
+                    self.profiles.append(profile)
         self.mine = read_mine(data.get("mine"))
         self.current = read_record(data.get("current"))
 
@@ -506,6 +523,7 @@ class MonaApp:
             "style": self.style,
             "palette": self.palette,
             "typed": self.typed,
+            "profiles": self.profiles,
             "mine": mine,
         }
         try:
@@ -528,9 +546,27 @@ class MonaApp:
                 keep.append(old)
         self.recent = keep
 
+    def remember_profile(self, profile):
+        keep = [profile]
+        for old in self.profiles:
+            if not same(old.get("login", ""), profile["login"]) and len(keep) < MAX_PROFILES:
+                keep.append(old)
+        self.profiles = keep
+
+    def profile_for(self, handle):
+        if handle:
+            for profile in self.profiles:
+                if same(profile.get("login", ""), handle):
+                    return profile
+        return None
+
     def tuned(self, handle):
-        """Mona DNA for a handle."""
-        return mona_dna.dna_for(handle)
+        """Handle DNA, tuned by a saved GitHub profile when there is one."""
+        dna = mona_dna.dna_for(handle)
+        profile = self.profile_for(handle)
+        if profile is not None:
+            dna = mona_dna.apply_profile(dna, profile)[0]
+        return dna
 
     def adopt(self, handle, dna, name, via):
         rec = (handle or "", tuple(dna), name or "", via)
@@ -541,6 +577,12 @@ class MonaApp:
 
     def show(self, rec):
         self.current = rec
+        self.notes = []
+        profile = self.profile_for(rec[0])
+        if profile is not None:
+            dna, notes = mona_dna.apply_profile(mona_dna.dna_for(rec[0]), profile)
+            if dna == rec[1]:
+                self.notes = notes
 
     def say(self, text, pen=WHITE):
         self.toast = mona_dna.clean_text(text, 60)
@@ -551,7 +593,10 @@ class MonaApp:
 
     def main_input(self, now):
         if badge.pressed(BUTTON_SELECT):
-            self.start_beam(now)
+            if self.info:
+                self.start_lookup(now)
+            else:
+                self.start_beam(now)
         elif badge.pressed(BUTTON_LEFT):
             self.set_style(self.style - 1)
         elif badge.pressed(BUTTON_RIGHT):
@@ -567,6 +612,8 @@ class MonaApp:
                 self.open_tweak()
             else:
                 self.open_who()
+        elif MENU_BUTTON is not None and badge.pressed(MENU_BUTTON):
+            self.start_lookup(now)
         elif badge.pressed(BUTTON_BACK):
             if self.info:
                 self.info = False
@@ -734,6 +781,19 @@ class MonaApp:
         if self.ir.start_beam(handle, dna):
             self.shared = self.link.share_mona(handle, dna, name, now)
 
+    def start_lookup(self, now):
+        if self.lookup.busy:
+            self.lookup.cancel()
+            self.say("Lookup cancelled")
+            return
+        handle = self.current[0]
+        if not handle:
+            self.say("Mystery Monas have no GitHub profile", GOLD)
+            return
+        failed = self.lookup.start(handle, now)
+        if failed is not None:
+            self.say(failed[1], RED)
+
     def got_mona(self, handle, dna, name, via):
         self.adopt(handle, dna, name, via)
         if self.view == WHO or self.view == TWEAK:
@@ -769,6 +829,42 @@ class MonaApp:
         if got is not None:
             via = "badge link" if got[0] == "card" else "shared"
             self.got_mona(got[1], got[2], got[3], via)
+
+    def lookup_events(self, now):
+        event = self.lookup.update(now)
+        if event is None:
+            return
+        if event[0] == "failed":
+            self.say(event[1], RED)
+            return
+        profile = event[1]
+        login = profile["login"]
+        before = self.tuned(login)
+        self.remember_profile(profile)
+        tuned, notes = mona_dna.apply_profile(mona_dna.dna_for(login), profile)
+        if same(login, self.owner[0]):
+            dna = self.owner[1] if self.has_mine() else tuned
+            self.owner = (self.owner[0], dna, self.owner[2] or profile.get("name", ""), profile)
+            self.link.set_card(self.owner_card())
+        handle, dna, name, via = self.current
+        if not same(login, handle):
+            self.save()
+            self.say("Profile saved for @" + login, BLUE)
+            return
+        keep = via == "you" and self.has_mine()
+        if not keep and (dna == before or dna == mona_dna.dna_for(login)):
+            info = self.info
+            if via == "you":
+                self.show(self.me())
+                self.save()
+            else:
+                self.adopt(login, tuned, name or profile.get("name", ""), via)
+            self.info = info
+            self.say(notes[0] if notes else "Profile loaded for @" + login, GREEN)
+        else:
+            self.show(self.current)
+            self.save()
+            self.say("Profile loaded; your tweaks stay", BLUE)
 
     # -- painting ---------------------------------------------------------------
 
@@ -898,8 +994,9 @@ class MonaApp:
         if self.view == WHEEL:
             self.update_wheel_dna()
         self.ir_events(now)
-        idle = self.view == MAIN and not self.info and not self.ir.beaming
+        idle = self.view == MAIN and not self.info and not self.ir.beaming and not self.lookup.busy
         self.link_events(now, idle)
+        self.lookup_events(now)
         self.paint(now)
         self.draw(now)
         self.lights(now, idle)
@@ -929,6 +1026,7 @@ class MonaApp:
         self.closed = True
         self.ir.close()
         self.link.close()
+        self.lookup.cancel()
         self.painter.close()
         try:
             badge.caselights(0)
@@ -1001,6 +1099,8 @@ class MonaApp:
 
     def status(self, now):
         """(text, pen, percent or None) for the bottom of the panel."""
+        if self.lookup.busy:
+            return (self.lookup.status or "looking up", BLUE, None)
         hint = self.link.hint(now)
         if hint is not None:
             percent = None if hint[1] is None else int(hint[1] * 100)
@@ -1088,10 +1188,22 @@ class MonaApp:
             cy = y + 28 + (i % half) * 17
             write(label, cx, cy, SMALL_SIZE, DIM)
             write(value, cx + 58, cy, SMALL_SIZE, WHITE, 86)
-        if name:
+        profile = self.profile_for(handle)
+        if profile is not None:
+            bits = []
+            if profile.get("name"):
+                bits.append(profile["name"])
+            bits.append(mona_dna.counted(profile.get("followers", 0), "follower"))
+            bits.append(mona_dna.counted(profile.get("public_repos", 0), "repo"))
+            write(", ".join(bits), x + 10, y + 148, SMALL_SIZE, BLUE, w - 20)
+        elif name:
             write(name, x + 10, y + 148, SMALL_SIZE, WHITE, w - 20)
-        elif not handle:
+        elif handle:
+            write("SELECT looks up @" + handle + " on GitHub", x + 10, y + 148, SMALL_SIZE, BLUE, w - 20)
+        else:
             write("Mystery Mona: no GitHub profile", x + 10, y + 148, SMALL_SIZE, DIM, w - 20)
+        for i in range(min(2, len(self.notes))):
+            write(self.notes[i], x + 10, y + 164 + i * 16, SMALL_SIZE, GOLD, w - 20)
         write("DNA " + mona_dna.dna_hex(dna), x + 10, y + 196, SMALL_SIZE, DIM, w - 20)
 
     def draw_who(self):
@@ -1193,9 +1305,9 @@ class MonaApp:
         if self.view == TWEAK:
             return ("UP/DOWN pick  LEFT/RIGHT change", "SELECT save  MENU reset  BACK cancel" if menu else "SELECT save  BACK cancel")
         if self.info:
-            return ("DOWN tweak  UP/BACK close",)
+            return ("SELECT look up on GitHub  DOWN tweak", "UP/BACK close")
         first = "SELECT beam  LEFT/RIGHT style  UP " + ("info" if self.style == VECTOR else "colours")
-        second = "DOWN pick a handle  BACK exit"
+        second = "DOWN pick a handle  MENU GitHub  BACK exit" if menu else "DOWN pick a handle  BACK exit"
         return (first, second)
 
     def draw_footer(self, now):
