@@ -30,6 +30,7 @@ MODULE_ORDER = (
     "mona_dna",
     "mona_wheel",
     "mona_ir",
+    "mona_link",
     "mona_ascii",
 )
 _MISSING = object()
@@ -1545,6 +1546,36 @@ class TestIr(unittest.TestCase):
         events, _ = self.run_beam(port)
         self.assertEqual(events, [("sent", True, "")])
         self.assertEqual(port.note, "IR send unavailable: simulated beam")
+
+
+class TestLink(unittest.TestCase):
+    """The Contacts-style Bluetooth proximity swap (badgeware.link)."""
+
+    def setUp(self):
+        self.L = M["mona_link"]
+        self.D = M["mona_dna"]
+
+    def test_cards_round_trip_and_accept_contacts_cards(self):
+        L, D = self.L, self.D
+        dna = D.dna_for("octocat")
+        card = L.make_card("octocat", dna, "The Octocat")
+        self.assertEqual(card, {"v": 2, "github": "octocat", "dna": D.dna_hex(dna), "name": "The Octocat"})
+        self.assertNotIn("name", L.make_card("", dna, "  "))
+        self.assertEqual(L.read_card(card), ("octocat", dna, "The Octocat"))
+        self.assertEqual(L.decode_card(json.dumps(card).encode()), ("octocat", dna, "The Octocat"))
+        contact = {"name": "Ann", "github": "Octocat", "linkedin": "ann"}
+        self.assertEqual(L.read_card(contact), ("Octocat", dna, "Ann"))
+        self.assertEqual(L.read_card({"github": "@Octocat"})[0], "octocat")
+        self.assertEqual(L.read_card({"github": "https://github.com/Hubot"})[:2], ("hubot", D.dna_for("hubot")))
+        self.assertEqual(L.read_card({"github": "", "dna": D.dna_hex(dna)}), ("", dna, ""))
+        self.assertEqual(L.read_card({"github": "ada", "dna": "zz"}), ("ada", D.dna_for("ada"), ""))
+        name = L.read_card({"github": "ada", "name": "[A]\nB" + "x" * 60})[2]
+        self.assertEqual(len(name), L.MAX_NAME)
+        self.assertTrue(name.startswith("(A) B"))
+        for bad in ({"github": "bad handle!"}, {"github": 5}, {"github": "  "}, {}, "x", None, [1]):
+            self.assertIsNone(L.read_card(bad), bad)
+        for bad in (b"not json", b"[1,2]", b"\xff", b""):
+            self.assertIsNone(L.decode_card(bad), bad)
 
 
 class TestWheel(unittest.TestCase):
