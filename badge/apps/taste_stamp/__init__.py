@@ -125,6 +125,14 @@ def stamp_shapes(index):
     return cached
 
 
+def warm_stamps():
+    # Builds at most one missing stamp per frame so the first slam is smooth.
+    for i in range(len(STAMPS)):
+        if STAMPS[i] is None:
+            stamp_shapes(i)
+            return
+
+
 def draw_stamp(target, index, x, y, rot, scale, alpha):
     outlines, w, h = stamp_shapes(index)
     transform = mat3().translate(x, y).rotate(rot).scale(scale)
@@ -174,6 +182,8 @@ class App:
         if self.slam is not None:
             self.advance_slam(now)
         self.draw_stamp_mode(now)
+        if self.slam is None:
+            warm_stamps()
         return None
 
     def handle_buttons(self, now):
