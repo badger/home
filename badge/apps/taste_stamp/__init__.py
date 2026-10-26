@@ -91,6 +91,8 @@ BOTTOM_Y = PAPER_Y + PAPER_H + 6
 BRIEF = (-0.42, 0.94, 0.88, 0.97, 0.52, 0, -0.3, 0.9, 0.96, 0.84, 0.6, 0, 0.91, 0.7)
 
 INK_ALPHA = 225
+# Older impressions fade as new ones land on the same sheet.
+FADES = (150, 95, 55)
 STAMP_MAX_W = 220.0
 STAMP_MAX_H = 136.0
 STAMP_MAX_SCALE = 5.5
@@ -176,6 +178,10 @@ class Slam:
         self.inked = False
 
 
+def draw_mark(target, mark, alpha):
+    draw_stamp(target, mark.index, mark.x, mark.y, mark.rot, mark.scale, alpha)
+
+
 class App:
     def __init__(self):
         self.choice = None
@@ -243,6 +249,10 @@ class App:
 
     def start_slam(self, index, now):
         self.finish_slam()
+        while len(self.marks) > len(FADES):
+            self.marks.pop(0)
+        if self.marks:
+            self.render_desk()
         self.slam = Slam(index, now)
 
     def advance_slam(self, now):
@@ -293,6 +303,11 @@ class App:
                 d.pen = LINE_C
                 d.shape(shape.rounded_rectangle(TEXT_X, y, v * TEXT_W, 4, 2))
             y += 11
+        n = len(self.marks)
+        for i in range(n):
+            age = n - 1 - i
+            if age < len(FADES):
+                draw_mark(d, self.marks[i], FADES[age])
 
     # Drawing.
 
