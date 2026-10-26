@@ -30,6 +30,7 @@ def load(path, name):
 V = load(APP / "verdicts.py", "taste_stamp_verdicts")
 S = load(APP / "stamp.py", "taste_stamp_stamp")
 M = load(APP / "motion.py", "taste_stamp_motion")
+E = load(APP / "eightball.py", "taste_stamp_eightball")
 README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "taste_stamp_validate_app_readmes")
 
 REST_UP = (0, 16384, 0, 0, 0, 0)  # hardware, badge upright
@@ -379,6 +380,41 @@ class MotionTests(unittest.TestCase):
         c.update(SPIKE, 16, 144)
         c.update(SPIKE, 16, 160)
         self.assertLess(abs(c.gravity - before), 0.02 * before)
+
+
+class EightBallTests(unittest.TestCase):
+    def setUp(self):
+        self.verts, self.faces, self.numbers = E.icosahedron()
+
+    def test_icosahedron_is_a_d20(self):
+        self.assertEqual(len(self.verts), 12)
+        self.assertEqual(len(self.faces), 20)
+        self.assertEqual(sorted(self.numbers), list(range(1, 21)))
+        for face in self.faces:
+            for i in range(3):
+                edge = math.dist(self.verts[face[i]], self.verts[face[(i + 1) % 3]])
+                self.assertAlmostEqual(edge, 2.0, places=9)
+
+    def test_opposite_faces_add_up_to_21(self):
+        centres = [E.face_centre(self.verts, f) for f in self.faces]
+        for i, c in enumerate(centres):
+            mirror = tuple(-v for v in c)
+            opposite = [j for j, o in enumerate(centres) if math.dist(o, mirror) < 1e-6]
+            self.assertEqual(len(opposite), 1)
+            self.assertEqual(self.numbers[i] + self.numbers[opposite[0]], 21)
+
+    def test_faces_wind_outward_consistently(self):
+        edges = set()
+        for face in self.faces:
+            n = E.face_normal(self.verts, face)
+            self.assertAlmostEqual(math.sqrt(sum(v * v for v in n)), 1.0, places=9)
+            c = E.face_centre(self.verts, face)
+            self.assertGreater(sum(a * b for a, b in zip(n, c)), 0)
+            for i in range(3):
+                edges.add((face[i], face[(i + 1) % 3]))
+        self.assertEqual(len(edges), 60)
+        for a, b in edges:
+            self.assertIn((b, a), edges)
 
 
 def read_png(path):
