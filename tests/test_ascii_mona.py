@@ -1360,6 +1360,37 @@ class TestIr(unittest.TestCase):
                 return events, now
         self.fail("beam never finished")
 
+    def test_live_beam_ignores_its_own_echo(self):
+        I, D = self.I, self.D
+        ir = install_ir(self)
+        sender = sender_class()
+        install_sender(self, sender)
+        port = I.IrPort()
+        port.listen()
+        dna = D.dna_for("octocat")
+        self.assertTrue(port.start_beam("octocat", dna))
+        self.assertTrue(port.beaming)
+        self.assertFalse(port.start_beam("octocat", dna))
+        self.assertTrue(port.beam.live)
+        packet = I.encode_packet("octocat", dna)
+        port.update(0)
+        for byte in packet:
+            ir.deliver(0x4C, byte)
+        events, now = self.run_beam(port)
+        self.assertEqual(events, [("sent", True, "")])
+        self.assertEqual(sender.made[0].sent, [(a, c) for a, c, _w in I.beam_frames("octocat", dna)])
+        self.assertFalse(port.beaming)
+        for byte in packet:
+            ir.deliver(0x4C, byte)
+        self.assertEqual(port.update(now + I.ECHO_MS - 1), [])
+        other = D.dna_for("ada")
+        for byte in I.encode_packet("ada", other):
+            ir.deliver(0x4C, byte)
+        self.assertEqual(port.update(now + I.ECHO_MS + 1), [("mona", "ada", other)])
+        port.close()
+        self.assertTrue(sender.made[0].stopped)
+        self.assertIsNone(port.beam)
+
     def test_beam_failures_and_simulated_beams(self):
         I, D = self.I, self.D
         install_sender(self, sender_class(fail_send=True))

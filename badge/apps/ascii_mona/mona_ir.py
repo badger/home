@@ -37,6 +37,7 @@ COPIES = 2
 COPY_GAP_MS = 250
 GAP_MS = 1200
 DEDUPE_MS = 15000
+ECHO_MS = 400
 WINDOW = 64
 INBOX_MAX = 160
 
@@ -214,6 +215,7 @@ class IrPort:
         self.inbox = []
         self.decoder = Decoder()
         self.beam = None
+        self.quiet_until = None
         self.note = ""
 
     # Receiver callbacks only record what arrived; update() does the work.
@@ -279,6 +281,11 @@ class IrPort:
     def send(self, address, command):
         self.tx.send_addr_cmd(address, command)
 
+    def quiet(self, now):
+        if self.beaming:
+            return True
+        return self.quiet_until is not None and now - self.quiet_until < 0
+
     def update(self, now):
         """Advance the beam and decode what arrived; returns a list of events.
 
@@ -289,14 +296,19 @@ class IrPort:
         if beam is not None and not beam.done:
             beam.step(now, self.send if beam.live and self.tx is not None else None)
             if beam.done:
+                self.quiet_until = now + ECHO_MS
                 events.append(("sent", not beam.error, beam.error))
         if self.inbox:
             inbox = self.inbox
             self.inbox = []
-            for byte in inbox:
-                found = self.decoder.push(byte, now)
-                if found is not None:
-                    events.append(("mona", found[0], found[1]))
+            if self.quiet(now):
+                # our own frames bouncing back
+                self.decoder.reset()
+            else:
+                for byte in inbox:
+                    found = self.decoder.push(byte, now)
+                    if found is not None:
+                        events.append(("mona", found[0], found[1]))
         return events
 
     def close(self):
