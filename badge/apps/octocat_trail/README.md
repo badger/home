@@ -81,3 +81,13 @@ Every hardware feature is optional and guarded, so the app also runs in the Badg
 - **Case lights** chase while beaming and on victory, flicker at camp and pulse while sprinting.
 
 In the Badge Simulator the IMU and light sensor are static and IR is unavailable, so use BACK to sprint, the menu to camp and the simulated beam.
+
+## Saved data
+
+The app saves to `badgeware.State` under `octocat_trail`. It stores the best score, monitor and sensor settings, up to 12 tombstones, run, victory and beam counts, and the run in progress. A run autosaves at stops, rivers and stores, when the pace or rations change, every 15 days, when breaking camp and on exit.
+
+## Credits
+
+- The Octocat Trail is an original, unofficial homage to classic trail games. It is not affiliated with or endorsed by the owners of The Oregon Trail, and all of its art, text and code are original.
+- The venue map is inspired by the public layout of Fort Mason Center in San Francisco. It is not an official venue map.
+- The Green monitor was inspired by the phosphor palettes in Cameron Foxly's [Ascii-Motion](https://github.com/CameronFoxly/Ascii-Motion). It is an independent implementation and includes no Ascii-Motion code.

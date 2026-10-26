@@ -4398,6 +4398,34 @@ class PackagingTests(unittest.TestCase):
         sentence = validator.first_sentence(validator.first_paragraph(APP / "README.md"))
         self.assertTrue(sentence.startswith("Lead the Studio party"), sentence)
 
+    def test_the_readme_matches_the_code(self):
+        text = (APP / "README.md").read_text(encoding="utf-8")
+        lines = text.splitlines()
+        self.assertEqual(lines[0], "# The Octocat Trail")
+        self.assertTrue(lines[2].startswith("Lead the Studio party") and lines[2].endswith("."), lines[2])
+        tree = ast.parse((APP / "__init__.py").read_text(encoding="utf-8"))
+        keys = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
+                and [getattr(target, "id", None) for target in node.targets] == ["STATE_KEY"]]
+        self.assertEqual(keys, [APP.name])
+        self.assertEqual(tl.BEAM_REPEATS, 3)
+        claims = (
+            "under `%s`" % APP.name,
+            "0x%02X" % tl.IR_ADDRESS,
+            "%d-byte checksummed packet three times" % tl.PACKET_LEN,
+            "up to %d tombstones" % tl.MAX_TOMBSTONES,
+            "%d-day sprint" % tl.TURBO_DAYS,
+            "every %d days" % tg.SAVE_EVERY_DAYS,
+            "heals the party by %d and cures illness, at most once every %d days" % (tl.HEAL_AMOUNT, tl.HEAL_DAYS),
+            "Ascii-Motion",
+            "GPIO43",
+            "GPIO16",
+            "only reach badges that are running The Octocat Trail",
+        )
+        for claim in claims:
+            with self.subTest(claim):
+                self.assertIn(claim, text)
+        self.assertNotIn("0x45", text)
+
 
 if __name__ == "__main__":
     unittest.main()
