@@ -259,6 +259,7 @@ class Trail:
         self.deployed = 0
         self.healed_day = -HEAL_DAYS
         self.basket = {}
+        self.tailwind = 0
         self.last_cause = CAUSE_EXHAUSTION
         self.ticker = "Outfit the wagon at the Gatehouse store."
         self._guide = None
@@ -368,6 +369,8 @@ class Trail:
     # ----- walking ------------------------------------------------------------
     def steps_per_day(self):
         steps = PACES[self.pace][1]
+        if self.tailwind > 0:
+            steps = steps * 7 // 4
         if self.supplies["brew"] <= 0:
             steps = steps * 3 // 4
         if self.average_health() < 40:
@@ -544,6 +547,8 @@ class Trail:
 
     def _end_day(self):
         self.day += 1
+        if self.tailwind > 0:
+            self.tailwind -= 1
 
     def idle_days(self, days, lines, resting=False):
         for _ in range(days):
@@ -566,6 +571,7 @@ class Trail:
                 (2, self._abandoned_wagon),
                 (2, self._rate_limited),
                 (2, self._typosquatter),
+                (2, self._shortcut),
                 (1, self._stale_readme),
             ))
             event(lines)
@@ -613,6 +619,10 @@ class Trail:
             return
         self.supplies["brew"] -= kegs
         lines.append("An npm typosquatter made off with %s." % plural(kegs, "keg"))
+
+    def _shortcut(self, lines):
+        self.tailwind = max(self.tailwind, 2)
+        lines.append("Copilot found a shortcut. The next 2 days fly by.")
 
     def _stale_readme(self, lines):
         lines.append("You followed a stale README. Lost 2 days.")
