@@ -13,6 +13,7 @@ import importlib.util
 import re
 import struct
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -95,6 +96,223 @@ class TestLoading(unittest.TestCase):
         files = app_sources()
         for path in files:
             parse_app(path)
+
+
+# MicroPython compatibility ---------------------------------------------------
+
+MISSING_METHODS = frozenset((
+    "isalnum", "ljust", "rjust", "title", "zfill", "capitalize", "removeprefix",
+    "removesuffix", "casefold", "swapcase", "isnumeric", "isprintable", "format_map",
+    "isidentifier", "isdecimal", "bit_length", "hexdigest", "_replace", "_asdict",
+    "expandtabs", "maketrans",
+))
+MISSING_ATTRS = {
+    "random": ("shuffle", "sample", "choices", "Random"),
+    "math": ("hypot", "dist", "prod", "gcd", "lcm", "isqrt", "comb", "perm"),
+    "time": ("monotonic", "perf_counter", "process_time", "strftime"),
+    "hashlib": ("md5", "sha1"),
+    "collections": ("Counter", "defaultdict", "ChainMap"),
+    "os": ("makedirs", "urandom", "environ", "walk", "replace", "getenv"),
+    "json": ("JSONDecodeError",),
+    "operator": ("itemgetter", "attrgetter"),
+    "itertools": ("product", "permutations", "combinations", "groupby", "zip_longest",
+                  "takewhile", "dropwhile", "pairwise"),
+    "functools": ("lru_cache", "cache", "cmp_to_key"),
+}
+MISSING_PATH_ATTRS = ("splitext", "getsize")
+BANNED_MODULES = frozenset((
+    "textwrap", "dataclasses", "typing", "enum", "bisect", "__future__", "abc",
+    "pathlib", "datetime", "operator", "functools", "re", "ure",
+))
+MISSING_NAMES = frozenset((
+    "FileNotFoundError", "FileExistsError", "PermissionError", "IsADirectoryError",
+    "NotADirectoryError", "TimeoutError", "ConnectionError", "ConnectionResetError",
+    "ConnectionRefusedError", "ConnectionAbortedError", "BrokenPipeError",
+    "InterruptedError", "BlockingIOError", "UnicodeDecodeError", "UnicodeEncodeError",
+    "ModuleNotFoundError", "RecursionError", "UnboundLocalError", "IOError",
+    "EnvironmentError", "Warning", "UserWarning", "DeprecationWarning",
+    "RuntimeWarning", "ResourceWarning", "vars", "__builtins__", "hash",
+    "__init_subclass__", "__doc__", "__qualname__",
+))
+ANY_KEYWORD = None
+BANNED_KEYWORDS = {
+    "dumps": ANY_KEYWORD,
+    "loads": ANY_KEYWORD,
+    "split": ANY_KEYWORD,
+    "rsplit": ANY_KEYWORD,
+    "deque": ANY_KEYWORD,
+    "open": ("newline",),
+    "from_bytes": ("signed",),
+    "round": ("ndigits",),
+    "sum": ("start",),
+}
+
+
+def _call_name(func):
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def micropython_problems(path):
+    """Constructs that crash or silently differ on the badge's MicroPython 1.29."""
+    source = Path(path).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    problems = []
+
+    def flag(node, what):
+        problems.append("%s:%s %s" % (Path(path).name, getattr(node, "lineno", "?"), what))
+
+    for number, line in enumerate(source.splitlines(), 1):
+        if re.match(r"\s*(async\s+)?with\s*\(", line):
+            problems.append("%s:%d parenthesised with" % (Path(path).name, number))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in BANNED_MODULES:
+                    flag(node, "import " + alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = (node.module or "").split(".")[0]
+            if module in BANNED_MODULES:
+                flag(node, "from %s import" % node.module)
+            for alias in node.names:
+                if alias.name in MISSING_ATTRS.get(module, ()):
+                    flag(node, "from %s import %s" % (module, alias.name))
+        elif isinstance(node, ast.Name) and node.id in MISSING_NAMES:
+            flag(node, "name " + node.id)
+        elif isinstance(node, ast.Attribute):
+            if node.attr in ("__doc__", "__qualname__", "__init_subclass__") or node.attr.startswith("tm_"):
+                flag(node, "attribute " + node.attr)
+            base = node.value
+            if isinstance(base, ast.Name) and node.attr in MISSING_ATTRS.get(base.id, ()):
+                flag(node, "%s.%s" % (base.id, node.attr))
+            if (isinstance(base, ast.Attribute) and base.attr == "path"
+                    and node.attr in MISSING_PATH_ATTRS):
+                flag(node, "os.path." + node.attr)
+        elif isinstance(node, ast.FunctionDef) or isinstance(node, ast.Lambda):
+            if getattr(node.args, "posonlyargs", None):
+                flag(node, "positional-only parameters")
+            if isinstance(node, ast.FunctionDef) and node.name == "__init_subclass__":
+                flag(node, "__init_subclass__ is never called")
+        elif isinstance(node, ast.ClassDef) and node.keywords:
+            flag(node, "class keywords (metaclass=)")
+        elif isinstance(node, ast.Subscript):
+            index = node.slice
+            parts = index.elts if isinstance(index, ast.Tuple) else (index,)
+            if any(isinstance(part, ast.Slice) and part.step is not None for part in parts):
+                flag(node, "step slice")
+        elif isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            if isinstance(getattr(node, "ctx", ast.Load()), ast.Load):
+                if any(isinstance(elt, ast.Starred) for elt in node.elts):
+                    flag(node, "starred display")
+        elif isinstance(node, ast.Dict) and any(key is None for key in node.keys):
+            flag(node, "dict ** display")
+        elif isinstance(node, ast.Call):
+            name = _call_name(node.func)
+            if isinstance(node.func, ast.Attribute) and name in MISSING_METHODS:
+                flag(node, "missing method ." + name + "()")
+            if name in BANNED_KEYWORDS:
+                banned = BANNED_KEYWORDS[name]
+                for keyword in node.keywords:
+                    if keyword.arg and (banned is ANY_KEYWORD or keyword.arg in banned):
+                        flag(node, "%s(%s=)" % (name, keyword.arg))
+            if name == "rsplit" and node.args and isinstance(node.args[0], ast.Constant) \
+                    and node.args[0].value is None:
+                flag(node, "rsplit(None, n)")
+            if name == "center" and len(node.args) > 1:
+                flag(node, "center() fill character")
+            if name == "union" and len(node.args) > 1:
+                flag(node, "set.union with several arguments")
+            if name == "iter" and len(node.args) > 1:
+                flag(node, "iter(callable, sentinel)")
+            if name == "deque" and (len(node.args) != 2 or node.keywords):
+                flag(node, "deque() needs (iterable, maxlen) positionally")
+            if name in ("sort", "sorted"):
+                flag(node, "sorted() is not stable on the badge")
+            if name == "isinstance" and len(node.args) == 2 and isinstance(node.args[1], ast.BinOp):
+                flag(node, "isinstance with X | Y")
+            if (name in ("startswith", "endswith") and node.args
+                    and isinstance(node.args[0], ast.Tuple)):
+                flag(node, name + "() with a tuple")
+            if (name == "format" and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Constant)
+                    and isinstance(node.func.value.value, str)
+                    and re.search(r"\{\w*[.\[]", node.func.value.value)):
+                flag(node, "format field attribute or index")
+    return problems
+
+
+class TestMicroPythonSafety(unittest.TestCase):
+    def test_app_avoids_constructs_the_badge_runtime_lacks(self):
+        problems = []
+        for path in app_sources():
+            problems.extend(micropython_problems(path))
+        self.assertEqual(problems, [])
+
+    def test_scanner_catches_known_badge_gaps(self):
+        bad = (
+            "from __future__ import annotations\n"
+            "import textwrap\n"
+            "import random\n"
+            "x = 'ab'[::-1]\n"
+            "y = [*a, *b]\n"
+            "z = {**d, 'k': 1}\n"
+            "t = (*a, 1)\n"
+            "random.shuffle(y)\n"
+            "s = 'a'.ljust(4)\n"
+            "try:\n    pass\nexcept FileNotFoundError:\n    pass\n"
+            "def f(a, /, b):\n    pass\n"
+            "json.dumps(x, indent=2)\n"
+            "'a b'.split(maxsplit=1)\n"
+            "'a b'.rsplit(None, 1)\n"
+            "deque(maxlen=4)\n"
+            "h = hash('octocat')\n"
+            "v = vars(x)\n"
+            "'{0.x}'.format(o)\n"
+            "os.path.splitext(p)\n"
+            "isinstance(x, int | float)\n"
+            "class C(metaclass=Meta):\n    pass\n"
+            "time.localtime().tm_year\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "bad.py"
+            path.write_text(bad, encoding="utf-8")
+            found = "\n".join(micropython_problems(path))
+        for expected in (
+            "import textwrap", "from __future__ import", "step slice", "starred display",
+            "dict ** display", "random.shuffle", ".ljust()", "name FileNotFoundError",
+            "positional-only", "dumps(indent=)", "split(maxsplit=)", "rsplit(None, n)",
+            "deque()", "name hash", "name vars", "format field", "os.path.splitext",
+            "isinstance with X | Y", "class keywords", "attribute tm_year",
+        ):
+            self.assertIn(expected, found)
+
+    def test_app_has_no_regex_handle_checks_or_float_derived_dna(self):
+        dna_source = (APP_DIR / "mona_dna.py").read_text(encoding="utf-8")
+        self.assertNotIn("import re", dna_source)
+        tree = parse_app(APP_DIR / "mona_dna.py")
+        floats = [node.lineno for node in ast.walk(tree)
+                  if isinstance(node, ast.Constant) and isinstance(node.value, float)]
+        self.assertEqual(floats, [], "DNA must be integer-only to match on every badge")
+
+    def test_optional_hardware_modules_are_imported_lazily(self):
+        lazy = ("aye_arr", "badgeware", "network", "socket", "urequests", "requests",
+                "powman", "wifi", "secrets", "machine")
+        for path in app_sources():
+            if path.name == "__init__.py":
+                continue
+            tree = parse_app(path)
+            for node in tree.body:
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                for name in names:
+                    self.assertNotIn(name.split(".")[0], lazy,
+                                     "%s imports %s at module level" % (path.name, name))
 
 
 # Handles ---------------------------------------------------------------------
