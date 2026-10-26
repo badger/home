@@ -26,7 +26,7 @@ Shake the badge, flip it, or press DOWN or UP to tumble a dithered 3D d20. It se
 | Button | Action |
 | --- | --- |
 | DOWN / UP | Spin the d20 |
-| SELECT | Beam the prompt to nearby badges |
+| SELECT | Beam the prompt to nearby badges once the d20 lands |
 | BACK | Reset the d20; press again to exit |
 
 ### Beaming

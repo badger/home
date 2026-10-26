@@ -2399,6 +2399,36 @@ class AppTests(unittest.TestCase):
                 last = levels
         self.assertEqual(badge.lights[lit:], expected)
 
+    def test_select_beams_the_prompt_once_the_ball_lands(self):
+        A = self.launch()
+        app, ir = self.app, self.ir
+        self.step("RIGHT")
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, A.SPIN_HINT)
+        self.step("DOWN")
+        self.assertIsNone(app.toast_text)
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, A.LAND_HINT)
+        # The face is chosen as the ball starts to settle, but nothing
+        # beams until its prompt is on screen.
+        self.run_until(lambda: app.ball.state == A.eightball.SETTLING, 5000)
+        self.assertIsNotNone(app.ball.number())
+        self.step("SELECT")
+        self.assertEqual((app.ball.state, app.toast_text), (A.eightball.SETTLING, A.LAND_HINT))
+        self.run_until(self.landed, 5000)
+        self.assertIsNone(app.toast_text)
+        self.assertEqual(ir.frames, [])
+        n = app.ball.number()
+        self.step("SELECT")
+        start = self.badge.ticks
+        self.assertEqual(app.toast_text, "BEAMING TO NEARBY BADGES")
+        self.assertEqual([op[2].args for op in self.rings()], [(160, -6, 10.0)])
+        self.run_for(400)
+        cmd = 0x40 + n - 1
+        self.assertEqual(ir.frames, [(0x53, cmd, start + d) for d in (0, 176, 352)])
+        self.assertEqual(B.decode(cmd, len(V.VERDICTS), len(V.PROMPTS)), (B.PROMPT, n - 1))
+        self.assertTrue(self.landed())
+
     def test_an_incoming_verdict_slams_once_per_beam(self):
         A = self.launch()
         app, badge, ir = self.app, self.badge, self.ir

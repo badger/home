@@ -144,7 +144,8 @@ GLOW_MS = 400
 TOAST_MS = 1800
 STAMP_HINT = "STAMP SOMETHING FIRST"
 SPIN_HINT = "SHAKE TO SPIN FIRST"
-HINTS = (STAMP_HINT, SPIN_HINT)
+LAND_HINT = "LET IT LAND FIRST"
+HINTS = (STAMP_HINT, SPIN_HINT, LAND_HINT)
 RING_COUNT = 3
 RING_GAP_MS = 140
 RING_MS = 560
@@ -572,7 +573,7 @@ class App:
     def beam_prompt(self, now):
         number = self.ball.number()
         if self.ball.state != eightball.LANDED or number is None:
-            self.toast(SPIN_HINT, now)
+            self.toast(SPIN_HINT if self.ball.state == eightball.IDLE else LAND_HINT, now)
             return
         self.send_beam(beam.PROMPT, number - 1, now)
 
@@ -764,6 +765,7 @@ class App:
     def landed(self, now):
         self.prompt = self.build_prompt(verdicts.PROMPTS[self.ball.number() - 1])
         self.glow_start = now
+        self.drop_hint()
 
     def build_prompt(self, text):
         lines = stamp.wrap(text, 14)
