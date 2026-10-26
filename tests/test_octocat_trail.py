@@ -13,13 +13,14 @@ import json
 import re
 import sys
 import tokenize
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "badge" / "apps" / "octocat_trail"
-MODULES = ("trail_map", "trail_logic", "trail_art")
+MODULES = ("trail_map", "trail_logic", "trail_art", "trail_hw")
 _MISSING = object()
 
 
@@ -59,6 +60,7 @@ _APP = load_modules()
 tm = _APP["trail_map"]
 tl = _APP["trail_logic"]
 ta = _APP["trail_art"]
+hw = _APP["trail_hw"]
 
 BOTH_RIVERS = tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS)
 
@@ -1276,6 +1278,35 @@ class SaveDataTests(unittest.TestCase):
         self.assertEqual(save["tombstones"][-1][0], 119)
 
 
+class patched_modules:
+    """Point a few sys.modules keys at fakes, restoring only those keys."""
+
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.saved = {}
+
+    def __enter__(self):
+        for name, module in self.mapping.items():
+            self.saved[name] = sys.modules.get(name, _MISSING)
+            sys.modules[name] = module
+        return self
+
+    def __exit__(self, *exc):
+        for name, old in self.saved.items():
+            if old is _MISSING:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = old
+        return False
+
+
+def module(name, **attrs):
+    made = types.ModuleType(name)
+    for key, value in attrs.items():
+        setattr(made, key, value)
+    return made
+
+
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
 
@@ -1300,6 +1331,59 @@ class FakeDevice:
             raise self.lights_error
         self.lights.append(values)
         return list(values)
+
+
+def fake_machine(reading=1234, error=None):
+    pins = []
+
+    class ADC:
+        def __init__(self, pin):
+            pins.append(pin)
+            if error:
+                raise error
+
+        def read_u16(self):
+            return reading
+
+    return module("machine", ADC=ADC), pins
+
+
+class SensorTests(unittest.TestCase):
+    def test_imu(self):
+        sensors = hw.Sensors(FakeDevice(imu=(1, -16384, 3, 0, 0, 0)))
+        self.assertEqual(sensors.imu(), (1.0, -16384.0, 3.0))
+        broken = hw.Sensors(FakeDevice(imu=OSError("no imu")))
+        self.assertIsNone(broken.imu())
+        self.assertFalse(broken.imu_ok)
+        broken.device.imu_value = (0, 1, 2)
+        self.assertIsNone(broken.imu())
+
+    def test_light_prefers_the_badge_api(self):
+        machine, pins = fake_machine()
+        with patched_modules({"machine": machine}):
+            sensors = hw.Sensors(FakeDevice(light=40000))
+            self.assertEqual((sensors.light(), sensors.light_source), (40000, "badge"))
+            sensors.device.light_value = RuntimeError("unsupported")
+            self.assertIsNone(sensors.light())
+        self.assertEqual(pins, [])
+
+    def test_light_falls_back_to_adc43(self):
+        machine, pins = fake_machine(reading=777)
+        with patched_modules({"machine": machine}):
+            sensors = hw.Sensors(FakeDevice(light=RuntimeError("unsupported")))
+            self.assertEqual((sensors.light(), sensors.light_source), (777, "adc"))
+            sensors.device.light_value = 5
+            self.assertEqual(sensors.light(), 777)
+        self.assertEqual(pins, [hw.LIGHT_ADC_PIN])
+
+    def test_no_light_sensor_at_all(self):
+        machine, _pins = fake_machine(error=ValueError("bad pin"))
+        with patched_modules({"machine": machine}):
+            sensors = hw.Sensors(FakeDevice(light=RuntimeError("unsupported")))
+            self.assertIsNone(sensors.light())
+            self.assertTrue(sensors.light_failed)
+            sensors.device.light_value = 9
+            self.assertIsNone(sensors.light())
 
 
 # ----- the renderer, through strict fakes of the badge drawing globals --------------------------
