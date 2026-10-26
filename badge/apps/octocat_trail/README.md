@@ -25,3 +25,30 @@ Open **The Octocat Trail** from the menu. The title screen offers:
 | Tombstone | LEFT/RIGHT choose an epitaph, SELECT beam it, BACK title |
 | Victory | SELECT beam your score, BACK title |
 | Graveyard | LEFT/RIGHT browse, SELECT beam the shown tombstone, BACK title |
+
+### Roles
+
+| Role | Copilot Credits | Score | Perk |
+| --- | --- | --- | --- |
+| Creative Director @wmarkus | 1,600 | x1 | Deep pockets for a comfortable run. |
+| Staff Rustacean @mona | 1,000 | x2 | Every Hotfix Patch also heals the party by 10. |
+| ATC Control Lead @kdaigle | 600 | x3 | River deploys are 40% safer. |
+
+### Supplies and stores
+
+- **Copilot Credits** pay for everything, including Copilot ferries.
+- **Cold Brew Kegs** keep the party going. Running dry costs health every day.
+- **LGTM Stamps** are hunt ammo, and two of them steady a river deploy.
+- **Hotfix Patches** repair broken CI and revert Friday force-pushes.
+
+The Gatehouse charges base prices. The GitHub Shop adds 25%, the Makerspace Parts Counter adds 50%, and the Firehouse Supply Locker sells only Hotfix Patches at a 60% markup. The wagon carries at most 500 kegs, 300 stamps and 9 patches.
+
+### The venue
+
+The map is an original top-down tile map inspired by the Fort Mason Center campus: the Gatehouse, Landmark Buildings A to E, the Firehouse, the Great Meadow and three piers. The direct trail runs Gatehouse, GitHub Shop, Merge Conflict River, Gateway Pavilion Makerspace, DNS Propagation Rapids and the Festival Pavilion Mainstage. Side trips pay off:
+
+- **Open Source Zone, GitHub Central, Expert Center, Career Corner and Cowell Theater** each give a one-time gift and add points to your score.
+- **The Firehouse (Hotfix HQ)** heals the party by 15 and cures illness, at most once every 5 days.
+- **The Great Meadow** is the best hunting ground.
+
+Every step passes time and drinks cold brew. Set the pace (Sustainable, Crunch or Death March) and rations (Nitro, Drip or Decaf) from the menu. The menu also has the wagon, the venue map, camp, attendee tips, the store at stores, the hunt, a turbo sprint and Save and quit.
