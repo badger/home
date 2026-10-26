@@ -25,6 +25,23 @@ BUILDINGS = (
     ("", 5, 135, 11, 138),
 )
 
+# (name, short name, kind, door x, door y). Order is the stop index.
+STOPS = (
+    ("The Gatehouse (git init)", "Gatehouse", "store", 8, 135),
+    ("The GitHub Shop", "GitHub Shop", "store", 11, 100),
+    ("Open Source Zone", "OSS Zone", "sight", 18, 95),
+    ("GitHub Central", "GH Central", "sight", 28, 95),
+    ("Expert Center", "Experts", "sight", 49, 95),
+    ("Career Corner", "Careers", "sight", 59, 95),
+    ("The Firehouse (Hotfix HQ)", "Firehouse", "heal", 88, 57),
+    ("Great Meadow (Recess)", "Meadow", "meadow", 72, 126),
+    ("Merge Conflict River", "Merge River", "river", 14, 32),
+    ("Gateway Pavilion Makerspace", "Makerspace", "store", 39, 61),
+    ("Cowell Theater", "Cowell", "sight", 39, 3),
+    ("DNS Propagation Rapids", "DNS Rapids", "river", 46, 36),
+    ("Festival Pavilion: GitHub Universe Mainstage", "Mainstage", "end", 73, 59),
+)
+
 PATHS = (
     ((61, 105), (70, 110), (77, 102), (88, 85), (95, 78), (103, 71)),
     ((70, 110), (76, 117), (83, 128), (84, 139)),
@@ -40,6 +57,7 @@ TREES = (
 )
 
 _grid = None
+_stops = None
 
 
 def _shore(x):
@@ -107,6 +125,9 @@ def build():
         i = y * W + x
         if g[i] in (LOT, GRASS):
             g[i] = TREE
+    for stop in STOPS:
+        if stop[2] != "river":
+            g[stop[4] * W + stop[3]] = FLAG if stop[2] == "meadow" else DOOR
     return g
 
 
@@ -133,3 +154,14 @@ def walkable(x, y, deployed=0):
     if x < 0 or y < 0 or x >= W or y >= H:
         return False
     return passable(grid()[y * W + x], deployed)
+
+
+def stop_at(x, y):
+    global _stops
+    if _stops is None:
+        _stops = {}
+        for i in range(len(STOPS)):
+            _stops[STOPS[i][4] * W + STOPS[i][3]] = i
+    if x < 0 or y < 0 or x >= W or y >= H:
+        return -1
+    return _stops.get(y * W + x, -1)
