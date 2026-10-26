@@ -48,6 +48,14 @@ RATIONS = (
     ("Drip", 0.2, 1),
     ("Decaf", 0.1, -1),
 )
+# (stop, supply or "health", amount, line) granted on the first visit.
+SIGHTS = (
+    (2, "lgtm", 20, "The maintainers stamped 20 LGTMs for the road."),
+    (3, "health", 10, "Hugs all round at GitHub Central. Health +10."),
+    (4, "patches", 1, "An expert pair-programmed you a Hotfix Patch."),
+    (5, "brew", 15, "A recruiter slipped you 15 Cold Brew Kegs."),
+    (10, "health", 10, "A standing ovation lifts every spirit. Health +10."),
+)
 
 MONTHS = (
     ("September", 30), ("October", 31), ("November", 30), ("December", 31),
@@ -287,6 +295,13 @@ class Trail:
     def has_visited(self, stop):
         return bool(self.visited & (1 << stop))
 
+    def sights_seen(self):
+        count = 0
+        for entry in SIGHTS:
+            if self.has_visited(entry[0]):
+                count += 1
+        return count
+
     # ----- walking ------------------------------------------------------------
     def steps_per_day(self):
         steps = PACES[self.pace][1]
@@ -347,10 +362,24 @@ class Trail:
         self.at = stop
         self.basket = {}
         kind = tm.STOPS[stop][2]
+        first = not self.has_visited(stop)
         self.visited |= 1 << stop
         if kind == "end":
             return "victory"
+        if first:
+            for entry in SIGHTS:
+                if entry[0] == stop:
+                    self._gift(entry, lines)
         return "stop"
+
+    def _gift(self, entry, lines):
+        _stop, key, amount, line = entry
+        if key == "health":
+            for member in self.living():
+                member.health = clamp(member.health + amount, 0, 100)
+        else:
+            self.supplies[key] = min(carry_limit(key), self.supplies[key] + amount)
+        lines.append(line)
 
     # ----- shop -------------------------------------------------------------
     def markup(self):

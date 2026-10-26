@@ -216,6 +216,23 @@ class TrailTests(unittest.TestCase):
         self.assertEqual((trail.x, trail.y, trail.steps), (0, 0, 8))
 
 
+class TrailEventTests(unittest.TestCase):
+
+    def test_sights_pay_out_once(self):
+        trail = stocked(lgtm=0)
+        lines = []
+        self.assertEqual(trail.arrive(2, lines), "stop")
+        self.assertEqual(lines, ["The maintainers stamped 20 LGTMs for the road."])
+        lines = []
+        trail.arrive(2, lines)
+        self.assertEqual((lines, trail.supplies["lgtm"], trail.sights_seen()), ([], 20, 1))
+        for member in trail.members:
+            member.health = 95
+        trail.arrive(3, lines)
+        self.assertEqual([member.health for member in trail.members], [100] * 5)
+        self.assertEqual(trail.sights_seen(), 2)
+
+
 class TrailShopRiverTests(unittest.TestCase):
     def test_store_prices(self):
         trail = stocked()
