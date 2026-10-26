@@ -18,7 +18,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "badge" / "apps" / "octocat_trail"
-MODULES = ("trail_logic",)
+MODULES = ("trail_map", "trail_logic")
 _MISSING = object()
 
 
