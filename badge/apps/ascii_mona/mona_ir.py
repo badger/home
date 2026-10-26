@@ -12,6 +12,11 @@ accepts a packet only when its sync, length, CRC, version and handle all
 check out, so a dropped frame just means the second copy, or the next press,
 gets through. An 8 character handle takes about six seconds to beam.
 
+After two copies the beam sends command 0x88 on address 0x45, the Universe
+quest beacon code. The quest app counts it as Quest 8 "Octocat Generator" and
+the menu's Mona's Expedition as "Level Up Lounge". The beacon reset code 0xF0
+is never sent.
+
 Sending blocks for about 77 ms a frame, so the app sends at most one frame
 per update. Without a working NEC sender (the simulator has none) the beam is
 simulated with the same pacing so the rest of the app still works.
@@ -20,6 +25,10 @@ simulated with the same pacing so the rest of the app still works.
 import mona_dna
 
 DNA_ADDRESS = 0x4C
+QUEST_ADDRESS = 0x45
+QUEST_CODE = 0x88
+QUEST_NUMBER = 8
+QUEST_KEY = "quest"
 
 VERSION = 2
 SYNC_A = 0xA5
@@ -35,6 +44,8 @@ TX_SLOTS = ((0, 1), (0, 2), (0, 3))
 FRAME_MS = 80
 COPIES = 2
 COPY_GAP_MS = 250
+QUEST_GAP_MS = 250
+QUEST_REPEATS = 3
 GAP_MS = 1200
 DEDUPE_MS = 15000
 ECHO_MS = 400
@@ -54,6 +65,17 @@ class DnaRemote(_Remote):
 
     def __init__(self):
         # the base sets up the button map the receiver looks codes up in
+        super().__init__()
+        self.on_any = None
+        self.on_known = None
+
+
+class QuestRemote(_Remote):
+    NAME = "AsciiMonaQuest"
+    ADDRESS = QUEST_ADDRESS
+    BUTTON_CODES = {}
+
+    def __init__(self):
         super().__init__()
         self.on_any = None
         self.on_known = None
@@ -113,6 +135,8 @@ def beam_frames(handle, dna):
         for index in range(len(packet)):
             wait = COPY_GAP_MS if copy and index == 0 else 0
             frames.append((DNA_ADDRESS, packet[index], wait))
+    for index in range(QUEST_REPEATS):
+        frames.append((QUEST_ADDRESS, QUEST_CODE, QUEST_GAP_MS if index == 0 else 0))
     return frames
 
 
@@ -186,6 +210,9 @@ class Beam:
         """Percent sent, 0 to 100."""
         return self.index * 100 // len(self.frames)
 
+    def in_quest(self):
+        return not self.done and self.frames[self.index][0] == QUEST_ADDRESS
+
     def step(self, now, send):
         """Send the next frame when it is due; True when one went out."""
         if self.done or (self.next_at is not None and now - self.next_at < 0):
@@ -204,6 +231,27 @@ class Beam:
         return True
 
 
+def mark_quest(state_api, number=QUEST_NUMBER):
+    """Record a quest the way the quest app does; True when newly completed."""
+    data = {"completed": []}
+    try:
+        state_api.load(QUEST_KEY, data)
+    except Exception:
+        pass
+    done = data.get("completed")
+    if not isinstance(done, list):
+        done = []
+        data["completed"] = done
+    if number in done:
+        return False
+    done.append(number)
+    try:
+        state_api.save(QUEST_KEY, data)
+    except Exception:
+        return False
+    return True
+
+
 class IrPort:
     """Owns the NEC sender and the badgeware.ir binds for the app's lifetime."""
 
@@ -213,6 +261,7 @@ class IrPort:
         self.ir = None
         self.listening = False
         self.inbox = []
+        self.quest_hits = 0
         self.decoder = Decoder()
         self.beam = None
         self.quiet_until = None
@@ -223,6 +272,10 @@ class IrPort:
         if len(self.inbox) < INBOX_MAX:
             self.inbox.append(command)
 
+    def on_quest(self, command):
+        if command == QUEST_CODE:
+            self.quest_hits += 1
+
     def listen(self):
         try:
             from badgeware.ir import ir
@@ -230,15 +283,15 @@ class IrPort:
             self.note = "IR receive unavailable"
             return False
         bound = 0
-        remote = DnaRemote()
-        try:
-            remote.on_any = self.on_dna
-            bound_remote = ir.bind(remote)
-            if bound_remote is not None and bound_remote is not remote:
-                bound_remote.on_any = self.on_dna
-            bound = 1
-        except Exception:
-            pass
+        for remote, handler in ((DnaRemote(), self.on_dna), (QuestRemote(), self.on_quest)):
+            try:
+                remote.on_any = handler
+                bound_remote = ir.bind(remote)
+                if bound_remote is not None and bound_remote is not remote:
+                    bound_remote.on_any = handler
+                bound += 1
+            except Exception:
+                pass
         self.ir = ir
         self.listening = bound > 0
         if not self.listening:
@@ -289,7 +342,7 @@ class IrPort:
     def update(self, now):
         """Advance the beam and decode what arrived; returns a list of events.
 
-        Events are ("sent", ok, error) and ("mona", handle, dna).
+        Events are ("sent", ok, error), ("mona", handle, dna) and ("quest",).
         """
         events = []
         beam = self.beam
@@ -298,9 +351,11 @@ class IrPort:
             if beam.done:
                 self.quiet_until = now + ECHO_MS
                 events.append(("sent", not beam.error, beam.error))
-        if self.inbox:
+        if self.inbox or self.quest_hits:
             inbox = self.inbox
             self.inbox = []
+            hits = self.quest_hits
+            self.quest_hits = 0
             if self.quiet(now):
                 # our own frames bouncing back
                 self.decoder.reset()
@@ -309,6 +364,8 @@ class IrPort:
                     found = self.decoder.push(byte, now)
                     if found is not None:
                         events.append(("mona", found[0], found[1]))
+                if hits:
+                    events.append(("quest",))
         return events
 
     def close(self):

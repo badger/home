@@ -11,6 +11,7 @@ runtime modules (badgeware.ir, aye_arr.nec, ...) are removed after each test.
 import ast
 import binascii
 import importlib.util
+import json
 import os
 import re
 import struct
@@ -197,6 +198,25 @@ def fake_rect(x, y, w, h):
 
 
 FAKE_FONT = types.SimpleNamespace(teatime="teatime", sins="sins")
+
+
+class FakeState:
+    """badgeware.State: load() fills the given dict, save() stores a copy."""
+
+    def __init__(self, stored=None, fail_save=False):
+        self.stored = stored or {}
+        self.fail_save = fail_save
+
+    def load(self, key, target):
+        if key not in self.stored:
+            return False
+        target.update(json.loads(json.dumps(self.stored[key])))
+        return True
+
+    def save(self, key, value):
+        if self.fail_save:
+            raise OSError(28, "No space left on device")
+        self.stored[key] = json.loads(json.dumps(value))
 
 
 class FakeIr:
@@ -1177,6 +1197,28 @@ class TestAscii(unittest.TestCase):
         self.assertFalse(view.draw(FakeImage(), 0, 0, 0))
 
 
+class Recorder:
+    def __init__(self, fail_at=None):
+        self.sent = []
+        self.fail_at = fail_at
+
+    def __call__(self, address, command):
+        if self.fail_at is not None and len(self.sent) == self.fail_at:
+            raise OSError("pio stalled")
+        self.sent.append((address, command))
+
+
+class BrokenStateApi:
+    def __init__(self, stored=None):
+        self.stored = stored
+
+    def load(self, key, target):
+        raise OSError(2, "no state")
+
+    def save(self, key, value):
+        self.stored = value
+
+
 class TestIr(unittest.TestCase):
     """NEC framing on 0x4C, the 0x45/0x88 quest beam and the IrPort lifecycle."""
 
@@ -1192,6 +1234,18 @@ class TestIr(unittest.TestCase):
                 found.append((now, hit))
             now += spacing
         return found, now
+
+    def test_addresses_and_remotes(self):
+        I = self.I
+        self.assertEqual((I.DNA_ADDRESS, I.QUEST_ADDRESS, I.QUEST_CODE, I.QUEST_NUMBER), (0x4C, 0x45, 0x88, 8))
+        self.assertEqual((I.TX_PIN, I.RX_PIN), (16, 17))
+        self.assertNotIn((0, 0), I.TX_SLOTS)
+        for remote, address in ((I.DnaRemote(), 0x4C), (I.QuestRemote(), 0x45)):
+            self.assertEqual(remote.ADDRESS, address)
+            self.assertEqual(remote.BUTTON_CODES, {})
+            self.assertTrue(remote.NAME.startswith("AsciiMona"))
+            self.assertIsNone(remote.on_any)
+            self.assertIsNone(remote.on_known)
 
     def test_crc8_and_packet_layout(self):
         I, D = self.I, self.D
@@ -1243,20 +1297,23 @@ class TestIr(unittest.TestCase):
 
     def test_beam_frames_carry_two_copies_then_the_quest_code(self):
         I, D = self.I, self.D
-        for handle, total in (("octocat", 62), ("ada", 54)):
+        for handle, total in (("octocat", 65), ("ada", 57)):
             dna = D.dna_for(handle)
             packet = I.encode_packet(handle, dna)
             frames = I.beam_frames(handle, dna)
             self.assertEqual(len(frames), total)
-            self.assertEqual(len(frames), 2 * len(packet))
+            self.assertEqual(len(frames), 2 * len(packet) + I.QUEST_REPEATS)
             self.assertEqual([f[1] for f in frames[:len(packet)]], packet)
             self.assertEqual([f[1] for f in frames[len(packet):2 * len(packet)]], packet)
             self.assertEqual(frames[0][2], 0)
             self.assertEqual(frames[len(packet)][2], I.COPY_GAP_MS)
+            self.assertEqual(frames[-3:], [(0x45, 0x88, I.QUEST_GAP_MS), (0x45, 0x88, 0), (0x45, 0x88, 0)])
             for address, command, wait in frames:
-                self.assertEqual(address, 0x4C)
+                self.assertIn(address, (0x4C, 0x45))
                 self.assertTrue(0 <= command <= 255)
                 self.assertGreaterEqual(wait, 0)
+                if address == 0x45:
+                    self.assertEqual(command, 0x88)
 
     def test_decoder_accepts_once_then_dedupes(self):
         I, D = self.I, self.D
@@ -1305,6 +1362,86 @@ class TestIr(unittest.TestCase):
         decoder = I.Decoder()
         found, _ = self.feed(decoder, noise + I.encode_packet(long_handle, long_dna))
         self.assertEqual([hit for _at, hit in found], [(long_handle, long_dna)])
+
+    def test_beam_paces_one_frame_per_update(self):
+        I, D = self.I, self.D
+        dna = D.dna_for("octocat")
+        beam = I.Beam("octocat", dna, True)
+        send = Recorder()
+        self.assertEqual(beam.progress(), 0)
+        self.assertTrue(beam.step(0, send))
+        self.assertFalse(beam.step(I.FRAME_MS - 1, send))
+        self.assertTrue(beam.step(I.FRAME_MS, send))
+        now = I.FRAME_MS
+        quest_seen = False
+        for _ in range(2000):
+            if beam.done:
+                break
+            now += 16
+            quest_seen = quest_seen or beam.in_quest()
+            beam.step(now, send)
+        self.assertTrue(beam.done)
+        self.assertTrue(quest_seen)
+        self.assertFalse(beam.in_quest())
+        self.assertEqual(beam.progress(), 100)
+        self.assertEqual(send.sent, [(a, c) for a, c, _w in beam.frames])
+        self.assertGreaterEqual(now, (len(beam.frames) - 1) * I.FRAME_MS + I.COPY_GAP_MS + I.QUEST_GAP_MS)
+        self.assertFalse(beam.step(now + 10000, send))
+        self.assertEqual(beam.error, "")
+        quiet = I.Beam("", dna, False)
+        for step in range(5000):
+            if quiet.done:
+                break
+            quiet.step(step * 100, None)
+        self.assertTrue(quiet.done)
+        failing = I.Beam("ada", D.dna_for("ada"), True)
+        bad = Recorder(fail_at=3)
+        for step in range(10):
+            failing.step(step * 1000, bad)
+        self.assertTrue(failing.done)
+        self.assertEqual(failing.error, "IR send failed: pio stalled")
+        self.assertEqual(len(bad.sent), 3)
+
+    def test_mark_quest_matches_the_quest_app(self):
+        I = self.I
+        state = FakeState()
+        self.assertTrue(I.mark_quest(state))
+        self.assertEqual(state.stored["quest"], {"completed": [8]})
+        self.assertFalse(I.mark_quest(state))
+        kept = FakeState({"quest": {"completed": [1, 3], "other": "x"}})
+        self.assertTrue(I.mark_quest(kept))
+        self.assertEqual(kept.stored["quest"], {"completed": [1, 3, 8], "other": "x"})
+        odd = FakeState({"quest": {"completed": "nope"}})
+        self.assertTrue(I.mark_quest(odd))
+        self.assertEqual(odd.stored["quest"]["completed"], [8])
+        unreadable = BrokenStateApi()
+        self.assertTrue(I.mark_quest(unreadable))
+        self.assertEqual(unreadable.stored, {"completed": [8]})
+        self.assertFalse(I.mark_quest(FakeState(fail_save=True)))
+
+    def test_port_listens_on_both_addresses(self):
+        I, D = self.I, self.D
+        ir = install_ir(self)
+        port = I.IrPort()
+        self.assertTrue(port.listen())
+        self.assertEqual(sorted(ir.bound), [0x45, 0x4C])
+        dna = D.dna_for("ada")
+        for byte in I.encode_packet("ada", dna):
+            ir.deliver(0x4C, byte)
+        self.assertEqual(port.update(1000), [("mona", "ada", dna)])
+        ir.deliver(0x45, 0x10)
+        self.assertEqual(port.update(2000), [])
+        ir.deliver(0x45, 0x88)
+        ir.deliver(0x45, 0x88)
+        self.assertEqual(port.update(3000), [("quest",)])
+        self.assertEqual(port.update(4000), [])
+        for _ in range(I.INBOX_MAX + 50):
+            ir.deliver(0x4C, 0)
+        self.assertEqual(len(port.inbox), I.INBOX_MAX)
+        port.close()
+        self.assertTrue(ir.closed)
+        self.assertFalse(port.listening)
+        port.close()
 
     def test_port_listen_degrades(self):
         I = self.I
@@ -1376,9 +1513,12 @@ class TestIr(unittest.TestCase):
         port.update(0)
         for byte in packet:
             ir.deliver(0x4C, byte)
+        ir.deliver(0x45, 0x88)
         events, now = self.run_beam(port)
         self.assertEqual(events, [("sent", True, "")])
         self.assertEqual(sender.made[0].sent, [(a, c) for a, c, _w in I.beam_frames("octocat", dna)])
+        self.assertEqual(sender.made[0].sent.count((0x45, 0x88)), I.QUEST_REPEATS)
+        self.assertNotIn((0x45, 0xF0), sender.made[0].sent)
         self.assertFalse(port.beaming)
         for byte in packet:
             ir.deliver(0x4C, byte)
