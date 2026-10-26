@@ -24,6 +24,20 @@ BUILDINGS = (
     ("", 5, 135, 11, 138),
 )
 
+PATHS = (
+    ((61, 105), (70, 110), (77, 102), (88, 85), (95, 78), (103, 71)),
+    ((70, 110), (76, 117), (83, 128), (84, 139)),
+    ((61, 131), (73, 128), (83, 128), (90, 131), (94, 137), (96, 139)),
+    ((103, 120), (96, 125), (83, 128)),
+)
+TREES = (
+    (88, 64), (91, 67), (88, 67), (94, 69), (98, 63), (97, 66), (100, 60), (102, 64),
+    (94, 80), (97, 78), (96, 85), (92, 87), (95, 91), (90, 93), (87, 97), (84, 100),
+    (81, 103), (84, 105), (79, 106), (89, 102), (96, 97), (99, 95),
+    (2, 117), (3, 120), (1, 123), (21, 139), (24, 138), (30, 137),
+    (44, 131), (40, 126), (90, 120), (101, 108), (63, 118),
+)
+
 _grid = None
 
 
@@ -53,6 +67,23 @@ def _fill(g, x0, y0, x1, y1, code):
             g[row + x] = code
 
 
+def _line(g, a, b, code):
+    x, y = a
+    x1, y1 = b
+    while True:
+        i = y * W + x
+        if g[i] in (LOT, GRASS):
+            g[i] = code
+        if x == x1 and y == y1:
+            return
+        dx = x1 - x
+        dy = y1 - y
+        if abs(dx) * abs(b[1] - a[1]) >= abs(dy) * abs(b[0] - a[0]) and dx:
+            x += 1 if dx > 0 else -1
+        else:
+            y += 1 if dy > 0 else -1
+
+
 def build():
     g = bytearray(W * H)
     shore = [_shore(x) for x in range(W)]
@@ -68,6 +99,13 @@ def build():
         _fill(g, x0, y0, x1, y1, ROOF)
     for building in BUILDINGS:
         _fill(g, building[1], building[2], building[3], building[4], ROOF)
+    for points in PATHS:
+        for k in range(1, len(points)):
+            _line(g, points[k - 1], points[k], PATH)
+    for x, y in TREES:
+        i = y * W + x
+        if g[i] in (LOT, GRASS):
+            g[i] = TREE
     return g
 
 
