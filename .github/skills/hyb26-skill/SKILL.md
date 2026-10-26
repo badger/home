@@ -30,7 +30,10 @@ Never use `badge25/` (Universe 2025) APIs in a 2026 app. When working inside a
 ## Tools
 
 Set `scripts` to this skill's `scripts` folder, then run tools from the user's
-badge project folder (a plain folder works; Git is optional).
+badge project folder (a plain folder works; Git is optional). On the Hack Your
+Badge conference Windows machines, the project is the `badger/home` repository
+checkout itself (apps go in `badge/apps/`), not a "Badger Projects" folder on
+the Desktop.
 
 macOS / Linux (Terminal):
 

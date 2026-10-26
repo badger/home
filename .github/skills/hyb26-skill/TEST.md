@@ -177,6 +177,8 @@ skill folder (`python` on Windows).
 **Expected**
 
 - Creates the app in this project, not in the skill installation or home folder.
+- On Hack Your Badge Windows machines, treats the `badger/home` checkout as
+  the project (apps in `badge/apps/`), not a Desktop "Badger Projects" folder.
 - Uses commands and quoting for the user's host and paths with spaces.
 - Runs file checks and gives hardware checks without claiming deployment or
   physical success. May suggest the badger.github.io simulator.

@@ -17,6 +17,11 @@ and the
 Do not assume those upstream projects model the custom 2026 wiring or firmware
 APIs.
 
+**Hack Your Badge conference machines (Windows):** there is no separate
+"Badger Projects" folder on the Desktop. Work directly in the `badger/home`
+checkout, build apps in `badge/apps/<name>/`, and use the repository paths
+(`badge/AGENTS.md`, `hardware/`) as written here.
+
 Read [`../hardware/README.md`](../hardware/README.md) before accessing raw GPIO,
 I2C, ADC, IR, display, power, wireless, or interrupt hardware.
 Read [`../hardware/USB_SERIAL.md`](../hardware/USB_SERIAL.md) before connecting
