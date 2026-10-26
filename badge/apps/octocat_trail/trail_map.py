@@ -4,6 +4,7 @@
 
 W = 104
 H = 140
+TILE = 8
 STEPS_PER_TILE = 8
 
 WATER, LOT, GRASS, DECK, PATH, ROOF, FENCE, TREE, GANG1, GANG2, DOOR, DOCK, FLAG = range(13)
@@ -67,9 +68,28 @@ TREES = (
     (2, 117), (3, 120), (1, 123), (21, 139), (24, 138), (30, 137),
     (44, 131), (40, 126), (90, 120), (101, 108), (63, 118),
 )
+# Parking stall spines: column, first row, last row (drawn only).
+PARKING = (
+    (15, 99, 119), (20, 99, 119), (26, 99, 118), (32, 99, 116), (38, 99, 113),
+    (44, 99, 110), (50, 99, 107), (37, 73, 94), (42, 73, 94), (67, 72, 94),
+)
+# Text, world x centre px, world y top px, vertical.
+LABELS = (
+    ("PIER 1", 76, 250, 1),
+    ("COWELL THEATER", 320, 40, 1),
+    ("GATEWAY PAVILION", 320, 300, 1),
+    ("FESTIVAL PAVILION", 576, 120, 1),
+    ("GITHUB UNIVERSE", 604, 140, 1),
+    ("THE FIREHOUSE", 708, 398, 0),
+    ("GREAT MEADOW", 470, 1000, 0),
+    ("GATEHOUSE", 64, 1066, 0),
+    ("SAN FRANCISCO BAY", 192, 40, 0),
+)
 
 _grid = None
+_runs = None
 _stops = None
+_details = None
 
 
 def _shore(x):
@@ -241,3 +261,53 @@ def distances(gx, gy, deployed=0):
                 nxt.append(i + W)
         frontier = nxt
     return dist
+
+
+def runs():
+    global _runs
+    if _runs is None:
+        g = grid()
+        rows = []
+        for y in range(H):
+            row = []
+            base = y * W
+            x = 0
+            while x < W:
+                code = g[base + x]
+                end = x + 1
+                while end < W and g[base + end] == code:
+                    end += 1
+                row.append((x, end - x, code))
+                x = end
+            rows.append(tuple(row))
+        _runs = tuple(rows)
+    return _runs
+
+
+def details():
+    # Per-row (x, kind) decoration spots: 0 wave tick on water, 1 grass tuft.
+    global _details
+    if _details is None:
+        g = grid()
+        rows = []
+        for y in range(H):
+            row = []
+            base = y * W
+            for x in range(W):
+                code = g[base + x]
+                mix = (x * 7 + y * 13 + (x * y) % 5) % 11
+                if code == WATER and mix == 0:
+                    row.append((x, 0))
+                elif code == GRASS and mix == 3:
+                    row.append((x, 1))
+            rows.append(tuple(row))
+        _details = tuple(rows)
+    return _details
+
+
+def camera(px, py, view_w, view_h):
+    cx = px - view_w // 2
+    cy = py - view_h // 2
+    cx = max(0, min(W * TILE - view_w, cx))
+    cy = max(0, min(H * TILE - view_h, cy))
+    return cx, cy

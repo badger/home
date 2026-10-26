@@ -7,15 +7,20 @@
 
 import trail_art as ta
 import trail_logic as tl
+import trail_map as tm
 
 W = 320
+H = 240
 ROW = 12
 MARGIN = 8
 TEXT_W = W - 2 * MARGIN
+VIEW_H = 132
+BOX_Y = 146
 HINT_Y = 228
 TOAST_Y = 18
 BLINK_MS = 400
 CACHE_LIMIT = 160
+TILE = tm.TILE
 # The pixel font's space is only 2 px wide; three read as a word gap.
 SPACE = "   "
 TEXT_DY = 0
@@ -23,7 +28,13 @@ DASHES = "-" * 43
 
 BLACK, WHITE, GREEN, VIOLET, ORANGE = ta.BLACK, ta.WHITE, ta.GREEN, ta.VIOLET, ta.ORANGE
 BLUE, NAVY, GREY, DKGREEN, YELLOW = ta.BLUE, ta.NAVY, ta.GREY, ta.DKGREEN, ta.YELLOW
+PINK, PURPLE, MAGENTA, AQUA, BROWN = ta.PINK, ta.PURPLE, ta.MAGENTA, ta.AQUA, ta.BROWN
 LTBLUE, GOLD, PLUM = ta.LTBLUE, ta.GOLD, ta.PLUM
+
+# Colour of each map tile code on the walk view (BASE) and the overview (CHART).
+BASE = (NAVY, BLACK, GREEN, GREY, BROWN, ORANGE, BLACK, GREEN, NAVY, NAVY, VIOLET, BROWN, GREEN)
+FIREHOUSE = 5
+GATEHOUSE = 6
 
 
 def dim(rgb):
@@ -418,3 +429,248 @@ class Renderer:
         x = (self.now // 30) % (W + 64) - 64
         self.token(x, 180, (self.now // 200) & 1, False, 2)
         self.hint(view.hint)
+
+    # ----- walking the venue ----------------------------------------------------------------
+    def draw_roam(self, view, game):
+        trail = view.data if view.data is not None else game.trail
+        self.walk_view(game, trail)
+        self.fill(BLACK, 0, VIEW_H, W, H - VIEW_H)
+        self.hint(view.hint, VIEW_H + 1)
+        self.status_box(view)
+
+    def walk_view(self, game, trail, height=VIEW_H):
+        """Top-down Fort Mason: only the tiles inside the camera are drawn."""
+        px, py = game.party_px()
+        cx, cy = tm.camera(px + TILE // 2, py + TILE // 2, W, height)
+        self.terrain(cx, cy, height, trail.deployed)
+        self.landmarks(cx, cy, height, trail)
+        self.next_marker(cx, cy, height, trail)
+        sx = px - cx
+        sy = py - cy
+        mirror = trail.facing < 0
+        if trail.turbo_days > 0:
+            self.speed_lines(sx, sy, mirror)
+        self.token(sx - 12, sy - 2, game.walk_frame(), mirror)
+
+    def terrain(self, cx, cy, height, deployed):
+        rows = tm.runs()
+        c0 = cx // TILE
+        c1 = (cx + W - 1) // TILE
+        r0 = cy // TILE
+        r1 = min(tm.H - 1, (cy + height - 1) // TILE)
+        box = screen.rectangle
+        pens = self.pens
+        last = self.slot
+        specials = []
+        for ty in range(r0, r1 + 1):
+            sy = ty * TILE - cy
+            top = sy if sy > 0 else 0
+            bottom = sy + TILE if sy + TILE < height else height
+            for x, n, code in rows[ty]:
+                end = x + n - 1
+                if end < c0 or x > c1:
+                    continue
+                a = x if x > c0 else c0
+                b = end if end < c1 else c1
+                slot = BASE[code]
+                if slot != last:
+                    last = slot
+                    screen.pen = pens[slot]
+                box(a * TILE - cx, top, (b - a + 1) * TILE, bottom - top)
+                if code >= tm.FENCE and code != tm.DOOR:
+                    specials.append((a, b, sy, code))
+        self.slot = last
+        self.specials(specials, cx, deployed)
+        self.details(cx, cy, c0, c1, r0, r1)
+
+    def specials(self, specials, cx, deployed):
+        box = screen.rectangle
+        for a, b, sy, code in specials:
+            x0 = a * TILE - cx
+            width = (b - a + 1) * TILE
+            if code == tm.FENCE:
+                self.pen(WHITE)
+                box(x0, sy + 2, width, 1)
+                box(x0, sy + 5, width, 1)
+                for tx in range(a, b + 1):
+                    box(tx * TILE - cx + 3, sy + 1, 2, 7)
+            elif code == tm.TREE:
+                for tx in range(a, b + 1):
+                    self.sprite(ta.TREE, tx * TILE - cx, sy)
+            elif code == tm.GANG1 or code == tm.GANG2:
+                stop = tm.MERGE if code == tm.GANG1 else tm.DNS
+                if deployed & (1 << stop):
+                    self.fill(BROWN, x0, sy + 1, width, 6)
+                    self.pen(ORANGE)
+                    for tx in range(a, b + 1):
+                        box(tx * TILE - cx + 3, sy + 1, 1, 6)
+                    self.pen(WHITE)
+                    box(x0, sy, width, 1)
+                    box(x0, sy + 7, width, 1)
+                else:
+                    self.pen(GREY)
+                    for tx in range(a, b + 1):
+                        box(tx * TILE - cx + 2, sy + 3, 4, 1)
+            elif code == tm.DOCK:
+                self.pen(BLACK)
+                box(x0, sy + 2, width, 1)
+                box(x0, sy + 5, width, 1)
+            elif code == tm.FLAG:
+                for tx in range(a, b + 1):
+                    self.sprite(ta.FLAG, tx * TILE - cx + 1, sy)
+
+    def details(self, cx, cy, c0, c1, r0, r1):
+        rows = tm.details()
+        box = screen.rectangle
+        phase = self.now // 500
+        for ty in range(r0, r1 + 1):
+            sy = ty * TILE - cy
+            for x, kind in rows[ty]:
+                if x < c0 or x > c1:
+                    continue
+                sx = x * TILE - cx
+                if kind == 0:
+                    self.pen(BLUE)
+                    box(sx + 1 + ((phase + x) & 1) * 2, sy + 3, 4, 1)
+                else:
+                    self.pen(DKGREEN)
+                    box(sx + 2, sy + 4, 1, 2)
+                    box(sx + 4, sy + 3, 1, 3)
+                    box(sx + 6, sy + 4, 1, 2)
+
+    def landmarks(self, cx, cy, height, trail):
+        box = screen.rectangle
+        self.pen(GREY)
+        for col, y0, y1 in tm.PARKING:
+            sx = col * TILE - cx + 4
+            top = y0 * TILE - cy
+            end = (y1 + 1) * TILE - cy
+            if sx < -8 or sx > W + 8 or end <= 0 or top >= height:
+                continue
+            box(sx, max(0, top), 1, min(end, height) - max(0, top))
+            for ty in range(y0, y1 + 1, 2):
+                sy = ty * TILE - cy
+                if 0 <= sy < height:
+                    box(sx - 6, sy, 13, 1)
+        for index in range(len(tm.BUILDINGS)):
+            name, x0, y0, x1, y1 = tm.BUILDINGS[index]
+            bx = x0 * TILE - cx
+            by = y0 * TILE - cy
+            bw = (x1 - x0 + 1) * TILE
+            bh = (y1 - y0 + 1) * TILE
+            if bx >= W or by >= height or bx + bw <= 0 or by + bh <= 0:
+                continue
+            if index == FIREHOUSE:
+                self.fill(MAGENTA, bx, by, bw, bh)
+                self.fill(WHITE, bx + 8, by + bh - 9, bw - 16, 8)
+            elif index == GATEHOUSE:
+                self.fill(WHITE, bx, by, bw, bh)
+                self.fill(ORANGE, bx, by, bw, 5)
+            self.pen(BLACK)
+            self.outline(bx, by, bw, bh)
+            mid = bx + bw // 2
+            if name and -8 < mid < W + 8:
+                for ly in range(y0 + 4, y1 - 1, 12):
+                    sy = ly * TILE - cy
+                    if -ROW < sy < height:
+                        self.centred(name, sy, mid)
+        self.pen(BLACK)
+        for x0, y0, x1, y1 in tm.SHEDS:
+            bx = x0 * TILE - cx
+            by = y0 * TILE - cy
+            bw = (x1 - x0 + 1) * TILE
+            bh = (y1 - y0 + 1) * TILE
+            if bx < W and by < height and bx + bw > 0 and by + bh > 0:
+                self.outline(bx, by, bw, bh)
+        for stop in range(len(tm.STOPS)):
+            entry = tm.STOPS[stop]
+            if entry[2] == "river" or entry[2] == "meadow":
+                continue
+            sx = entry[3] * TILE - cx
+            sy = entry[4] * TILE - cy
+            if -TILE < sx < W and -TILE < sy < height:
+                self.fill(GREEN if trail.has_visited(stop) else VIOLET, sx, sy, TILE, TILE)
+                self.fill(BLACK, sx + 2, sy + 2, 4, 6)
+        self.labels(cx, cy, height)
+
+    def labels(self, cx, cy, height):
+        for text, lx, ly, vertical in tm.LABELS:
+            sx = lx - cx
+            sy = ly - cy
+            if vertical:
+                if sx < -8 or sx > W + 8:
+                    continue
+                shadow = text == "GITHUB UNIVERSE"
+                y = sy
+                for ch in text:
+                    if ch == " ":
+                        y += 6
+                        continue
+                    if -ROW < y < height:
+                        x = sx - self.measure(ch) // 2
+                        if shadow:
+                            self.pen(BLACK)
+                            self.text(ch, x + 1, y + 1)
+                            self.pen(WHITE)
+                        else:
+                            self.pen(BLACK)
+                        self.text(ch, x, y)
+                    y += 11
+            else:
+                width = self.measure(text)
+                x = sx - width // 2
+                if x >= W or x + width <= 0 or sy <= -ROW or sy >= height:
+                    continue
+                self.pen(BLACK)
+                self.text(text, x + 1, sy + 1)
+                self.pen(WHITE)
+                self.text(text, x, sy)
+
+    def next_marker(self, cx, cy, height, trail):
+        if (self.now // BLINK_MS) & 1:
+            return
+        stop = trail.next_stop()
+        if stop < 0 or stop >= len(tm.STOPS):
+            return
+        entry = tm.STOPS[stop]
+        sx = entry[3] * TILE - cx
+        sy = entry[4] * TILE - cy
+        self.pen(WHITE)
+        if -TILE < sx < W and -TILE < sy < height:
+            self.outline(sx - 2, sy - 2, TILE + 4, TILE + 4)
+            self.outline(sx - 3, sy - 3, TILE + 6, TILE + 6)
+            return
+        mx = max(2, min(W - 8, sx))
+        my = max(2, min(height - 8, sy))
+        screen.rectangle(mx, my, 6, 6)
+        self.fill(BLACK, mx + 2, my + 2, 2, 2)
+
+    def speed_lines(self, sx, sy, mirror):
+        self.pen(WHITE)
+        shift = (self.now // 60) % 6
+        for i in range(3):
+            length = 6 + (i * 3 + shift) % 5
+            y = sy + i * 3
+            if mirror:
+                screen.rectangle(sx + 22 + shift, y, length, 1)
+            else:
+                screen.rectangle(sx - 14 - length - shift, y, length, 1)
+
+    def status_box(self, view):
+        self.pen(WHITE)
+        self.outline(2, BOX_Y, W - 4, H - BOX_Y)
+        self.outline(4, BOX_Y + 2, W - 8, H - BOX_Y - 4)
+        rows = view.rows
+        note = self.wrap(view.note, W - 24) if view.note else ()
+        if len(note) > 1:
+            rows = rows[:5]
+            note = note[:2]
+        y = BOX_Y + 5
+        for label, value in rows:
+            self.right(label + ":", 112, y)
+            self.text(self.fit(value, W - 130), 118, y)
+            y += ROW
+        y = 224 - ROW * (len(note) - 1)
+        for row in note:
+            self.centred(row, y)
+            y += ROW

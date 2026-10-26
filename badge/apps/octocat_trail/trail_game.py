@@ -93,6 +93,8 @@ class View:
         self.hint = hint
         self.note = ""
         self.foot = ()
+        self.rows = ()
+        self.data = None
 
 
 class Game:

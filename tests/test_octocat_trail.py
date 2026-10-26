@@ -103,6 +103,20 @@ class LoaderTests(unittest.TestCase):
 
 
 class MapTests(unittest.TestCase):
+    def test_grid_size_and_runs_tile_every_row(self):
+        self.assertEqual(len(tm.grid()), tm.W * tm.H)
+        rows = tm.runs()
+        self.assertIs(rows, tm.runs())
+        self.assertEqual(len(rows), tm.H)
+        for y in range(tm.H):
+            x = 0
+            for start, length, code in rows[y]:
+                self.assertEqual(start, x)
+                self.assertGreater(length, 0)
+                for i in range(length):
+                    self.assertEqual(tm.terrain(start + i, y), code)
+                x += length
+            self.assertEqual(x, tm.W)
 
     def test_out_of_bounds_is_bay_water(self):
         for x, y in ((-1, 0), (0, -1), (tm.W, 0), (0, tm.H), (-5, -5)):
@@ -186,6 +200,31 @@ class MapTests(unittest.TestCase):
         dist = tm.distances(0, 0)
         self.assertEqual(tm.terrain(0, 0), tm.WATER)
         self.assertEqual(set(dist), {tm.UNREACHED})
+
+    def test_details_mark_water_and_grass(self):
+        rows = tm.details()
+        self.assertIs(rows, tm.details())
+        self.assertEqual(len(rows), tm.H)
+        kinds = set()
+        for y in range(tm.H):
+            for x, kind in rows[y]:
+                kinds.add(kind)
+                self.assertEqual(tm.terrain(x, y), tm.WATER if kind == 0 else tm.GRASS)
+        self.assertEqual(kinds, {0, 1})
+
+    def test_camera_clamps_to_the_world(self):
+        self.assertEqual(tm.camera(0, 0, 320, 240), (0, 0))
+        self.assertEqual(tm.camera(400, 500, 320, 240), (240, 380))
+        self.assertEqual(tm.camera(10 ** 6, 10 ** 6, 320, 240), (tm.W * tm.TILE - 320, tm.H * tm.TILE - 240))
+
+    def test_labels_name_the_venue(self):
+        texts = [label[0] for label in tm.LABELS]
+        self.assertIn("GITHUB UNIVERSE", texts)
+        self.assertIn("SAN FRANCISCO BAY", texts)
+        for text, x, y, vertical in tm.LABELS:
+            self.assertEqual(text, text.upper())
+            self.assertTrue(0 <= x < tm.W * tm.TILE and 0 <= y < tm.H * tm.TILE)
+            self.assertIn(vertical, (0, 1))
 
 
 class ArtTests(unittest.TestCase):
@@ -1946,6 +1985,9 @@ class RenderHelperTests(unittest.TestCase):
         self.assertEqual(td.dim((0, 0, 0)), (0, 0, 0))
 
 
+MAP_LABELS = frozenset(label[0] for label in tm.LABELS if not label[3])
+
+
 class RenderTests(unittest.TestCase):
     """Every screen drawn after every frame, through strict fakes of the badge globals."""
 
@@ -1987,6 +2029,10 @@ class RenderTests(unittest.TestCase):
             self.fail("the %s screen: %s" % (kind, self.log.problems))
         if not screen.calls:
             self.fail("the %s screen drew nothing" % kind)
+        # Only the venue's horizontal map labels may scroll past the camera edge.
+        stray = [entry for entry in screen.off_screen if entry[0] not in MAP_LABELS]
+        if stray:
+            self.fail("the %s screen has text off the edge: %r" % (kind, stray))
         return kind
 
     def test_a_failing_screen_falls_back_and_reports_once(self):
