@@ -1,6 +1,7 @@
 """Optional public-profile lookup on api.github.com to tune a Mona.
 
-A blocking requests.get fetches the profile, the way the ISS app does. Only
+A blocking requests.get fetches the profile after the ISS app's
+wifi.connect() polling, without blocking frames while Wi-Fi joins. Only
 public fields are kept, and a GITHUB_TOKEN from secrets is sent to
 api.github.com and nowhere else.
 """
@@ -14,10 +15,13 @@ KEEP = (
     "public_repos", "public_gists", "followers", "following", "site_admin",
 )
 TEXT_LIMIT = 160
+WIFI_TIMEOUT = 10
+WIFI_RETRIES = 100000
 REQUEST_TIMEOUT = 10
 GIVE_UP_MS = 30000
 
 IDLE = 0
+CONNECTING = 1
 FETCHING = 2
 
 
@@ -102,6 +106,7 @@ class Lookup:
         self.state = IDLE
         self.handle = ""
         self.requests = None
+        self.wifi = None
         self.started = 0
         self.painted = False
         self.status = ""
@@ -119,6 +124,21 @@ class Lookup:
         self.status = why
         return ("failed", why)
 
+    def _missing_wifi(self):
+        details = self.load("missing_details")
+        if details is None:
+            return False
+        try:
+            return bool(details.missing("WIFI_SSID"))
+        except Exception:
+            return False
+
+    def _connected(self):
+        try:
+            return bool(self.wifi.is_connected())
+        except Exception:
+            return False
+
     def start(self, handle, now):
         """Begin a lookup; returns ("failed", reason) straight away or None."""
         self.cancel()
@@ -131,6 +151,17 @@ class Lookup:
         self.requests = self.load("requests")
         if self.requests is None:
             return self._fail("no network on this badge")
+        self.wifi = self.load("wifi")
+        if self.wifi is not None and not self._connected():
+            if self._missing_wifi():
+                return self._fail("add Wi-Fi in Settings")
+            try:
+                self.wifi.connect(timeout=WIFI_TIMEOUT, retries=WIFI_RETRIES)
+            except Exception as err:
+                return self._fail("Wi-Fi: %s" % err)
+            self.state = CONNECTING
+            self.status = "connecting to Wi-Fi..."
+            return None
         self.state = FETCHING
         return None
 
@@ -141,9 +172,27 @@ class Lookup:
         if now - self.started > GIVE_UP_MS:
             return self._fail("GitHub timed out")
         try:
+            if self.state == CONNECTING:
+                return self._connecting()
             return self._get()
         except Exception as err:
             return self._fail(mona_dna.clean_text("lookup failed: %s" % err, 40))
+
+    def _connecting(self):
+        saying = ""
+        try:
+            code, saying = self.wifi.status()
+            if code >= 0:
+                saying = ""
+        except Exception:
+            saying = ""
+        if self.wifi.connect():
+            self.state = FETCHING
+            self.status = "asking GitHub..."
+            return None
+        if saying:
+            self.status = mona_dna.clean_text("Wi-Fi: %s" % saying, 40)
+        return None
 
     def _get(self):
         if not self.painted:

@@ -2163,6 +2163,32 @@ class TestNet(unittest.TestCase):
             if requests.response is not None:
                 self.assertTrue(requests.response.closed)
 
+    def test_waits_for_wifi_and_gives_up(self):
+        N = self.N
+        wifi = FakeWifi(status=(-3, "wrong password"))
+        requests = FakeRequests(FakeResponse(200, {"login": "mona"}))
+        lookup = N.Lookup(loader(requests=requests, wifi=wifi))
+        self.assertIsNone(lookup.start("mona", 0))
+        self.assertEqual(wifi.calls, [(N.WIFI_TIMEOUT, N.WIFI_RETRIES)])
+        self.assertEqual((lookup.state, lookup.status), (N.CONNECTING, "connecting to Wi-Fi..."))
+        self.assertIsNone(lookup.update(100))
+        self.assertEqual(lookup.status, "Wi-Fi: wrong password")
+        wifi.code = (1, "joining")
+        wifi.connected = True
+        self.assertIsNone(lookup.update(200))
+        self.assertEqual((lookup.state, lookup.status), (N.FETCHING, "asking GitHub..."))
+        self.assertEqual(self.run_lookup(lookup, 300), ("profile", {"login": "mona"}))
+        stuck = N.Lookup(loader(requests=requests, wifi=FakeWifi()))
+        stuck.start("mona", 1000)
+        self.assertIsNone(stuck.update(1000 + N.GIVE_UP_MS))
+        self.assertEqual(stuck.update(1001 + N.GIVE_UP_MS), ("failed", "GitHub timed out"))
+        self.assertIsNone(stuck.update(2000 + N.GIVE_UP_MS))
+        broken = N.Lookup(loader(requests=requests, wifi=FakeWifi(fail_connect=True)))
+        self.assertEqual(broken.start("mona", 0), ("failed", "Wi-Fi: radio off"))
+        details = types.SimpleNamespace(missing=lambda key: [key])
+        unset = N.Lookup(loader(requests=requests, wifi=FakeWifi(), missing_details=details))
+        self.assertEqual(unset.start("mona", 0), ("failed", "add Wi-Fi in Settings"))
+
 
 # App files -------------------------------------------------------------------
 
