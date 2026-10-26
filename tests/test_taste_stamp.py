@@ -27,6 +27,7 @@ def load(path, name):
 
 
 V = load(APP / "verdicts.py", "taste_stamp_verdicts")
+S = load(APP / "stamp.py", "taste_stamp_stamp")
 README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "taste_stamp_validate_app_readmes")
 
 
@@ -110,6 +111,23 @@ class VerdictsTests(unittest.TestCase):
             self.assertNotEqual(a, b)
         single = V.ShuffleBag(1, V.Rng(5))
         self.assertEqual([single.next() for _ in range(5)], [0] * 5)
+
+
+class StampTests(unittest.TestCase):
+    def all_text(self):
+        texts = list(V.VERDICTS) + list(V.FOOTERS) + [V.STAMP_HEADER]
+        return texts
+
+    def test_glyphs_cover_every_string_the_app_draws(self):
+        for text in self.all_text():
+            self.assertLessEqual(set(text) - {" "}, set(S.GLYPHS), text)
+
+    def test_layout_widths(self):
+        self.assertAlmostEqual(S.layout_line("AA")[1], 10.45, places=9)
+        self.assertAlmostEqual(S.layout_line("A A")[1], 12.25, places=9)
+        self.assertAlmostEqual(S.layout_line(" A")[1], S.layout_line("A")[1], places=9)
+        self.assertAlmostEqual(S.line_width("ship it"), S.line_width("SHIP IT"), places=9)
+        self.assertEqual(S.layout_line("")[1], 0.0)
 
 
 def read_png(path):
