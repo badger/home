@@ -2,7 +2,8 @@
 #
 # Each message is a single command byte on address 0x53, sent as a short
 # burst. The NEC protocol already carries a checksum for the address and
-# the command.
+# the command. Beams only reach badges that are running Taste Stamp, since
+# the receiver is bound by this app.
 
 ADDRESS = 0x53
 TX_PIN = 16
@@ -70,6 +71,53 @@ def stop_sender(tx):
     # launch can claim them again.
     try:
         tx.stop()
+    except Exception:
+        pass
+
+
+def listen(handler):
+    # Binds the 0x53 receiver and routes every valid command byte to
+    # handler. Returns True when IR receiving is available.
+    try:
+        from badgeware.ir import ir
+    except Exception:
+        return False
+    try:
+        from aye_arr.nec.remotes.descriptor import RemoteDescriptor
+        base = RemoteDescriptor
+    except Exception:
+        base = object
+
+    def ignore(key):
+        pass
+
+    class VerdictBeam(base):
+        NAME = "TasteStamp"
+        ADDRESS = 0x53
+        BUTTON_CODES = {}
+
+        def __init__(self):
+            try:
+                super().__init__()
+            except Exception:
+                pass
+            self.on_any = handler
+            self.on_known = ignore
+
+    try:
+        bound = ir.bind(VerdictBeam())
+        if bound is not None:
+            bound.on_any = handler
+            bound.on_known = ignore
+        return True
+    except Exception:
+        return False
+
+
+def stop_listening():
+    try:
+        from badgeware.ir import ir
+        ir.close()
     except Exception:
         pass
 

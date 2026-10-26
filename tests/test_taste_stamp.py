@@ -965,6 +965,73 @@ class BeamTests(unittest.TestCase):
         fake = FakeIR(start_error=OSError("pio full"), stop_error=OSError("again"))
         self.assertIsNone(self.make_sender(fake))
 
+    def test_listen_binds_the_0x53_descriptor(self):
+        fake = FakeIR()
+        heard = []
+        with fake.patch():
+            self.assertTrue(B.listen(heard.append))
+        d = fake.bound[0]
+        self.assertIsInstance(d, fake.RemoteDescriptor)
+        self.assertEqual((d.NAME, d.ADDRESS, d.BUTTON_CODES), ("TasteStamp", 0x53, {}))
+        self.assertEqual(fake.descriptor_inits, 1)
+        fake.deliver(0x42)
+        self.assertEqual(heard, [0x42])
+        self.assertIsNone(d.on_known("anything"))
+
+    def test_listen_sets_handlers_on_a_stub_bind_result(self):
+        # The Badge Simulator's bind returns a stub without on_any.
+        fake = FakeIR(bind_returns="stub")
+        heard = []
+        with fake.patch():
+            self.assertTrue(B.listen(heard.append))
+        fake.deliver(3)
+        self.assertEqual(heard, [3])
+
+    def test_listen_without_aye_arr_still_binds(self):
+        fake = FakeIR(sender=False, descriptor=False)
+        heard = []
+        with fake.patch():
+            self.assertTrue(B.listen(heard.append))
+        d = fake.bound[0]
+        self.assertEqual(d.ADDRESS, 0x53)
+        d.on_any(9)
+        self.assertEqual(heard, [9])
+
+    def test_listen_tolerates_bind_returning_none(self):
+        with FakeIR(bind_returns=None).patch():
+            self.assertTrue(B.listen(lambda cmd: None))
+
+    def test_listen_reports_missing_or_failing_receivers(self):
+        with FakeIR(present=False).patch():
+            self.assertFalse(B.listen(lambda cmd: None))
+        with FakeIR(bind_error=OSError("pio busy")).patch():
+            self.assertFalse(B.listen(lambda cmd: None))
+
+    def test_listen_survives_a_failing_base_initialiser(self):
+        fake = FakeIR()
+        mods = fake.modules()
+
+        class Broken:
+            def __init__(self):
+                raise RuntimeError("no super")
+
+        mods["aye_arr.nec.remotes.descriptor"].RemoteDescriptor = Broken
+        heard = []
+        with mock.patch.dict(sys.modules, mods):
+            self.assertTrue(B.listen(heard.append))
+        fake.bound[0].on_any(4)
+        self.assertEqual(heard, [4])
+
+    def test_stop_listening_closes_the_receiver_and_never_raises(self):
+        fake = FakeIR()
+        with fake.patch():
+            B.stop_listening()
+        self.assertEqual(fake.closed, 1)
+        with FakeIR(close_error=OSError("closed")).patch():
+            B.stop_listening()
+        with FakeIR(present=False).patch():
+            B.stop_listening()
+
     def test_without_a_transmitter_nothing_is_queued(self):
         link = self.make_beam()
         self.assertFalse(link.can_send())
