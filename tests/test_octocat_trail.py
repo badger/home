@@ -68,11 +68,40 @@ class LoaderTests(unittest.TestCase):
 
 class HelperTests(unittest.TestCase):
 
+    def test_number_formatting(self):
+        self.assertEqual(tl.commas(0), "0")
+        self.assertEqual(tl.commas(999), "999")
+        self.assertEqual(tl.commas(1000), "1,000")
+        self.assertEqual(tl.commas(1234567), "1,234,567")
+        self.assertEqual(tl.commas(-1234), "-1,234")
+        self.assertEqual(tl.tenths(35), "3.5")
+        self.assertEqual(tl.tenths(140), "14.0")
+        self.assertEqual(tl.plural(1, "day"), "1 day")
+        self.assertEqual(tl.plural(0, "keg"), "0 kegs")
+        self.assertEqual(tl.plural(2, "patch", "es"), "2 patches")
+
+    def test_clamps(self):
+        self.assertEqual(tl.clamp(5, 0, 3), 3)
+        self.assertEqual(tl.clamp(-1, 0, 3), 0)
+        self.assertEqual(tl.clamp(2, 0, 3), 2)
+        self.assertEqual(tl.clamp_int("7", 0, 5), 5)
+        self.assertEqual(tl.clamp_int(3.9, 0, 9), 3)
+        self.assertEqual(tl.clamp_int(None, 1, 9), 1)
+        self.assertEqual(tl.clamp_int("x", 1, 9, 4), 4)
+        self.assertEqual(tl.clamp_int(float("inf"), 0, 9), 0)
+
     def test_fnv1a_is_deterministic(self):
         self.assertEqual(tl.fnv1a(""), 0x811C9DC5)
         self.assertEqual(tl.fnv1a("a"), 0xE40C292C)
         self.assertEqual(tl.fnv1a(12), tl.fnv1a("12"))
         self.assertNotEqual(tl.fnv1a("wx1"), tl.fnv1a("wx2"))
+
+    def test_wrap(self):
+        self.assertEqual(tl.wrap("aa bb cc", 5, len), ["aa bb", "cc"])
+        self.assertEqual(tl.wrap("a\n\nb", 10, len), ["a", "", "b"])
+        self.assertEqual(tl.wrap("superlongword x", 4, len), ["superlongword", "x"])
+        self.assertEqual(tl.wrap("  a  b ", 10, len), ["a b"])
+        self.assertEqual(tl.wrap("", 10, len), [""])
 
 
 class RngTests(unittest.TestCase):

@@ -9,6 +9,43 @@ and only APIs that exist in MicroPython 1.29 are used.
 MASK32 = 0xFFFFFFFF
 
 
+def clamp(value, low, high):
+    if value < low:
+        return low
+    if value > high:
+        return high
+    return value
+
+
+def clamp_int(value, low, high, default=None):
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return low if default is None else default
+    return clamp(number, low, high)
+
+
+def commas(value):
+    number = int(value)
+    sign = "-" if number < 0 else ""
+    digits = str(abs(number))
+    tail = ""
+    while len(digits) > 3:
+        tail = "," + digits[-3:] + tail
+        digits = digits[:-3]
+    return sign + digits + tail
+
+
+def tenths(value):
+    """Format an integer number of tenths, e.g. 35 -> '3.5'."""
+    value = int(value)
+    return "%d.%d" % (value // 10, value % 10)
+
+
+def plural(count, word, suffix="s"):
+    return "%d %s%s" % (count, word, "" if count == 1 else suffix)
+
+
 def fnv1a(text):
     """Deterministic 32-bit string hash; hash(str) differs on MicroPython."""
     value = 0x811C9DC5
@@ -16,6 +53,24 @@ def fnv1a(text):
         value ^= ord(char) & 0xFF
         value = (value * 0x01000193) & MASK32
     return value
+
+
+def wrap(text, width, measure):
+    """Wrap text into lines no wider than width using a measure(str) function."""
+    lines = []
+    for paragraph in str(text).split("\n"):
+        line = ""
+        for word in paragraph.split(" "):
+            if not word:
+                continue
+            trial = word if not line else line + " " + word
+            if not line or measure(trial) <= width:
+                line = trial
+            else:
+                lines.append(line)
+                line = word
+        lines.append(line)
+    return lines
 
 
 class Rng:
