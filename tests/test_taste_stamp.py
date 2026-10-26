@@ -1,6 +1,12 @@
-"""Tests for the Taste Stamp & Creative 8-Ball app in badge/apps/taste_stamp."""
+"""Tests for the Taste Stamp & Creative 8-Ball app in badge/apps/taste_stamp.
+
+The app's modules are loaded under unique taste_stamp_* names and are never
+registered in sys.modules, so these tests can share a process with other
+apps' tests that vendor helpers with generic names.
+"""
 
 import ast
+import math
 import struct
 import types
 import unittest
@@ -20,6 +26,7 @@ def load(path, name):
     return module
 
 
+V = load(APP / "verdicts.py", "taste_stamp_verdicts")
 README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "taste_stamp_validate_app_readmes")
 
 
@@ -35,6 +42,43 @@ def luminance(c):
 def contrast(a, b):
     la, lb = luminance(a), luminance(b)
     return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+class VerdictsTests(unittest.TestCase):
+    def test_verdicts_follow_the_spec_order(self):
+        self.assertEqual(V.VERDICTS, (
+            "SHIP IT",
+            "CERTIFIED BANGER",
+            "NEEDS MORE TEETH",
+            "KILL THE FLUFF",
+            "TOO SAFE",
+            "WHERE IS THE TENSION?",
+            "MAKE THE DEV THE HERO",
+        ))
+
+    def test_ordered_collections_are_tuples(self):
+        for value in (V.VERDICTS, V.INKS, V.FOOTERS):
+            self.assertIsInstance(value, tuple)
+
+    def test_every_verdict_has_an_ink_and_a_footer(self):
+        self.assertEqual(len(V.INKS), len(V.VERDICTS))
+        self.assertEqual(V.FOOTERS, ("APPROVED",) * 2 + ("REVISE",) * 5)
+        self.assertEqual(V.STAMP_HEADER, "CREATIVE DIRECTOR")
+        for ink in V.INKS:
+            self.assertEqual(len(ink), 3)
+            for v in ink:
+                self.assertIsInstance(v, int)
+                self.assertTrue(0 <= v <= 255)
+
+    def test_inks_read_on_paper_and_differ(self):
+        paper = (241, 236, 224)
+        k = 225 / 255.0
+        for ink in V.INKS:
+            blended = tuple(round(i * k + p * (1 - k)) for i, p in zip(ink, paper))
+            self.assertGreaterEqual(contrast(blended, paper), 3.0, ink)
+        for i, a in enumerate(V.INKS):
+            for b in V.INKS[i + 1:]:
+                self.assertGreaterEqual(math.dist(a, b), 40, (a, b))
 
 
 def read_png(path):
