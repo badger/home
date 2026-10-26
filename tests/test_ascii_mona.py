@@ -489,6 +489,31 @@ class TestOcto(unittest.TestCase):
         self.assertEqual(len(base), len(P.ROLES))
         self.assertEqual(O.colours(len(P.BODY), len(P.FACE), len(P.EYE), len(P.HAIR), len(P.FACEHAIR)), base)
 
+    def test_compose_follows_myoctocat_hiding_rules(self):
+        O, P = self.O, self.P
+        none = [-1] * O.PICKS
+        blocks, flags = O.compose(none)
+        self.assertEqual((len(blocks), flags), (4, 0))
+        self.assertEqual(blocks[0], (P.BASE[0][2], P.BASE[0][3]))
+        dress = list(none)
+        dress[O.TOPS] = O.find_part(O.TOPS, "Dress")
+        dress_blocks, dress_flags = O.compose(dress)
+        self.assertTrue(dress_flags & P.F_NO_PANTS)
+        trousers = list(dress)
+        trousers[O.BOTTOMS] = 0
+        self.assertEqual(O.compose(trousers)[0], dress_blocks)
+        prop = list(none)
+        prop[O.PROPS] = O.find_part(O.PROPS, "Baguette")
+        prop_blocks, prop_flags = O.compose(prop)
+        self.assertTrue(prop_flags & P.F_HAND)
+        self.assertEqual(len(prop_blocks), 4)
+        self.assertNotIn((P.BASE[3][2], P.BASE[3][3]), prop_blocks)
+        self.assertEqual(O.compose(none, (0, 0, 999)), O.compose(none, (0,)))
+        self.assertEqual(len(O.compose(none, (0,))[0]), 5)
+        self.assertEqual(O.compose([3]), O.compose([3] + [-1] * (O.PICKS - 1)))
+        self.assertEqual(O.skip_variant(0), O.MASKED)
+        self.assertEqual(O.skip_variant(P.F_NO_BIG_HAIR), O.ORIGINAL)
+
 
 # App files -------------------------------------------------------------------
 
