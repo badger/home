@@ -118,6 +118,16 @@ MOTION_COOLDOWN_MS = 650
 TOAST_MS = 1800
 
 
+def screen_like_image():
+    # Match the screen's pixel format, as brattal does, so blits are copies.
+    try:
+        if len(screen.raw) == W * H * 2:
+            return image(W, H, bytearray(W * H * 2), image.RGB565)
+    except Exception:
+        pass
+    return image(W, H)
+
+
 def read_imu():
     try:
         values = badge.imu()
@@ -266,7 +276,7 @@ class App:
         self.bag = verdicts.ShuffleBag(len(verdicts.VERDICTS), rng)
         self.slam = None
         self.marks = []
-        self.desk = image(W, H)
+        self.desk = screen_like_image()
         self.desk.antialias = image.X2
         # The brief's header is vector text, which needs EVEN_ODD.
         self.desk.fill_rule = image.EVEN_ODD
