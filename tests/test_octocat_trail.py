@@ -20,7 +20,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "badge" / "apps" / "octocat_trail"
-MODULES = ("trail_map", "trail_logic", "trail_art", "trail_hw")
+MODULES = ("trail_map", "trail_logic", "trail_art", "trail_game", "trail_hw", "trail_draw")
 _MISSING = object()
 
 
@@ -60,7 +60,9 @@ _APP = load_modules()
 tm = _APP["trail_map"]
 tl = _APP["trail_logic"]
 ta = _APP["trail_art"]
+tg = _APP["trail_game"]
 hw = _APP["trail_hw"]
+td = _APP["trail_draw"]
 
 BOTH_RIVERS = tm.deployed_bit(tm.MERGE) | tm.deployed_bit(tm.DNS)
 
@@ -1598,6 +1600,133 @@ class DescriptorSubclassTests(unittest.TestCase):
         self.assertIs(hw._Descriptor, object)
 
 
+VIEW_KINDS = ("title", "menu", "store", "roam", "card", "stop", "supplies", "map", "river", "crossing", "hunt",
+              "camp", "tombstone", "victory", "help")
+
+
+class FakeLink:
+    """Stands in for trail_hw.IrLink inside the controller."""
+    nonce = 7
+
+    def __init__(self, transmit=False):
+        self.sent = []
+        self.busy = False
+        self.transmit = transmit
+
+    def can_send(self):
+        return self.transmit
+
+    def sending(self):
+        return self.busy
+
+    def progress(self):
+        return 0.25
+
+    def beam(self, packet):
+        self.sent.append(list(packet))
+        return True
+
+
+class Driver:
+    """Plays trail_game.Game frame by frame with fake keys and sensors."""
+
+    def __init__(self, seed=1, save=None, link=_MISSING, persist=True):
+        self.now = 1000
+        self.writes = 0
+        self.save = save if save is not None else tl.default_save()
+        self.link = FakeLink() if link is _MISSING else link
+        self.game = tg.Game(self.save, tl.Rng(seed), self.now, self.link, self.persist if persist else None)
+        self.frames = 0
+        self.screens = set()
+
+    def persist(self, data):
+        # State.save stores JSON, so every persisted save must round-trip.
+        self.writes += 1
+        if json.loads(json.dumps(data)) != data:
+            raise AssertionError("save does not round-trip through JSON")
+
+    def frame(self, pressed=(), held=(), dt=40, imu=None, light=None):
+        self.now += dt
+        self.frames += 1
+        game = self.game
+        game.update(self.now, tg.Keys(tuple(pressed), tuple(held)), imu, light)
+        view = game.view()
+        if view.kind not in VIEW_KINDS:
+            raise AssertionError("unknown view kind %r" % view.kind)
+        self.screens.add(game.screen)
+        if game.screen == "roam":
+            game.party_px()
+            game.walk_frame()
+        for level in game.lights():
+            if not 0 <= level <= 1:
+                raise AssertionError("case light level %r" % level)
+        game.current_toast()
+        return view
+
+    def press(self, name, **kw):
+        return self.frame((name,), **kw)
+
+    def pick(self, prefix):
+        """Move the cursor to the option starting with prefix and press SELECT."""
+        view = self.game.view()
+        for _ in range(len(view.options) + 1):
+            if view.options[view.cursor][0].startswith(prefix):
+                return self.press("select")
+            view = self.press("down")
+        raise AssertionError("no option %r in %r" % (prefix, [o[0] for o in view.options]))
+
+
+def labels(view):
+    return [option[0] for option in view.options]
+
+
+class ResumeFlowTests(unittest.TestCase):
+
+    def test_corrupt_run_is_dropped(self):
+        for bad in ({"v": 2, "party": "nope"}, {"v": 99}, {}):
+            save = tl.default_save()
+            save["run"] = bad
+            driver = Driver(save=save)
+            self.assertNotIn("Continue your run", labels(driver.game.view()))
+            self.assertIsNone(save["run"])
+
+    def test_shutdown_elsewhere_only_persists(self):
+        driver = Driver()
+        driver.game.shutdown()
+        self.assertEqual(driver.writes, 1)
+        self.assertIsNone(driver.game.save["run"])
+        driver = Driver(persist=False)
+        driver.game.shutdown()
+        self.assertEqual(driver.game.saves, 0)
+
+
+class ShutdownTests(unittest.TestCase):
+
+    def test_shutdown_on_the_title_just_persists(self):
+        driver = Driver()
+        game = driver.game
+        game.shutdown()
+        self.assertEqual((driver.writes, game.save["run"]), (1, None))
+
+
+class ToastLightPersistTests(unittest.TestCase):
+    def test_toasts_expire(self):
+        driver = Driver()
+        game = driver.game
+        game.toast("Hello")
+        driver.frame(dt=tg.TOAST_MS - 500)
+        self.assertEqual(game.current_toast(), "Hello")
+        driver.frame(dt=600)
+        self.assertEqual((game.current_toast(), game.toasts), (None, []))
+
+    def test_three_toasts_at_most(self):
+        game = Driver().game
+        for text in ("a", "b", "c", "d"):
+            game.toast(text)
+        self.assertEqual([toast[0] for toast in game.toasts], ["b", "c", "d"])
+        self.assertEqual(game.current_toast(), "d")
+
+
 # ----- the renderer, through strict fakes of the badge drawing globals --------------------------
 
 def is_int(value):
@@ -1724,6 +1853,162 @@ class FakeSurface:
             self.log.bad("blit source %r" % (source,))
         if not isinstance(target, FakeBox):
             self.log.bad("blit target %r" % (target,))
+
+
+class FakeImageModule:
+    """The image global: constants plus image(w, h), which must stay screen-sized or smaller."""
+    OFF = "off"
+    X2 = "x2"
+    EVEN_ODD = "even-odd"
+    NON_ZERO = "non-zero"
+
+    def __init__(self, log):
+        self.log = log
+        self.fail = None
+
+    def __call__(self, width, height):
+        if self.fail is not None:
+            raise self.fail
+        self.log.images.append((width, height))
+        if not is_int(width) or not is_int(height) or width <= 0 or height <= 0:
+            self.log.bad("image(%r, %r)" % (width, height))
+        elif width > 320 or height > 240:
+            self.log.bad("image(%d, %d) is larger than the screen" % (width, height))
+        return FakeSurface(self.log, width, height)
+
+
+class FakeColorModule:
+    def __init__(self, log):
+        self.log = log
+
+    def rgb(self, r, g, b, a=255):
+        self.log.colors += 1
+        for value in (r, g, b, a):
+            if not is_int(value) or not 0 <= value <= 255:
+                self.log.bad("color.rgb(%r, %r, %r, %r)" % (r, g, b, a))
+                break
+        return FakePen(r, g, b)
+
+
+class FakeShapeModule:
+    def __init__(self, log):
+        self.log = log
+
+    def circle(self, x, y, r):
+        if not is_int(r) or r <= 0:
+            self.log.bad("circle radius %r" % (r,))
+        return FakeShape(self.log, "circle", (x, y, r))
+
+    def line(self, x0, y0, x1, y1, width):
+        return FakeShape(self.log, "line", (x0, y0, x1, y1, width))
+
+    def rounded_rectangle(self, x, y, w, h, r):
+        return FakeShape(self.log, "rounded_rectangle", (x, y, w, h, r))
+
+
+def badge_globals(log):
+    return {
+        "screen": FakeSurface(log, 320, 240, is_screen=True),
+        "image": FakeImageModule(log),
+        "color": FakeColorModule(log),
+        "shape": FakeShapeModule(log),
+        "font": types.SimpleNamespace(teatime=object(), nope=object()),
+        "rect": lambda x, y, w, h: FakeBox(log, "rect", (x, y, w, h)),
+        "vec2": lambda x, y: FakeBox(log, "vec2", (x, y)),
+    }
+
+
+def install_globals(test, target, values):
+    """Patch the badge globals onto one app module for the length of one test."""
+    for name, value in values.items():
+        if name in vars(target):
+            raise AssertionError("%s already defines %s" % (target.__name__, name))
+        setattr(target, name, value)
+        test.addCleanup(delattr, target, name)
+
+
+class RenderHelperTests(unittest.TestCase):
+    def test_dim_is_about_half_brightness(self):
+        self.assertEqual(td.dim((255, 200, 0)), (140, 110, 0))
+        self.assertEqual(td.dim((0, 0, 0)), (0, 0, 0))
+
+
+class RenderTests(unittest.TestCase):
+    """Every screen drawn after every frame, through strict fakes of the badge globals."""
+
+    def setUp(self):
+        self.log = DrawLog()
+        self.fakes = badge_globals(self.log)
+        install_globals(self, td, self.fakes)
+        self.screen = self.fakes["screen"]
+        self.renderer = td.Renderer()
+        self.visual = 0
+        self.kinds = set()
+        original = Driver.frame
+        test = self
+
+        def frame(driver, *args, **kw):
+            view = original(driver, *args, **kw)
+            tick = getattr(driver.link, "tick", None)
+            if tick is not None:
+                tick()
+            test.render(driver.game)
+            return view
+
+        patcher = mock.patch.object(Driver, "frame", frame)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def render(self, game):
+        game.save["visual"] = self.visual
+        screen = self.screen
+        screen.texts = []
+        screen.off_screen = []
+        screen.calls = 0
+        self.renderer.draw(game)
+        kind = game.view().kind
+        self.kinds.add(kind)
+        if self.renderer.failed:
+            self.fail("the %s screen failed: %r" % (kind, self.renderer.failed))
+        if self.log.problems:
+            self.fail("the %s screen: %s" % (kind, self.log.problems))
+        if not screen.calls:
+            self.fail("the %s screen drew nothing" % kind)
+        return kind
+
+    def test_a_failing_screen_falls_back_and_reports_once(self):
+        game = Driver(5).game
+
+        def broken(renderer, view, game):
+            raise ValueError("boom")
+
+        with mock.patch.object(td.Renderer, "draw_title", broken), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            for _ in range(3):
+                self.renderer.draw(game)
+        self.assertIn("boom", self.renderer.failed["title"])
+        self.assertEqual(out.getvalue().count("the title screen failed"), 1)
+        self.assertIn("The Octocat Trail", self.screen.texts)
+        self.assertEqual(self.log.problems, [])
+
+    def test_the_nope_font_stands_in_for_teatime(self):
+        nope = object()
+        td.font = types.SimpleNamespace(nope=nope)
+        Driver(5).frame()
+        self.assertIs(self.renderer.face, nope)
+        self.assertIs(self.screen.font, nope)
+
+    def test_the_title_banner_is_drawn_once_and_reused(self):
+        driver = Driver(5)
+        for _ in range(4):
+            driver.frame()
+        self.assertEqual(len(self.log.images), 1)
+        width, height = self.log.images[0]
+        self.assertEqual(height, td.ROW + 1)
+        self.assertLessEqual(2 * width, td.W)
+        banner = self.renderer.banner
+        driver.press("down")
+        self.assertIs(self.renderer.banner, banner)
 
 
 # ----- the launcher (__init__.py), run against fake runtime globals -----------------------------
@@ -2258,6 +2543,14 @@ class SourceScanTests(unittest.TestCase):
         for snippet in CLEAN_SNIPPETS:
             with self.subTest(snippet=snippet):
                 self.assertEqual(scan_source(snippet), [])
+
+    def test_no_module_constant_is_a_dict_or_set(self):
+        # Dict and set iteration is hash-ordered on the badge, so constants stay sequences.
+        for mod in (tm, tl, ta, tg, hw, td):
+            for name, value in vars(mod).items():
+                if name.isupper():
+                    with self.subTest(module=mod.__name__, name=name):
+                        self.assertNotIsInstance(value, (dict, set, frozenset))
 
     def test_beams_only_use_the_trail_address(self):
         self.assertEqual((tl.IR_ADDRESS, hw.TrailBeam.ADDRESS), (0x54, 0x54))
