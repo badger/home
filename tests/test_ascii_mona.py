@@ -439,8 +439,27 @@ class TestLoading(unittest.TestCase):
 
     def test_every_source_file_parses(self):
         files = app_sources()
+        self.assertIn(APP_DIR / "__init__.py", files)
         for path in files:
             parse_app(path)
+
+    def test_app_entry_point_uses_the_runtime_contract(self):
+        tree = parse_app(APP_DIR / "__init__.py")
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+        self.assertNotIn("badge", imported, "the launcher provides badge as a global")
+        top = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
+        self.assertIn("update", top)
+        self.assertIn("on_exit", top)
+        last = tree.body[-1]
+        self.assertIsInstance(last, ast.Expr)
+        self.assertEqual(ast.dump(last.value), ast.dump(ast.parse("run(update)").body[0].value))
+        source = (APP_DIR / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("screen.fill_rule = image.EVEN_ODD", source)
 
 
 # MicroPython compatibility ---------------------------------------------------
