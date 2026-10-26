@@ -1144,6 +1144,24 @@ class PacketTests(unittest.TestCase):
         self.assertEqual([inbox.feed(byte, 200) for byte in other], [None] * 9)
         self.assertEqual([inbox.feed(byte, 20100) for byte in other][-1]["nonce"], 0x21)
 
+    def test_records(self):
+        record = tl.tombstone_record(1234, 1, 2, 1, False)
+        packet = tl.decode_packet(tl.tombstone_packet(7, record))
+        self.assertEqual(tl.tombstone_from_packet(packet), [1234, 1, 2, 1, 1])
+        self.assertIsNone(tl.victory_from_packet(packet))
+        win = tl.decode_packet(tl.victory_packet(7, 9999, 4, 300, 2))
+        self.assertEqual(tl.victory_from_packet(win), (9999, 4, 127, 2))
+        self.assertIsNone(tl.tombstone_from_packet(win))
+        self.assertIsNone(tl.tombstone_from_packet(None))
+        self.assertIsNone(tl.victory_from_packet(None))
+        forged = tl.decode_packet(tl.encode_packet(tl.KIND_VICTORY, 1, 5, 99, 3, 99))
+        self.assertEqual(tl.victory_from_packet(forged), (5, 5, 3, 2))
+        self.assertEqual(tl.tombstone_record(-1, 99, 99, 99, 0), [0, len(tl.CAUSES) - 1, len(tl.EPITAPHS) - 1, 2, 0])
+        lines = tl.tombstone_lines([1234, 0, 0, 2, 1])
+        self.assertEqual(lines, ("Step 1,234", "Here lies the ATC Control Lead's party", "Died of node_modules dysentery",
+                                 '"' + tl.EPITAPHS[0] + '"', "Beamed in over IR"))
+        self.assertEqual(tl.tombstone_lines([5, 0, 0, 0, 0])[4], "From your own wagon")
+
 
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""

@@ -1503,6 +1503,15 @@ class IrInbox:
         return packet
 
 
+def tombstone_packet(nonce, record):
+    step, cause, epitaph, role, _beamed = record
+    return encode_packet(KIND_TOMBSTONE, nonce, step, cause, epitaph, role)
+
+
+def victory_packet(nonce, score, survivors, days, role):
+    return encode_packet(KIND_VICTORY, nonce, score, survivors, min(days, 127), role)
+
+
 def tombstone_record(step, cause, epitaph, role, beamed):
     return [
         clamp_int(step, 0, MAX_STEPS),
@@ -1511,6 +1520,19 @@ def tombstone_record(step, cause, epitaph, role, beamed):
         clamp_int(role, 0, len(ROLES) - 1),
         1 if beamed else 0,
     ]
+
+
+def tombstone_from_packet(packet):
+    if packet is None or packet["kind"] != KIND_TOMBSTONE:
+        return None
+    return tombstone_record(packet["value"], packet["a"], packet["b"], packet["c"], True)
+
+
+def victory_from_packet(packet):
+    """Returns (score, survivors, days, role) or None."""
+    if packet is None or packet["kind"] != KIND_VICTORY:
+        return None
+    return (packet["value"], clamp_int(packet["a"], 0, len(PARTY)), packet["b"], clamp_int(packet["c"], 0, len(ROLES) - 1))
 
 
 def tombstone_lines(record):
