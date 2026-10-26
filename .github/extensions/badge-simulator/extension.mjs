@@ -2,6 +2,7 @@
 // Badge Simulator canvas: runs an app from badge/apps in the badger.github.io
 // 3D badge simulator, reloads it whenever its files change, and can ask Copilot
 // to deploy it to a connected badge. See README.md in this folder.
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, watch, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -208,6 +209,7 @@ function snapshot(inst) {
         running: stats.running ?? null, fps: stats.fps ?? null, frames: stats.frames ?? null,
         resolution: stats.width ? `${stats.width}x${stats.height}` : null,
         paused: stats.paused ?? null, upside_down: stats.rotated ?? null, backlight: stats.backlight ?? null,
+        tilt: stats.tilt ? { pitch: stats.tilt.pitch, roll: stats.tilt.roll, source: stats.tilt.source, imu: stats.tilt.imu } : null,
         connected: inst.clients.size > 0, stats_age_ms: age,
         error: lastError(inst), cursor: cursorOf(inst),
         ...(stats.paused ? { note: "The canvas is hidden, so the simulator is paused. Ask the user to show the Badge Simulator panel." } : {}),
@@ -437,6 +439,29 @@ async function waitForRun(inst, timeoutMs = 15000) {
     if (!ok) throw new Error("The app did not start within the timeout. Check get_output.");
 }
 
+const tiltPresets = { upright: { pitch: 0, roll: 0 }, level: { pitch: 0, roll: 0 }, flat: { pitch: 90, roll: 0 } };
+function tiltAngle(value, limit, name) {
+    const angle = Number(value ?? 0);
+    if (!Number.isFinite(angle)) throw new Error(`${name} must be a number of degrees.`);
+    return Math.max(-limit, Math.min(limit, angle));
+}
+async function doTilt(inst, input) {
+    await requireClient(inst);
+    const spec = typeof input === "string" ? { preset: input } : input ?? {};
+    let pose;
+    if (spec.preset !== undefined) {
+        pose = tiltPresets[String(spec.preset).toLowerCase()];
+        if (!pose) throw new Error(`Unknown tilt preset "${spec.preset}". Use upright or flat, or pass pitch/roll.`);
+    } else pose = { pitch: tiltAngle(spec.pitch, 90, "pitch"), roll: tiltAngle(spec.roll, 180, "roll") };
+    const ms = clampMs(spec.duration_ms, 300, 10000);
+    const id = randomUUID();
+    broadcast(inst, { type: "tilt", id, ...pose, ms });
+    const stats = await waitUntil(inst, () => [...inst.statsBy.values()].find((entry) => entry.tilt?.id === id) ?? null, ms + 3000);
+    if (!stats) throw new Error("The simulator did not confirm the tilt. Keep the Badge Simulator canvas visible and try again.");
+    const { tilt } = stats;
+    return { pitch: tilt.pitch, roll: tilt.roll, imu: tilt.imu, source: tilt.source, upside_down: stats.rotated ?? null, duration_ms: ms };
+}
+
 async function runScript(inst, input) {
     await requireClient(inst);
     const steps = Array.isArray(input?.steps) ? input.steps : [];
@@ -465,7 +490,9 @@ async function runScript(inst, input) {
                 broadcast(inst, { type: "rotate", value: step.rotate === "toggle" ? undefined : Boolean(step.rotate) });
                 await sleep(300);
                 result = { rotated: step.rotate };
-            } else throw new Error(`Unknown step ${JSON.stringify(step)}. Use press, wait_ms, screenshot, exec, wait_for or rotate.`);
+            } else if (step.tilt !== undefined) {
+                result = await doTilt(inst, step.tilt);
+            } else throw new Error(`Unknown step ${JSON.stringify(step)}. Use press, wait_ms, screenshot, exec, wait_for, rotate or tilt.`);
             results.push({ step: index + 1, ...step, result });
         } catch (error) {
             results.push({ step: index + 1, ...step, error: error.message });
@@ -622,7 +649,7 @@ session = await joinSession({
                 },
                 {
                     name: "run_script",
-                    description: "Run a scripted test: a list of steps executed in order, returning per-step results, screenshot paths, final status and output. Steps: {press:\"a\", duration_ms}, {wait_ms}, {screenshot:\"label\"}, {exec:\"code\"}, {wait_for:\"regex\" or {pattern, frames, until_crash}, timeout_ms}, {rotate:true|false|\"toggle\"}. Set restart:true to reload the app first. Stops on crash unless stop_on_crash:false.",
+                    description: "Run a scripted test: a list of steps executed in order, returning per-step results, screenshot paths, final status and output. Steps: {press:\"a\", duration_ms}, {wait_ms}, {screenshot:\"label\"}, {exec:\"code\"}, {wait_for:\"regex\" or {pattern, frames, until_crash}, timeout_ms}, {rotate:true|false|\"toggle\"}, {tilt:{pitch, roll, duration_ms}} or {tilt:\"upright\"|\"flat\"}. Set restart:true to reload the app first. Stops on crash unless stop_on_crash:false.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -645,6 +672,20 @@ session = await joinSession({
                         await sleep(1200);
                         return { upside_down: inst.stats?.rotated ?? null };
                     },
+                },
+                {
+                    name: "tilt",
+                    description: "Tilt the simulated badge so its motion sensor (badge.imu()) reports that pose, and turn the 3D badge to match. pitch: degrees the top tips back, away from you (90 = lying face up; negative tips it forward). roll: degrees it leans right (negative = left). Pose is absolute from upright, facing you, and resets the camera view first. Or pass preset \"upright\" or \"flat\". Animates over duration_ms (default 300) and returns the pose and the raw IMU values (ax, ay, az, gx, gy, gz) sent to the app. Dragging the 3D badge in the canvas also tilts it.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            pitch: { type: "number", description: "Degrees tipped back (-90..90)" },
+                            roll: { type: "number", description: "Degrees leaned right (-180..180)" },
+                            preset: { type: "string", enum: ["upright", "flat"] },
+                            duration_ms: { type: "number", description: "Animation time (default 300, max 10000)" },
+                        },
+                    },
+                    handler: (ctx) => doTilt(instanceFor(ctx), ctx.input),
                 },
                 {
                     name: "check_app",
