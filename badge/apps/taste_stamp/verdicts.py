@@ -1,5 +1,6 @@
 # Verdicts and Creative 8-Ball prompts. MicroPython dicts are unordered, so
-# every ordered collection here is a tuple.
+# every ordered collection here is a tuple and the IR beam sends indexes into
+# these tuples. Append new entries at the end so older badges stay compatible.
 
 VERDICTS = (
     "SHIP IT",

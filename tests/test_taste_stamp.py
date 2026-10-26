@@ -31,6 +31,7 @@ V = load(APP / "verdicts.py", "taste_stamp_verdicts")
 S = load(APP / "stamp.py", "taste_stamp_stamp")
 M = load(APP / "motion.py", "taste_stamp_motion")
 E = load(APP / "eightball.py", "taste_stamp_eightball")
+B = load(APP / "beam.py", "taste_stamp_beam")
 README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "taste_stamp_validate_app_readmes")
 
 REST_UP = (0, 16384, 0, 0, 0, 0)  # hardware, badge upright
@@ -762,6 +763,24 @@ class EightBallTests(unittest.TestCase):
                 self.assertEqual(i in shown, facing > 0, (i, facing))
                 checked += 1
         self.assertGreater(checked, 5900)
+
+
+class BeamTests(unittest.TestCase):
+    def test_codes_round_trip_and_fit_in_a_byte(self):
+        vc, pc = len(V.VERDICTS), len(V.PROMPTS)
+        codes = set()
+        for kind, count in ((B.VERDICT, vc), (B.PROMPT, pc)):
+            for i in range(count):
+                cmd = B.encode(kind, i)
+                self.assertTrue(0 <= cmd <= 255)
+                self.assertEqual(B.decode(cmd, vc, pc), (kind, i))
+                codes.add(cmd)
+        self.assertEqual(len(codes), vc + pc)
+
+    def test_decode_rejects_bytes_it_never_sends(self):
+        for cmd in (7, 0x3F, 0x54, 255):
+            self.assertIsNone(B.decode(cmd, 7, 20))
+        self.assertEqual(B.decode(0x53, 7, 20), (B.PROMPT, 19))
 
 
 def read_png(path):
