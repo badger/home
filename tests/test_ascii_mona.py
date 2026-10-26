@@ -460,6 +460,7 @@ class TestLoading(unittest.TestCase):
         self.assertEqual(ast.dump(last.value), ast.dump(ast.parse("run(update)").body[0].value))
         source = (APP_DIR / "__init__.py").read_text(encoding="utf-8")
         self.assertIn("screen.fill_rule = image.EVEN_ODD", source)
+        self.assertIn("badge.caselights(0)", source)
 
 
 # MicroPython compatibility ---------------------------------------------------

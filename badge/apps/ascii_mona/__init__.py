@@ -1,10 +1,11 @@
-"""ASCII Mona: a custom MyOctocat for any GitHub handle.
+"""ASCII Mona: a custom MyOctocat for any GitHub handle, beamed badge to badge.
 
 A handle becomes 19 numbers of Mona DNA that pick parts and colours from
 GitHub's own MyOctocat library (myoctocat.com). The badge paints that outfit
 as vector art, or as ASCII art built with Ascii-Motion's techniques. Handles
-come from the badge owner, from saved Contacts cards or from the arcade
-letter wheel.
+arrive from an IR beam, from saved Contacts cards or from the arcade letter
+wheel. SELECT beams the Mona over IR and finishes with the Universe quest
+code 0x88 on address 0x45.
 """
 
 import gc
@@ -36,6 +37,7 @@ except ImportError:
 
 import mona_ascii
 import mona_dna
+import mona_ir
 import mona_link
 import mona_net
 import mona_octo
@@ -163,6 +165,7 @@ ASCII_STYLE = (0, mona_ascii.SHAPES, mona_ascii.DITHER, mona_ascii.EDGES)
 VIAS = (
     ("you", "Your Mona"),
     ("typed", "Typed in"),
+    ("IR beam", "Caught by IR"),
     ("contact", "From Contacts"),
     ("surprise", "Surprise Mona"),
     ("saved", "Saved Mona"),
@@ -179,6 +182,7 @@ PICKED = color.rgb(110, 64, 201, 170)
 ACCENT = color.rgb(191, 135, 255)
 GREEN = color.rgb(86, 211, 100)
 RED = color.rgb(255, 123, 114)
+GOLD = color.rgb(242, 204, 96)
 BLUE = color.rgb(88, 166, 255)
 CLEAR = color.rgb(0, 0, 0, 0)
 
@@ -437,6 +441,7 @@ class MonaApp:
         self.art_warned = False
         self.ascii = mona_ascii.AsciiView()
         self.ascii_warned = False
+        self.ir = mona_ir.IrPort()
         self.rng = mona_dna.Rng(mona_dna.fmix32((mona_dna.seed_of(badge_uid()) ^ badge.ticks) & mona_dna.MASK))
 
         self.view = MAIN
@@ -453,6 +458,7 @@ class MonaApp:
         self.toast = ""
         self.toast_pen = WHITE
         self.toast_until = 0
+        self.lit = None
         self.closed = False
 
     def me(self):
@@ -536,7 +542,9 @@ class MonaApp:
     # -- input ---------------------------------------------------------------
 
     def main_input(self, now):
-        if badge.pressed(BUTTON_LEFT):
+        if badge.pressed(BUTTON_SELECT):
+            self.start_beam(now)
+        elif badge.pressed(BUTTON_LEFT):
             self.set_style(self.style - 1)
         elif badge.pressed(BUTTON_RIGHT):
             self.set_style(self.style + 1)
@@ -710,6 +718,36 @@ class MonaApp:
             self.adopt(handle, dna, name, "tweaked")
             self.say("Tweaked Mona saved", GREEN)
 
+    # -- actions and events ---------------------------------------------------
+
+    def start_beam(self, now):
+        self.ir.start_beam(self.current[0], self.current[1])
+
+    def got_mona(self, handle, dna, name, via):
+        self.adopt(handle, dna, name, via)
+        if self.view == WHO or self.view == TWEAK:
+            self.view = MAIN
+        who = ("@" + handle) if handle else (name or "a mystery Mona")
+        self.say("Caught " + who + " by IR", GREEN)
+
+    def ir_events(self, now):
+        for event in self.ir.update(now):
+            if event[0] == "sent":
+                beam = self.ir.beam
+                if not event[1]:
+                    self.say(event[2] or "IR beam failed", RED)
+                elif beam is not None and beam.live:
+                    self.say("Beamed, plus quest code 0x88", GREEN)
+                else:
+                    self.say("Simulated beam: no IR sender here", GOLD)
+            elif event[0] == "mona":
+                self.got_mona(event[1], event[2], "", "IR beam")
+            elif event[0] == "quest":
+                if mona_ir.mark_quest(STORE):
+                    self.say("Quest 8 complete: Octocat Generator", GOLD)
+                else:
+                    self.say("Quest code 0x88 received", GOLD)
+
     # -- painting ---------------------------------------------------------------
 
     def wanted(self):
@@ -748,7 +786,9 @@ class MonaApp:
                 self.start_paint(want)
         if self.shown is None or self.painted:
             return
-        if self.view == WHEEL:
+        if self.ir.beaming:
+            budget = 10
+        elif self.view == WHEEL:
             budget = 12
         else:
             budget = 20
@@ -835,8 +875,22 @@ class MonaApp:
             return
         if self.view == WHEEL:
             self.update_wheel_dna()
+        self.ir_events(now)
         self.paint(now)
         self.draw(now)
+        self.lights(now)
+
+    def lights(self, now):
+        if self.ir.beaming:
+            level = (1.0,) if (now // 120) % 2 else (0.2,)
+        else:
+            level = (0,)
+        if level != self.lit:
+            self.lit = level
+            try:
+                badge.caselights(*level)
+            except Exception:
+                pass
 
     def leave(self):
         self.shutdown()
@@ -849,7 +903,12 @@ class MonaApp:
         if self.closed:
             return
         self.closed = True
+        self.ir.close()
         self.painter.close()
+        try:
+            badge.caselights(0)
+        except Exception:
+            pass
         self.save()
 
     # -- drawing ----------------------------------------------------------------
@@ -867,8 +926,10 @@ class MonaApp:
                 self.draw_info()
             else:
                 self.draw_panel(now)
+        if self.ir.beaming:
+            self.draw_beam()
         self.draw_footer(now)
-        if self.toast and now - self.toast_until < 0:
+        if self.toast and not self.ir.beaming and now - self.toast_until < 0:
             self.draw_toast()
 
     def draw_stage(self, now):
@@ -877,7 +938,7 @@ class MonaApp:
             view = self.ascii
             if not view.failed:
                 view.set_mode(ASCII_STYLE[self.style], self.palette)
-                view.step(2)
+                view.step(1 if self.ir.beaming else 2)
             if not view.failed:
                 screen.pen = pen_of(mona_ascii.BACKS[self.palette])
                 screen.clear()
@@ -923,7 +984,7 @@ class MonaApp:
             return ("Painting %d%%" % done, DIM, done)
         if self.style != VECTOR and self.ascii.typing:
             return ("Converting", DIM, self.ascii.row * 100 // mona_ascii.ROWS)
-        return ("Ready", GREEN, None)
+        return ("SELECT beams it", GREEN, None)
 
     def style_label(self):
         if self.style == VECTOR:
@@ -1076,6 +1137,19 @@ class MonaApp:
             box(px, py, pw, ph, pen_of(mix(NIGHT, main, 22)), 8)
             screen.blit(self.art, rect(0, 0, ART_W, ART_H), rect(px, py, pw, ph), image.BILINEAR)
 
+    def draw_beam(self):
+        beam = self.ir.beam
+        x, y, w, h = 40, 140, 240, 70
+        box(x, y, w, h, PANEL, 10)
+        if beam.in_quest():
+            title, pen = "Sending quest code 0x88", GOLD
+        else:
+            title, pen = "Beaming " + who_label(beam.handle, beam.dna), ACCENT
+        write(title, x + w / 2, y + 8, BODY_SIZE, WHITE, w - 24, "c")
+        bar(x + 14, y + 32, w - 28, 8, beam.progress(), pen)
+        note = "IR on GPIO16, address 0x4C" if beam.live else (self.ir.note or "simulated beam")
+        write(note, x + w / 2, y + 48, SMALL_SIZE, DIM, w - 24, "c")
+
     def hints(self):
         menu = MENU_BUTTON is not None
         if self.view == WHEEL:
@@ -1089,7 +1163,7 @@ class MonaApp:
             return ("UP/DOWN pick  LEFT/RIGHT change", "SELECT save  MENU reset  BACK cancel" if menu else "SELECT save  BACK cancel")
         if self.info:
             return ("DOWN tweak  UP/BACK close",)
-        first = "LEFT/RIGHT style  UP " + ("info" if self.style == VECTOR else "colours")
+        first = "SELECT beam  LEFT/RIGHT style  UP " + ("info" if self.style == VECTOR else "colours")
         second = "DOWN pick a handle  BACK exit"
         return (first, second)
 
@@ -1108,6 +1182,7 @@ class MonaApp:
 
 
 app = MonaApp()
+app.ir.listen()
 
 
 def update():
