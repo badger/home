@@ -1,4 +1,6 @@
-# The Creative 8-Ball: a d20 (icosahedron) for Taste Stamp.
+# The Creative 8-Ball: a d20 (icosahedron) that tumbles while the badge is
+# shaken and settles with one numbered face turned to the viewer, number
+# upright.
 #
 # Pure maths with no badge APIs, so the tests can drive it. World space has
 # x right, y up and z towards the viewer.
@@ -6,6 +8,16 @@
 import math
 
 PHI = (1.0 + math.sqrt(5.0)) * 0.5
+
+IDLE, SPINNING, SETTLING, LANDED = 0, 1, 2, 3
+
+MAX_SPIN = 22.0
+FRICTION_TAU = 700.0
+LAND_SPEED = 1.2
+MIN_SPIN_MS = 600
+SETTLE_BASE_MS = 200
+SETTLE_MS_PER_DEG = 2.2
+IDLE_SPIN = 0.7
 
 
 def _sub(a, b):
@@ -187,3 +199,130 @@ def random_axis(rand):
     a = 6.2831853 * rand()
     r = math.sqrt(max(0.0, 1.0 - z * z))
     return (r * math.cos(a), r * math.sin(a), z)
+
+
+class Ball:
+    def __init__(self, rand):
+        self.rand = rand
+        self.verts, self.faces, self.numbers = icosahedron()
+        self.edges = face_edges(self.faces)
+        self.normals = []
+        self.centres = []
+        for face in self.faces:
+            self.normals.append(face_normal(self.verts, face))
+            self.centres.append(face_centre(self.verts, face))
+        self.q = q_normalise((0.92, 0.25, 0.3, 0.05))
+        self.omega = (0.0, 0.0, 0.0)
+        self.state = IDLE
+        self.face = None
+        self.forced = None
+        self.hold_until = 0
+        self.settle_from = None
+        self.settle_to = None
+        self.settle_start = 0
+        self.settle_ms = 1
+        self.landed_at = 0
+
+    def speed(self):
+        return math.sqrt(_dot(self.omega, self.omega))
+
+    def face_for_number(self, number):
+        for i in range(len(self.numbers)):
+            if self.numbers[i] == number:
+                return i
+        return None
+
+    def kick(self, strength, now, forced=None):
+        # Sets the d20 tumbling. forced is a face number to land on.
+        axis = random_axis(self.rand)
+        w = self.omega
+        w = (w[0] + axis[0] * strength, w[1] + axis[1] * strength, w[2] + axis[2] * strength)
+        speed = math.sqrt(_dot(w, w))
+        if speed > MAX_SPIN:
+            k = MAX_SPIN / speed
+            w = (w[0] * k, w[1] * k, w[2] * k)
+        self.omega = w
+        if forced is not None:
+            self.forced = forced
+        if self.state != SPINNING:
+            self.face = None
+            self.state = SPINNING
+        self.hold_until = max(self.hold_until, now + MIN_SPIN_MS)
+
+    def reset(self):
+        self.state = IDLE
+        self.face = None
+        self.forced = None
+        self.omega = (0.0, 0.0, 0.0)
+
+    def _rotate(self, dt):
+        speed = self.speed()
+        if speed <= 1e-6:
+            return
+        w = self.omega
+        axis = (w[0] / speed, w[1] / speed, w[2] / speed)
+        self.q = q_normalise(q_mul(q_axis_angle(axis, speed * dt / 1000.0), self.q))
+
+    def facing_face(self):
+        # Index of the face that points most directly at the viewer.
+        m = q_matrix(self.q)
+        best = 0
+        best_z = -2.0
+        for i in range(len(self.normals)):
+            n = self.normals[i]
+            z = m[2][0] * n[0] + m[2][1] * n[1] + m[2][2] * n[2]
+            if z > best_z:
+                best_z = z
+                best = i
+        return best
+
+    def target_for(self, index):
+        # Orientation that shows face index head-on with its number upright.
+        n = self.normals[index]
+        up = _unit(_sub(self.verts[self.faces[index][0]], self.centres[index]))
+        return q_from_rows((_cross(up, n), up, n))
+
+    def update(self, dt, now, agitated=False):
+        # Returns True on the frame the d20 lands.
+        if self.state == IDLE:
+            self.omega = (0.31 * IDLE_SPIN, 0.95 * IDLE_SPIN, 0.0)
+            self._rotate(dt)
+            return False
+        if self.state == SPINNING:
+            if agitated:
+                self.hold_until = max(self.hold_until, now + MIN_SPIN_MS // 2)
+            else:
+                k = math.exp(-dt / FRICTION_TAU)
+                w = self.omega
+                self.omega = (w[0] * k, w[1] * k, w[2] * k)
+            self._rotate(dt)
+            if not agitated and now >= self.hold_until and self.speed() < LAND_SPEED:
+                index = self.facing_face()
+                if self.forced is not None:
+                    forced = self.face_for_number(self.forced)
+                    if forced is not None:
+                        index = forced
+                self.forced = None
+                self.face = index
+                self.settle_from = self.q
+                self.settle_to = self.target_for(index)
+                degrees = q_angle(self.settle_from, self.settle_to) * 57.29578
+                self.settle_ms = int(SETTLE_BASE_MS + SETTLE_MS_PER_DEG * degrees)
+                self.settle_start = now
+                self.state = SETTLING
+            return False
+        if self.state == SETTLING:
+            t = (now - self.settle_start) / self.settle_ms
+            self.q = q_slerp(self.settle_from, self.settle_to, smoothstep(t))
+            if t >= 1.0:
+                self.q = self.settle_to
+                self.omega = (0.0, 0.0, 0.0)
+                self.state = LANDED
+                self.landed_at = now
+                return True
+        return False
+
+    def number(self):
+        if self.face is None:
+            return None
+        return self.numbers[self.face]

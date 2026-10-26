@@ -391,6 +391,16 @@ def random_quaternion(rng):
     return E.q_normalise(tuple(rng.uniform(-1.0, 1.0) for _ in range(4)))
 
 
+def spin_out(ball, start=0, dt=16, until=6000, agitated=False):
+    landings = []
+    t = start
+    while t < until:
+        t += dt
+        if ball.update(dt, t, agitated):
+            landings.append(t)
+    return landings
+
+
 class EightBallTests(unittest.TestCase):
     def setUp(self):
         self.verts, self.faces, self.numbers = E.icosahedron()
@@ -425,6 +435,96 @@ class EightBallTests(unittest.TestCase):
         for a, b in edges:
             self.assertIn((b, a), edges)
 
+    def test_targets_turn_each_face_up_with_its_number_upright(self):
+        ball = E.Ball(V.Rng(3).random)
+        for i in range(20):
+            ball.q = ball.target_for(i)
+            self.assertEqual(ball.facing_face(), i)
+            self.assertGreater(rotate(ball.q, ball.normals[i])[2], 0.999)
+            top = rotate(ball.q, ball.verts[ball.faces[i][0]])
+            centre = rotate(ball.q, ball.centres[i])
+            self.assertAlmostEqual(top[0], centre[0], places=6)
+            self.assertGreater(top[1] - centre[1], 1.0)
+            self.assertEqual(ball.face_for_number(ball.numbers[i]), i)
+
+    def test_idle_ball_drifts_slowly(self):
+        ball = E.Ball(V.Rng(4).random)
+        self.assertEqual(ball.state, E.IDLE)
+        q0 = ball.q
+        self.assertEqual(spin_out(ball, until=992), [])
+        self.assertEqual(ball.state, E.IDLE)
+        self.assertTrue(0.5 < E.q_angle(q0, ball.q) < 0.9)
+
+    def test_kick_caps_the_spin_and_holds_it(self):
+        ball = E.Ball(V.Rng(5).random)
+        ball.kick(100, 1000)
+        self.assertEqual(ball.state, E.SPINNING)
+        self.assertAlmostEqual(ball.speed(), E.MAX_SPIN, places=6)
+        self.assertEqual(ball.hold_until, 1000 + E.MIN_SPIN_MS)
+        ball.kick(5, 1100)
+        self.assertLessEqual(ball.speed(), E.MAX_SPIN + 1e-9)
+        self.assertEqual(ball.hold_until, 1700)
+
+    def test_lands_exactly_once_facing_the_viewer(self):
+        ball = E.Ball(V.Rng(6).random)
+        ball.kick(18, 0)
+        landings = spin_out(ball, until=5000)
+        self.assertEqual(len(landings), 1)
+        self.assertTrue(1800 <= landings[0] <= 3000, landings)
+        self.assertEqual(ball.state, E.LANDED)
+        self.assertEqual(ball.landed_at, landings[0])
+        self.assertEqual(ball.facing_face(), ball.face)
+        self.assertEqual(ball.number(), ball.numbers[ball.face])
+        self.assertLess(E.q_angle(ball.q, ball.target_for(ball.face)), 1e-3)
+
+    def test_forced_numbers_land_on_their_face(self):
+        for forced in (1, 13, 20):
+            ball = E.Ball(V.Rng(forced).random)
+            ball.kick(16, 0, forced)
+            spin_out(ball)
+            self.assertEqual(ball.state, E.LANDED)
+            self.assertEqual(ball.number(), forced)
+
+    def test_invalid_forced_numbers_are_ignored(self):
+        for forced in (0, 21, -3):
+            ball = E.Ball(V.Rng(8).random)
+            ball.kick(16, 0, forced)
+            spin_out(ball)
+            self.assertEqual(ball.state, E.LANDED)
+            self.assertIn(ball.number(), range(1, 21))
+
+    def test_agitation_keeps_the_ball_spinning(self):
+        ball = E.Ball(V.Rng(9).random)
+        ball.kick(18, 0)
+        self.assertEqual(spin_out(ball, until=2992, agitated=True), [])
+        self.assertEqual(ball.state, E.SPINNING)
+        self.assertGreater(ball.speed(), 17.0)
+        self.assertGreaterEqual(ball.hold_until, 2992 + 300)
+        self.assertEqual(len(spin_out(ball, start=2992, until=9000)), 1)
+        self.assertEqual(ball.state, E.LANDED)
+
+    def test_reset_returns_to_idle(self):
+        ball = E.Ball(V.Rng(10).random)
+        ball.kick(18, 0, 7)
+        spin_out(ball)
+        ball.reset()
+        self.assertEqual(ball.state, E.IDLE)
+        self.assertIsNone(ball.face)
+        self.assertIsNone(ball.forced)
+
+    def test_spin_down_is_frame_rate_independent(self):
+        starts = []
+        for dt in (16, 33):
+            ball = E.Ball(V.Rng(11).random)
+            ball.kick(18, 0)
+            t = 0
+            while ball.state == E.SPINNING and t < 6000:
+                t += dt
+                ball.update(dt, t)
+            starts.append(ball.settle_start)
+        self.assertLess(abs(starts[0] - starts[1]), 50)
+        self.assertAlmostEqual(starts[0], E.FRICTION_TAU * math.log(18 / E.LAND_SPEED), delta=60)
+
     def test_quaternion_helpers(self):
         q = E.q_axis_angle((0.0, 0.0, 1.0), math.pi / 2)
         for a, b in zip(rotate(q, (1.0, 0.0, 0.0)), (0.0, 1.0, 0.0)):
@@ -457,6 +557,7 @@ class EightBallTests(unittest.TestCase):
             borders[f] += 1
             borders[g] += 1
         self.assertEqual(borders, [3] * len(self.faces))
+        self.assertEqual(E.Ball(V.Rng(1).random).edges, edges)
 
 
 def read_png(path):
