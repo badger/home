@@ -539,6 +539,24 @@ class EightBallTests(unittest.TestCase):
                 self.assertIn(level, range(E.LEVELS + 1))
                 self.assertGreater(nz, 0)
 
+    def test_bayer_levels_nest(self):
+        flat = []
+        for item in E.BAYER:
+            flat.extend(item if isinstance(item, (tuple, list)) else [item])
+        self.assertEqual(sorted(flat), list(range(64)))
+        self.assertEqual(E.bayer_rows(0), (0,) * 8)
+        self.assertEqual(E.bayer_rows(E.LEVELS), (0xFF,) * 8)
+        previous = (0,) * 8
+        for level in range(E.LEVELS + 1):
+            rows = E.bayer_rows(level)
+            self.assertIsInstance(rows, tuple)
+            self.assertEqual(len(rows), 8)
+            self.assertEqual(sum(bin(r).count("1") for r in rows), 4 * level)
+            for old, new in zip(previous, rows):
+                self.assertTrue(0 <= new <= 0xFF)
+                self.assertEqual(old & ~new & 0xFF, 0)
+            previous = rows
+
     def test_quaternion_helpers(self):
         q = E.q_axis_angle((0.0, 0.0, 1.0), math.pi / 2)
         for a, b in zip(rotate(q, (1.0, 0.0, 0.0)), (0.0, 1.0, 0.0)):

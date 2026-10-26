@@ -369,3 +369,29 @@ class Ball:
             level = int(LEVELS * (0.22 + 0.78 * max(0.0, light)) + 0.5)
             visible.append((i, min(LEVELS, level), c0 * n[0] + c1 * n[1] + c2 * n[2]))
         return points, visible
+
+
+# Ordered-dither thresholds for the 8x8 Bayer matrix.
+BAYER = (
+    (0, 32, 8, 40, 2, 34, 10, 42),
+    (48, 16, 56, 24, 50, 18, 58, 26),
+    (12, 44, 4, 36, 14, 46, 6, 38),
+    (60, 28, 52, 20, 62, 30, 54, 22),
+    (3, 35, 11, 43, 1, 33, 9, 41),
+    (51, 19, 59, 27, 49, 17, 57, 25),
+    (15, 47, 7, 39, 13, 45, 5, 37),
+    (63, 31, 55, 23, 61, 29, 53, 21),
+)
+
+
+def bayer_rows(level):
+    # Eight pattern rows with level * 4 of the 64 bits set (level 0-16).
+    rows = []
+    limit = level * 4
+    for y in range(8):
+        bits = 0
+        for x in range(8):
+            if BAYER[y][x] < limit:
+                bits |= 0x80 >> x
+        rows.append(bits)
+    return tuple(rows)
