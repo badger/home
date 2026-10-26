@@ -376,6 +376,32 @@ class TestHandles(unittest.TestCase):
         self.assertEqual(self.D.clean_text(12, 5), "")
 
 
+# DNA -------------------------------------------------------------------------
+
+
+class TestDna(unittest.TestCase):
+    def setUp(self):
+        self.D = M["mona_dna"]
+
+    def test_hash_and_prng_vectors_match_the_badge(self):
+        D = self.D
+        self.assertEqual(D.fnv1a(b""), 0x811C9DC5)
+        self.assertEqual(D.fnv1a(b"a"), 0xE40C292C)
+        self.assertEqual(D.fnv1a(b"foobar"), 0xBF9CF968)
+        self.assertEqual(D.fmix32(0), 0)
+        self.assertEqual(D.fmix32(1), 0x514E28B7)
+        rng = D.Rng(0)
+        self.assertEqual([rng.next() for _ in range(3)], [1359758873, 3761132862, 2075758394])
+        rng = D.Rng(1)
+        self.assertEqual([rng.next() for _ in range(3)], [270369, 67634689, 2647435461])
+        rng = D.Rng(D.seed_of("octocat"))
+        for limit in (1, 2, 7, 19, 255, 1000):
+            for _ in range(50):
+                value = rng.below(limit)
+                self.assertTrue(0 <= value < limit)
+                self.assertIsInstance(value, int)
+
+
 # App files -------------------------------------------------------------------
 
 

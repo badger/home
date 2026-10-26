@@ -1,5 +1,14 @@
-"""Validate and clean the GitHub handles that seed ASCII Mona's DNA."""
+"""Deterministic MyOctocat DNA for a GitHub handle.
 
+Everything here is plain integer Python that behaves the same on the badge's
+MicroPython and on CPython, so a handle grows the same Mona on the badge that
+beams it, the badge that receives it and in the host tests. Python's hash()
+differs between the two (and CPython randomises it per process), so seeds come
+from FNV-1a with a murmur3 finaliser and picks from a xorshift32 generator
+rather than the random module.
+"""
+
+MASK = 0xFFFFFFFF
 MAX_HANDLE = 39
 HANDLE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
 PREFIXES = ("https://", "http://", "www.", "github.com/", "@")
@@ -75,3 +84,41 @@ def clean_text(text, limit):
         elif " " <= ch <= "~":
             out.append(ch)
     return "".join(out).strip()[:limit]
+
+
+def fnv1a(data):
+    h = 0x811C9DC5
+    for byte in data:
+        h = ((h ^ byte) * 0x01000193) & MASK
+    return h
+
+
+def fmix32(h):
+    h ^= h >> 16
+    h = (h * 0x85EBCA6B) & MASK
+    h ^= h >> 13
+    h = (h * 0xC2B2AE35) & MASK
+    h ^= h >> 16
+    return h
+
+
+def seed_of(text):
+    return fmix32(fnv1a(text.encode()))
+
+
+class Rng:
+    """xorshift32, so seeded picks match on every runtime."""
+
+    def __init__(self, seed):
+        self.state = (seed & MASK) or 0x9E3779B9
+
+    def next(self):
+        x = self.state
+        x ^= (x << 13) & MASK
+        x ^= x >> 17
+        x ^= (x << 5) & MASK
+        self.state = x
+        return x
+
+    def below(self, n):
+        return self.next() % n
