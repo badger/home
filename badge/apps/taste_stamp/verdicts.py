@@ -61,3 +61,26 @@ class Rng:
 
     def uniform(self, low, high):
         return low + (high - low) * self.random()
+
+
+class ShuffleBag:
+    # Deals every index once in a random order before any repeats, and never
+    # deals the same index twice in a row across refills.
+
+    def __init__(self, count, rng):
+        self.count = count
+        self.rng = rng
+        self.pool = []
+        self.last = None
+
+    def next(self):
+        if not self.pool:
+            pool = list(range(self.count))
+            for i in range(len(pool) - 1, 0, -1):
+                j = self.rng.randint(0, i)
+                pool[i], pool[j] = pool[j], pool[i]
+            if self.count > 1 and pool[-1] == self.last:
+                pool[0], pool[-1] = pool[-1], pool[0]
+            self.pool = pool
+        self.last = self.pool.pop()
+        return self.last

@@ -101,6 +101,16 @@ class VerdictsTests(unittest.TestCase):
             seen.add(n)
         self.assertEqual(seen, set(range(2, 9)))
 
+    def test_shuffle_bag_deals_permutations_without_repeats(self):
+        bag = V.ShuffleBag(7, V.Rng(5))
+        dealt = [bag.next() for _ in range(7 * 40)]
+        for i in range(0, len(dealt), 7):
+            self.assertEqual(sorted(dealt[i:i + 7]), list(range(7)))
+        for a, b in zip(dealt, dealt[1:]):
+            self.assertNotEqual(a, b)
+        single = V.ShuffleBag(1, V.Rng(5))
+        self.assertEqual([single.next() for _ in range(5)], [0] * 5)
+
 
 def read_png(path):
     data = Path(path).read_bytes()
