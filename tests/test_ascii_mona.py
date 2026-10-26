@@ -405,6 +405,29 @@ class TestDna(unittest.TestCase):
                 self.assertTrue(0 <= value < limit)
                 self.assertIsInstance(value, int)
 
+    def test_dna_ignores_handle_case_and_is_deterministic(self):
+        D = self.D
+        self.assertEqual(D.dna_for("OctoCat"), D.dna_for("octocat"))
+        self.assertEqual(D.dna_for("mona"), D.dna_for("mona"))
+        self.assertNotEqual(D.dna_for("mona"), D.dna_for("monb"))
+
+    def test_valid_dna_rejects_malformed_values(self):
+        D = self.D
+        dna = D.dna_for("octocat")
+        self.assertTrue(D.valid_dna(dna))
+        self.assertTrue(D.valid_dna(list(dna)))
+        for bad in (
+            dna[:-1],
+            dna + (0,),
+            (True,) + dna[1:],
+            (D.LIMITS[0],) + dna[1:],
+            (-1,) + dna[1:],
+            None,
+            "x" * D.SIZE,
+            bytes(dna),
+        ):
+            self.assertFalse(D.valid_dna(bad), repr(bad))
+
 
 def art_blocks(parts):
     """Every (offset, length) block the art index points at."""
@@ -513,6 +536,18 @@ class TestOcto(unittest.TestCase):
         self.assertEqual(O.compose([3]), O.compose([3] + [-1] * (O.PICKS - 1)))
         self.assertEqual(O.skip_variant(0), O.MASKED)
         self.assertEqual(O.skip_variant(P.F_NO_BIG_HAIR), O.ORIGINAL)
+
+    def test_composed_outfits_stay_inside_the_art_file(self):
+        D, O = self.D, self.O
+        known = set(art_blocks(self.P))
+        for number in range(60):
+            dna = D.dna_for("mona-%d" % number)
+            picks, misc = D.picks_of(dna)
+            blocks, _flags = O.compose(picks, misc)
+            self.assertGreaterEqual(len(blocks), 3)
+            self.assertEqual(len(set(blocks)), len(blocks))
+            for block in blocks:
+                self.assertIn(block, known)
 
     def test_fit_keeps_the_art_box_inside_the_target(self):
         O, P = self.O, self.P
