@@ -6,15 +6,26 @@ matching, Bayer 4x4 ordered dithering, Sobel edge line-art and
 ANSI/Phosphor/Amber/Primer character and colour palettes. This module is
 written from scratch for the badge and shares no code with it.
 
-Each 8x12 teatime cell covers a 2x3 block of samples, which gives the
-six-number "shape vector" for that cell. Covered samples get a minimum
-level, which keeps dark bodies visible on a dark terminal.
+The painted Mona (192x216, transparent around her) is halved twice into a
+transparent 48x54 sample image, so every sample keeps her coverage as alpha.
+Covered samples get a minimum level, which keeps dark bodies visible on a
+dark terminal. Each 8x12 teatime cell covers a 2x3 block of samples, which
+gives the six-number "shape vector" for that cell. The grid is built a couple of rows per frame
+into a cached image, so it types itself in like a terminal, and is only
+rebuilt when the Mona, style or palette changes.
 """
 
 COLS = 24
 ROWS = 18
+CELL_W = 8
+CELL_H = 12
+WIDTH = COLS * CELL_W
+HEIGHT = ROWS * CELL_H
+HALF_W = WIDTH // 2
+HALF_H = HEIGHT // 2
 SAMPLE_W = COLS * 2
 SAMPLE_H = ROWS * 3
+BLINK_MS = 500
 FLOOR = 64  # level of a fully covered black sample
 
 SHAPES = 1
@@ -330,3 +341,138 @@ def convert_row(style, palette, raw, levels, means, y, cols=COLS, rows=ROWS):
 def grid_text(cells):
     """Rows of (char, fg, bg) cells as plain text lines (for tests and logs)."""
     return ["".join(cell[0] for cell in row) for row in cells]
+
+
+def pen_for(rgb):
+    return color.rgb(rgb[0], rgb[1], rgb[2])
+
+
+def cursor_colour(palette):
+    return colour_for(palette, PRIMER_FG, 255)
+
+
+class AsciiView:
+    """Converts the painted Mona into a cached grid image, a few rows a frame."""
+
+    def __init__(self):
+        self.half = None
+        self.sample = None
+        self.cache = None
+        self.source = None
+        self.style = SHAPES
+        self.palette = PRIMER
+        self.row = 0
+        self.raw = None
+        self.levels = None
+        self.means = None
+        self.ready = False
+        self.dirty = False
+        self.failed = False
+
+    def _images(self):
+        if self.cache is not None or self.failed:
+            return not self.failed
+        try:
+            self.half = image(HALF_W, HALF_H)
+            self.sample = image(SAMPLE_W, SAMPLE_H)
+            self.cache = image(WIDTH, HEIGHT)
+            self.cache.font = font.teatime
+        except Exception:
+            self.failed = True
+            self.half = None
+            self.sample = None
+            self.cache = None
+            return False
+        self.restart()
+        return True
+
+    def set_source(self, art):
+        """Convert art: a WIDTH x HEIGHT image, transparent around Mona."""
+        self.source = art
+        self.restart()
+
+    def clear(self):
+        """Forget the source while a new Mona paints."""
+        self.source = None
+        self.restart()
+
+    def set_mode(self, style, palette):
+        if style != self.style or palette != self.palette:
+            self.style = style
+            self.palette = palette
+            self.restart()
+
+    def restart(self):
+        self.row = 0
+        self.ready = False
+        self.dirty = self.source is not None
+        self.raw = None
+        self.levels = None
+        self.means = None
+        if self.cache is not None:
+            self.cache.pen = pen_for(BACKS[self.palette])
+            self.cache.clear()
+
+    @property
+    def typing(self):
+        return self.dirty and self.source is not None and not self.failed
+
+    def _sample(self):
+        clear = color.rgb(0, 0, 0, 0)
+        half = self.half
+        half.pen = clear
+        half.clear()
+        half.blit(self.source, rect(0, 0, WIDTH, HEIGHT), rect(0, 0, HALF_W, HALF_H), image.BILINEAR)
+        sample = self.sample
+        sample.pen = clear
+        sample.clear()
+        sample.blit(half, rect(0, 0, HALF_W, HALF_H), rect(0, 0, SAMPLE_W, SAMPLE_H), image.BILINEAR)
+        self.raw = sample.raw
+        self.levels = levels_from_raw(self.raw, SAMPLE_W * SAMPLE_H)
+        self.means = cell_means(self.levels) if self.style == EDGES else None
+
+    def step(self, rows=2):
+        """Convert up to rows grid rows; True when the grid completes."""
+        if not self.typing or not self._images():
+            return False
+        for _ in range(rows):
+            if self.raw is None:
+                self._sample()
+            cells = convert_row(self.style, self.palette, self.raw, self.levels, self.means, self.row)
+            self._paint_row(self.row, cells)
+            self.row += 1
+            if self.row >= ROWS:
+                self.row = 0
+                self.dirty = False
+                self.ready = True
+                self.raw = None
+                self.levels = None
+                self.means = None
+                return True
+        return False
+
+    def _paint_row(self, y, cells):
+        img = self.cache
+        top = y * CELL_H
+        img.pen = pen_for(BACKS[self.palette])
+        img.shape(shape.rectangle(0, top, WIDTH, CELL_H))
+        x = 0
+        for ch, fg, bg in cells:
+            if bg is not None:
+                img.pen = pen_for(bg)
+                img.shape(shape.rectangle(x, top, CELL_W, CELL_H))
+            if fg is not None:
+                img.pen = pen_for(fg)
+                img.text(ch, x, top)
+            x += CELL_W
+
+    def draw(self, target, x, y, now):
+        """Blit the grid, with a terminal cursor while it types itself in;
+        False when there is no grid yet."""
+        if self.cache is None:
+            return False
+        target.blit(self.cache, vec2(x, y))
+        if self.typing and (now // BLINK_MS) % 2 == 0:
+            target.pen = pen_for(cursor_colour(self.palette))
+            target.shape(shape.rectangle(x + 1, y + self.row * CELL_H + 1, CELL_W - 2, CELL_H - 2))
+        return True

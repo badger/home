@@ -16,6 +16,7 @@ import re
 import struct
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -163,6 +164,22 @@ class FakeImage:
 
     def count(self, kind):
         return len([call for call in self.calls if call[0] == kind])
+
+
+class BrokenImage(FakeImage):
+    def __init__(self, width=320, height=240):
+        raise MemoryError("no room for an image")
+
+
+def fake_vec2(x, y):
+    return ("vec2", x, y)
+
+
+def fake_rect(x, y, w, h):
+    return ("rect", x, y, w, h)
+
+
+FAKE_FONT = types.SimpleNamespace(teatime="teatime", sins="sins")
 
 
 def circle_raw(width=48, height=54, rgb=(110, 84, 240)):
@@ -903,6 +920,31 @@ class TestAscii(unittest.TestCase):
 
     def setUp(self):
         self.A = M["mona_ascii"]
+        inject(self, self.A, image=FakeImage, font=FAKE_FONT, color=FakeColor,
+               vec2=fake_vec2, rect=fake_rect, shape=FakeShapes)
+
+    def test_tables(self):
+        A = self.A
+        self.assertEqual((A.COLS, A.ROWS, A.CELL_W, A.CELL_H), (24, 18, 8, 12))
+        self.assertEqual((A.WIDTH, A.HEIGHT), (A.COLS * A.CELL_W, A.ROWS * A.CELL_H))
+        self.assertEqual(A.PALETTE_NAMES, ("Primer", "ANSI", "Phosphor", "Amber"))
+        self.assertEqual(A.PRIMER, 0)
+        for table in (A.RAMPS, A.BACKS, A.TINTS, A.BG_PERCENT):
+            self.assertEqual(len(table), len(A.PALETTE_NAMES))
+        for ramp in A.RAMPS:
+            self.assertEqual(len(ramp), 10)
+            self.assertEqual(ramp[0], " ")
+        self.assertEqual(A.GLYPH_COUNT, len(A.CHARS))
+        self.assertEqual(len(A.CHARS), 89)
+        self.assertEqual(len(set(A.CHARS)), len(A.CHARS))
+        self.assertTrue(all(32 <= ord(ch) < 127 for ch in A.CHARS))
+        self.assertEqual(A.CHARS[0], " ")
+        self.assertEqual(len(A.GLYPHS), 6 * A.GLYPH_COUNT)
+        self.assertTrue(all(0 <= value <= 255 for value in A.GLYPHS))
+        self.assertEqual(sorted(A.BAYER), list(range(16)))
+        self.assertEqual(len(A.GAMMA), 256)
+        self.assertEqual((A.GAMMA[0], A.GAMMA[255]), (0, 255))
+        self.assertTrue(all(A.GAMMA[i] <= A.GAMMA[i + 1] for i in range(255)))
 
     def test_shape_vector_matching(self):
         A = self.A
@@ -928,10 +970,13 @@ class TestAscii(unittest.TestCase):
         A = self.A
         self.assertEqual([A.colour_for(p, (110, 84, 240), 200) for p in range(4)],
                          [(163, 113, 247), (85, 85, 255), (38, 191, 76), (191, 132, 0)])
+        self.assertEqual([A.cursor_colour(p) for p in range(4)],
+                         [(230, 237, 243), (255, 255, 255), (51, 255, 102), (255, 176, 0)])
         self.assertEqual(A.blend((0, 0, 0), (200, 100, 50), 50), (100, 50, 25))
         self.assertEqual(A.blend((10, 20, 30), (200, 100, 50), 0), (10, 20, 30))
         self.assertEqual(A.blend((10, 20, 30), (200, 100, 50), 100), (200, 100, 50))
         self.assertEqual(A.hue(255, 0, 0, 255, 0), 0)
+        self.assertEqual(A.pen_for((1, 2, 3)), (1, 2, 3, 255))
         for p in range(4):
             for rgb in ((0, 0, 0), (255, 255, 255), (110, 84, 240), (255, 0, 0)):
                 for level in (0, 1, 128, 255):
@@ -989,6 +1034,57 @@ class TestAscii(unittest.TestCase):
                                 self.assertTrue(all(0 <= c <= 255 for c in rgb), rgb)
                         if style == A.EDGES:
                             self.assertIsNone(bg)
+
+    def test_view_types_itself_in_and_redraws(self):
+        A = self.A
+        view = A.AsciiView()
+        target = FakeImage()
+        self.assertFalse(view.draw(target, 0, 0, 0))
+        self.assertFalse(view.step())
+        self.assertFalse(view.typing)
+        view.set_source(FakeImage(A.WIDTH, A.HEIGHT))
+        self.assertTrue(view.typing)
+        self.assertTrue(view._images())
+        self.assertEqual((view.cache.width, view.cache.height, view.cache.font), (A.WIDTH, A.HEIGHT, "teatime"))
+        self.assertEqual((view.sample.width, view.sample.height), (A.SAMPLE_W, A.SAMPLE_H))
+        view.sample.raw = circle_raw()
+        results = []
+        for _ in range(20):
+            results.append(view.step())
+            if results[-1]:
+                break
+        self.assertEqual(results, [False] * 8 + [True])
+        self.assertTrue(view.ready)
+        self.assertFalse(view.typing)
+        self.assertIsNone(view.raw)
+        self.assertGreater(view.cache.count("text"), 100)
+        self.assertGreaterEqual(view.cache.count("shape"), A.ROWS)
+        self.assertTrue(view.draw(target, 3, 4, 0))
+        self.assertEqual(target.calls[-1], ("blit", view.cache, ("vec2", 3, 4)))
+        self.assertEqual(target.count("shape"), 0)
+        view.set_mode(A.SHAPES, A.PRIMER)
+        self.assertTrue(view.ready)
+        view.set_mode(A.EDGES, 2)
+        self.assertEqual((view.ready, view.typing, view.row, view.style, view.palette), (False, True, 0, A.EDGES, 2))
+        view.step()
+        cursor = FakeImage()
+        self.assertTrue(view.draw(cursor, 3, 4, 0))
+        self.assertEqual(cursor.calls[-1][1].args, (4, 4 + 2 * A.CELL_H + 1, A.CELL_W - 2, A.CELL_H - 2))
+        self.assertTrue(view.draw(cursor, 3, 4, A.BLINK_MS))
+        self.assertEqual(cursor.count("shape"), 1)
+        view.clear()
+        self.assertFalse(view.typing)
+        self.assertFalse(view.step())
+
+    def test_view_without_memory_degrades(self):
+        A = self.A
+        inject(self, A, image=BrokenImage)
+        view = A.AsciiView()
+        view.set_source(FakeImage(A.WIDTH, A.HEIGHT))
+        self.assertFalse(view.step())
+        self.assertTrue(view.failed)
+        self.assertFalse(view.typing)
+        self.assertFalse(view.draw(FakeImage(), 0, 0, 0))
 
 
 # App files -------------------------------------------------------------------
