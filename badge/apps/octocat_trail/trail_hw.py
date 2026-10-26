@@ -5,6 +5,8 @@ crashing in the Badge Simulator, which has no IR, a static IMU and a
 constant light sensor. Nothing here touches the display.
 """
 
+import trail_logic as tl
+
 LIGHT_ADC_PIN = 43
 
 
@@ -51,3 +53,36 @@ class Sensors:
         except Exception:
             self.light_failed = True
             return None
+
+
+class CaseLights:
+    """Sets the four case lights only when the values change."""
+
+    def __init__(self, device):
+        self.device = device
+        self.last = None
+        self.ok = True
+
+    def set(self, a, b=None, c=None, d=None):
+        if b is None:
+            b = c = d = a
+        values = (quantize(a), quantize(b), quantize(c), quantize(d))
+        if values == self.last or not self.ok:
+            return
+        self.last = values
+        try:
+            self.device.caselights(values[0], values[1], values[2], values[3])
+        except Exception:
+            self.ok = False
+
+    def off(self):
+        self.last = None
+        try:
+            self.device.caselights(0)
+        except Exception:
+            pass
+
+
+def quantize(value):
+    value = tl.clamp(float(value), 0.0, 1.0)
+    return int(value * 20 + 0.5) / 20.0

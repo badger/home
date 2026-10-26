@@ -1386,6 +1386,34 @@ class SensorTests(unittest.TestCase):
             self.assertIsNone(sensors.light())
 
 
+class CaseLightTests(unittest.TestCase):
+    def test_quantize(self):
+        self.assertEqual([hw.quantize(v) for v in (-1, 0, 0.51, 0.53, 0.26, 2)], [0.0, 0.0, 0.5, 0.55, 0.25, 1.0])
+
+    def test_writes_only_changes(self):
+        device = FakeDevice()
+        lights = hw.CaseLights(device)
+        lights.set(0.5)
+        lights.set(0.51)
+        lights.set(2, -1, 0.25, 0.26)
+        self.assertEqual(device.lights, [(0.5, 0.5, 0.5, 0.5), (1.0, 0.0, 0.25, 0.25)])
+        lights.off()
+        self.assertEqual(device.lights[-1], (0,))
+        lights.set(1.0, 0.0, 0.25, 0.25)
+        self.assertEqual(len(device.lights), 4)
+
+    def test_failures_disable_lights(self):
+        device = FakeDevice(lights_error=OSError("no lights"))
+        lights = hw.CaseLights(device)
+        lights.set(1)
+        self.assertFalse(lights.ok)
+        device.lights_error = None
+        lights.set(0.5)
+        self.assertEqual(device.lights, [])
+        device.lights_error = OSError("still none")
+        lights.off()
+
+
 # ----- the renderer, through strict fakes of the badge drawing globals --------------------------
 
 def is_int(value):
