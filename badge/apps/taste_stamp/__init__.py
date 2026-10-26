@@ -456,6 +456,9 @@ class App:
             dx, dy = stamp.shake_offset(now - s.start - stamp.DROP_MS, s.phase)
             ox = int(round(dx))
             oy = int(round(dy))
+        if ox or oy:
+            screen.pen = DESK_C
+            screen.clear()
         screen.blit(self.desk, vec2(ox, oy))
         if s is None and not self.marks:
             self.draw_idle_box()
@@ -537,6 +540,9 @@ class App:
             set_lights(levels)
 
 
+previous_clear = badge.default_clear
+# Every frame blits a full-screen image, so the firmware's clear is wasted.
+badge.default_clear = None
 app = App()
 
 
@@ -546,6 +552,10 @@ def update():
 
 def on_exit():
     set_lights(None)
+    try:
+        badge.default_clear = previous_clear
+    except Exception:
+        pass
     forget_helpers()
 
 
