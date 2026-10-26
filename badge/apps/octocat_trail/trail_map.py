@@ -6,6 +6,7 @@ W = 104
 H = 140
 
 WATER, LOT, GRASS, DECK, PATH, ROOF, FENCE, TREE, GANG1, GANG2, DOOR, DOCK, FLAG = range(13)
+WALK = bytes((0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1))
 
 # (first column, first land row) from west to east.
 SHORE = ((0, 116), (4, 66), (66, 64), (82, 52), (96, 56))
@@ -120,3 +121,15 @@ def terrain(x, y):
     if x < 0 or y < 0 or x >= W or y >= H:
         return WATER
     return grid()[y * W + x]
+
+
+def passable(code, deployed=0):
+    if WALK[code]:
+        return True
+    return False
+
+
+def walkable(x, y, deployed=0):
+    if x < 0 or y < 0 or x >= W or y >= H:
+        return False
+    return passable(grid()[y * W + x], deployed)
