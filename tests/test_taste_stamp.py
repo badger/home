@@ -557,6 +557,14 @@ class EightBallTests(unittest.TestCase):
                 self.assertEqual(old & ~new & 0xFF, 0)
             previous = rows
 
+    def test_face_uv_maps_corners_and_centroid(self):
+        r = E.FACE_R
+        uv = E.to_face_uv([[0.0, -r, -1.0, r / 2, 1.0, r / 2, 0.0, 0.0]])[0]
+        for a, b in zip(uv, [0, 0, 1, 0, 0, 1, 1 / 3, 1 / 3]):
+            self.assertAlmostEqual(a, b, places=9)
+        mapped = E.map_uv([[0, 0, 1, 0, 0, 1, 0.5, 0.5]], (10, 20), (0, 40), (20, 40))[0]
+        self.assertEqual(mapped, [10, 20, 0, 40, 20, 40, 10, 40])
+
     def test_quaternion_helpers(self):
         q = E.q_axis_angle((0.0, 0.0, 1.0), math.pi / 2)
         for a, b in zip(rotate(q, (1.0, 0.0, 0.0)), (0.0, 1.0, 0.0)):
@@ -574,6 +582,44 @@ class EightBallTests(unittest.TestCase):
         self.assertEqual((E.smoothstep(-1), E.smoothstep(0.5), E.smoothstep(2)), (0.0, 0.5, 1.0))
         axis = E.random_axis(V.Rng(3).random)
         self.assertAlmostEqual(math.sqrt(sum(v * v for v in axis)), 1.0, places=9)
+
+    def test_affine_parts_rebuilds_the_map_uv_placement(self):
+        # mat3().translate(tx, ty).rotate(phi).scale(sx, sy).rotate(theta)
+        # post-multiplies, so the linear part is R(phi) * S * R(theta).
+        def turn(degrees):
+            a = math.radians(degrees)
+            return ((math.cos(a), -math.sin(a)), (math.sin(a), math.cos(a)))
+
+        def times(p, q):
+            return tuple(tuple(sum(p[i][k] * q[k][j] for k in range(2)) for j in range(2)) for i in range(2))
+
+        rng = V.Rng(21)
+        triangles = [
+            ((160.0, 80.0), (140.0, 120.0), (180.0, 120.0)),
+            ((160.0, 80.0), (180.0, 120.0), (140.0, 120.0)),
+            ((100.0, 100.0), (100.0, 100.5), (130.0, 100.0)),
+            ((50.0, 60.0), (50.0, 60.0), (50.0, 60.0)),
+        ]
+        for _ in range(300):
+            triangles.append(tuple((rng.uniform(40.0, 280.0), rng.uniform(20.0, 180.0)) for _ in range(3)))
+        samples = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1 / 3, 1 / 3, 0.25, 0.6, -0.2, 1.3]
+        signs = set()
+        for top, left, right in triangles:
+            tx, ty, phi, sx, sy, theta = E.affine_parts(top, left, right)
+            m = times(turn(phi), times(((sx, 0.0), (0.0, sy)), turn(theta)))
+            expected = E.map_uv([samples], top, left, right)[0]
+            for k in range(0, len(samples), 2):
+                s, t = samples[k], samples[k + 1]
+                self.assertAlmostEqual(tx + m[0][0] * s + m[0][1] * t, expected[k], places=6)
+                self.assertAlmostEqual(ty + m[1][0] * s + m[1][1] * t, expected[k + 1], places=6)
+            # sx * sy is the determinant, so sy < 0 exactly when the face
+            # is mirrored.
+            det = (left[0] - top[0]) * (right[1] - top[1]) - (left[1] - top[1]) * (right[0] - top[0])
+            self.assertGreaterEqual(sx, 0.0)
+            self.assertAlmostEqual(sx * sy, det, delta=1e-6 * max(1.0, abs(det)))
+            if abs(det) > 1e-6:
+                signs.add(sy < 0)
+        self.assertEqual(signs, {True, False})
 
     def test_face_edges_lists_each_edge_once(self):
         edges = E.face_edges(self.faces)

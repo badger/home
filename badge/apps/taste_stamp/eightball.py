@@ -100,6 +100,75 @@ def face_normal(verts, face):
     return _unit(_cross(_sub(verts[face[1]], a), _sub(verts[face[2]], a)))
 
 
+# Faces are equilateral with edge 2, so one map from face-local coordinates
+# (x right, y down, origin at the centroid, top vertex straight up) to
+# barycentric weights works for every face.
+FACE_R = 2.0 / math.sqrt(3.0)
+
+
+def to_face_uv(contours):
+    # Converts flat [x0, y0, ...] contours in face-local units to (s, t)
+    # weights so that point = top + s * (left - top) + t * (right - top).
+    out = []
+    h = math.sqrt(3.0)
+    for c in contours:
+        uv = []
+        for i in range(0, len(c), 2):
+            x = c[i]
+            y = -c[i + 1]
+            st = (FACE_R - y) / h
+            uv.append((st - x) * 0.5)
+            uv.append((st + x) * 0.5)
+        out.append(uv)
+    return out
+
+
+def map_uv(contours, top, left, right):
+    # Places (s, t) contours on a projected face (affine, fine for one face).
+    tx = top[0]
+    ty = top[1]
+    lx = left[0] - tx
+    ly = left[1] - ty
+    rx = right[0] - tx
+    ry = right[1] - ty
+    out = []
+    for c in contours:
+        pts = []
+        for i in range(0, len(c), 2):
+            s = c[i]
+            t = c[i + 1]
+            pts.append(tx + s * lx + t * rx)
+            pts.append(ty + s * ly + t * ry)
+        out.append(pts)
+    return out
+
+
+HALF_RAD_TO_DEG = 90.0 / math.pi
+
+
+def affine_parts(top, left, right):
+    # The map_uv placement as (tx, ty, phi, sx, sy, theta), for
+    # mat3().translate(tx, ty).rotate(phi).scale(sx, sy).rotate(theta),
+    # because mat3 is only built from those steps. The 2x2 part is split
+    # with Blinn's closed-form SVD; angles are in degrees and sy is
+    # negative when the face is mirrored.
+    tx = top[0]
+    ty = top[1]
+    a = left[0] - tx
+    b = right[0] - tx
+    c = left[1] - ty
+    d = right[1] - ty
+    e = (a + d) * 0.5
+    f = (a - d) * 0.5
+    g = (c + b) * 0.5
+    h = (c - b) * 0.5
+    q = math.sqrt(e * e + h * h)
+    r = math.sqrt(f * f + g * g)
+    a1 = math.atan2(g, f)
+    a2 = math.atan2(h, e)
+    return (tx, ty, (a2 + a1) * HALF_RAD_TO_DEG, q + r, q - r, (a2 - a1) * HALF_RAD_TO_DEG)
+
+
 def face_edges(faces):
     # Every edge once, as (i, j, face, other face), so the renderer can
     # outline the visible faces without drawing a shared edge twice.
