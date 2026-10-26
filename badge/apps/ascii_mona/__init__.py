@@ -265,6 +265,12 @@ def load_owner():
     return (handle, dna, name, profile)
 
 
+def who_label(handle, dna):
+    if handle:
+        return "@" + handle
+    return "Mystery Mona #" + mona_dna.short_id(dna)
+
+
 def backdrop_key(handle, dna):
     """What a cached backdrop depends on."""
     who = handle.lower() if handle else mona_dna.short_id(dna)
@@ -294,6 +300,7 @@ class MonaApp:
         self.ascii = mona_ascii.AsciiView()
         self.ascii_warned = False
 
+        self.info = False
         self.toast = ""
         self.toast_pen = WHITE
         self.toast_until = 0
@@ -338,14 +345,20 @@ class MonaApp:
         elif badge.pressed(BUTTON_RIGHT):
             self.set_style(self.style + 1)
         elif badge.pressed(BUTTON_UP):
-            if self.style != VECTOR:
+            if self.style == VECTOR or self.info:
+                self.info = not self.info
+            else:
                 self.palette = (self.palette + 1) % len(mona_ascii.PALETTE_NAMES)
                 self.save()
         elif badge.pressed(BUTTON_BACK):
-            self.leave()
+            if self.info:
+                self.info = False
+            else:
+                self.leave()
 
     def set_style(self, style):
         self.style = style % len(STYLES)
+        self.info = False
         self.save()
 
     # -- painting ---------------------------------------------------------------
@@ -470,7 +483,10 @@ class MonaApp:
 
     def draw(self, now):
         self.draw_stage(now)
-        self.draw_panel(now)
+        if self.info:
+            self.draw_info()
+        else:
+            self.draw_panel(now)
         self.draw_footer(now)
         if self.toast and now - self.toast_until < 0:
             self.draw_toast()
@@ -567,8 +583,30 @@ class MonaApp:
         if percent is not None:
             bar(left, y + 204, room, 4, percent, pen)
 
+    def draw_info(self):
+        x, y, w, h = 6, 4, 308, 212
+        box(x, y, w, h, PANEL, 10)
+        handle, dna, name, via = self.current
+        via_text = write("Your Mona", x + w - 10, y + 9, SMALL_SIZE, DIM, 0, "r")
+        write(who_label(handle, dna), x + 10, y + 6, TITLE_SIZE, WHITE, w - 30 - measure(via_text, SMALL_SIZE))
+        rows = mona_dna.describe(dna)
+        half = (len(rows) + 1) // 2
+        for i in range(len(rows)):
+            label, value = rows[i]
+            cx = x + 10 + (i // half) * 150
+            cy = y + 28 + (i % half) * 17
+            write(label, cx, cy, SMALL_SIZE, DIM)
+            write(value, cx + 58, cy, SMALL_SIZE, WHITE, 86)
+        if name:
+            write(name, x + 10, y + 148, SMALL_SIZE, WHITE, w - 20)
+        elif not handle:
+            write("Mystery Mona: no GitHub profile", x + 10, y + 148, SMALL_SIZE, DIM, w - 20)
+        write("DNA " + mona_dna.dna_hex(dna), x + 10, y + 196, SMALL_SIZE, DIM, w - 20)
+
     def hints(self):
-        first = "LEFT/RIGHT style" + ("" if self.style == VECTOR else "  UP colours")
+        if self.info:
+            return ("UP/BACK close",)
+        first = "LEFT/RIGHT style  UP " + ("info" if self.style == VECTOR else "colours")
         second = "BACK exit"
         return (first, second)
 
