@@ -29,6 +29,7 @@ def load(path, name):
 
 V = load(APP / "verdicts.py", "taste_stamp_verdicts")
 S = load(APP / "stamp.py", "taste_stamp_stamp")
+M = load(APP / "motion.py", "taste_stamp_motion")
 README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "taste_stamp_validate_app_readmes")
 
 
@@ -264,6 +265,45 @@ class StampTests(unittest.TestCase):
                 self.assertAlmostEqual(a[i], b[i], delta=1e-6)
             travel = math.hypot(a[0] - s[0], a[1] - s[1])
             self.assertLessEqual(travel, math.hypot(s[2], s[3]) * S.SPLAT_DRAG_MS / 1000.0 + 1e-9)
+
+
+class MotionTests(unittest.TestCase):
+    def test_flip_fires_once_the_new_orientation_settles(self):
+        f = M.FlipDetector(False)
+        self.assertFalse(f.update(False, 1000))
+        self.assertFalse(f.update(True, 1000))
+        self.assertFalse(f.update(True, 1119))
+        self.assertTrue(f.update(True, 1120))
+        self.assertTrue(f.state)
+        self.assertFalse(f.update(True, 1500))
+
+    def test_flip_bounce_restarts_the_settle_timer(self):
+        f = M.FlipDetector(False)
+        f.update(True, 1000)
+        f.update(False, 1060)
+        self.assertIsNone(f.pending_since)
+        self.assertFalse(f.update(True, 1100))
+        self.assertFalse(f.update(True, 1200))
+        self.assertTrue(f.update(True, 1220))
+
+    def test_flip_back_inside_the_cooldown_tracks_state_silently(self):
+        f = M.FlipDetector(False)
+        f.update(True, 1000)
+        self.assertTrue(f.update(True, 1120))
+        f.update(False, 1300)
+        self.assertFalse(f.update(False, 1420))
+        self.assertFalse(f.state)
+        self.assertEqual(f.last_flip, 1120)
+        f.update(True, 1800)
+        self.assertTrue(f.update(True, 1920))
+
+    def test_flip_detector_can_start_inverted(self):
+        f = M.FlipDetector(True)
+        self.assertTrue(f.state)
+        self.assertFalse(f.update(True, 1000))
+        f.update(False, 2000)
+        self.assertTrue(f.update(False, 2120))
+        self.assertFalse(f.state)
 
 
 def read_png(path):

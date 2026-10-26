@@ -1,6 +1,7 @@
 # Taste Stamp: a Creative Director's rubber stamp.
 #
-# Press DOWN to slam a verdict onto the brief.
+# Flip the badge over or press DOWN to slam a verdict onto the brief,
+# with screen shake and a case-light strobe.
 
 import os
 import random
@@ -27,6 +28,7 @@ except OSError:
     pass
 sys.path.insert(0, APP_DIR)
 
+import motion  # noqa: E402
 import stamp  # noqa: E402
 import verdicts  # noqa: E402
 
@@ -100,6 +102,13 @@ STAMP_MAX_H = 136.0
 STAMP_MAX_SCALE = 5.5
 
 TOAST_MS = 1800
+
+
+def read_upside_down():
+    try:
+        return bool(badge.upside_down())
+    except Exception:
+        return False
 
 
 def text_width(text):
@@ -237,6 +246,7 @@ class App:
         self.desk.antialias = image.X2
         # The brief's header is vector text, which needs EVEN_ODD.
         self.desk.fill_rule = image.EVEN_ODD
+        self.flip = motion.FlipDetector(read_upside_down())
         self.toast_text = None
         self.toast_until = 0
         self.lights = None
@@ -247,9 +257,11 @@ class App:
     def update(self):
         now = badge.ticks
         dt = max(0, min(100, badge.ticks_delta))
+        flipped = self.flip.update(read_upside_down(), now)
         if not self.handle_buttons(now):
             on_exit()
             return False
+        self.handle_motion(now, flipped)
         if self.slam is not None:
             self.advance_slam(now, dt)
         self.draw_stamp_mode(now)
@@ -277,6 +289,10 @@ class App:
             self.toast("FRESH PAPER", now)
             return True
         return False
+
+    def handle_motion(self, now, flipped):
+        if flipped:
+            self.start_slam(self.next_verdict(), now)
 
     # Modes and choices.
 
@@ -450,7 +466,10 @@ class App:
         screen.pen = HEADING_C
         screen.shape(shape.rounded_rectangle(x, y, bw, bh, 6).stroke(1.5))
         screen.font = UI_FONT
-        self.centred("PRESS DOWN TO STAMP", y + 21, PAPER_TEXT_C)
+        self.centred("FLIP TO STAMP", y + 12, PAPER_TEXT_C)
+        screen.font = SMALL_FONT
+        self.centred("OR PRESS DOWN", y + 32, PAPER_TEXT_C)
+        screen.font = UI_FONT
 
     def draw_title(self, title):
         screen.font = UI_FONT
