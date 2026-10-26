@@ -24,3 +24,19 @@ def decode(cmd, verdict_count, prompt_count):
     if PROMPT_BASE <= cmd < PROMPT_BASE + prompt_count:
         return (PROMPT, cmd - PROMPT_BASE)
     return None
+
+
+LIGHT_MS = 600
+LIGHT_STEP_MS = 75
+
+
+def lights(t):
+    # Case-light chase while a beam goes out or comes in, t ms after it
+    # starts, or None once it has finished.
+    if t < 0 or t >= LIGHT_MS:
+        return None
+    lit = int(t // LIGHT_STEP_MS) % 4
+    levels = []
+    for i in range(4):
+        levels.append(1.0 if i == lit else 0.1)
+    return tuple(levels)

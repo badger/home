@@ -782,6 +782,16 @@ class BeamTests(unittest.TestCase):
             self.assertIsNone(B.decode(cmd, 7, 20))
         self.assertEqual(B.decode(0x53, 7, 20), (B.PROMPT, 19))
 
+    def test_lights_chase_then_stop(self):
+        self.assertIsNone(B.lights(-1))
+        self.assertIsNone(B.lights(B.LIGHT_MS))
+        lit = set()
+        for t in range(0, B.LIGHT_MS, 5):
+            levels = B.lights(t)
+            self.assertEqual(sorted(levels), [0.1, 0.1, 0.1, 1.0])
+            lit.add(levels.index(1.0))
+        self.assertEqual(lit, {0, 1, 2, 3})
+
 
 def read_png(path):
     data = Path(path).read_bytes()
