@@ -120,6 +120,7 @@ function lzw(indices, minCodeSize) {
         prefix = k;
     }
     emit(prefix);
+    if (next >= 1 << codeSize && codeSize < 12) codeSize++;
     emit(eoi);
     if (bits > 0) out.push(cur & 255);
     return out;

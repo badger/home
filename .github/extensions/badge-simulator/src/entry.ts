@@ -283,6 +283,7 @@ let current: AppPayload | null = null
 let ready = false
 let running = false
 let frames = 0
+let hasAppFrame = false
 const clientId = Math.random().toString(36).slice(2)
 let framesAtLastStat = 0
 let backlight = 1
@@ -292,6 +293,7 @@ const written = new Set<string>()
 
 function run(payload: AppPayload) {
   current = payload
+  hasAppFrame = false
   if (!worker || !ready) return
   const paths = new Set(payload.files.map(file => `${payload.app}/${file.path}`))
   if ([...written].some(path => !paths.has(path))) { startWorker(); return }
@@ -314,6 +316,7 @@ function startWorker() {
   written.clear()
   ready = false
   running = false
+  hasAppFrame = false
   const next = new Worker('/simulator/micropython.worker.js', { type: 'module' })
   worker = next
   next.onerror = event => { event.preventDefault(); log(`[simulator] Worker error: ${event.message}`); setStatus('Simulator error', 'error') }
@@ -337,6 +340,8 @@ function startWorker() {
       screen.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0)
       model.updateFrame()
       frames++
+      hasAppFrame = true
+      if (recording) recording.rendered++
       recordFrame()
       root.dataset.framed = 'true'
     }
@@ -398,7 +403,8 @@ window.setInterval(() => {
 // uses MediaRecorder on an upscaled copy of the screen.
 type Recording = {
   id: string; interval: number; start: number; last: number; hash: number; rendered: number
-  uploads: Promise<unknown>[]; video?: { canvas: HTMLCanvasElement; recorder: MediaRecorder; chunks: Blob[]; error?: string }
+  fps: number; scale: number; captureVideo: boolean; stopping: boolean
+  uploads: Promise<unknown>[]; video?: { canvas: HTMLCanvasElement; recorder?: MediaRecorder; chunks: Blob[]; error?: string }
 }
 let recording: Recording | null = null
 function frameHash(data: Uint8ClampedArray) {
@@ -409,20 +415,20 @@ function frameHash(data: Uint8ClampedArray) {
 }
 function recordFrame(force = false) {
   const rec = recording
-  if (!rec) return
-  rec.rendered++
+  if (!rec || !hasAppFrame || rec.stopping) return
   const now = performance.now()
   if (!force && now - rec.last < rec.interval - 2) return
   const { width, height } = screen
   if (!width || !height) return
   const image = screen.getContext('2d')!.getImageData(0, 0, width, height)
   const hash = frameHash(image.data) ^ (width << 16) ^ height
+  if (rec.captureVideo && !rec.video) startRecordingVideo(rec)
   if (rec.video) {
     const ctx = rec.video.canvas.getContext('2d')!
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(screen, 0, 0, rec.video.canvas.width, rec.video.canvas.height)
   }
-  if (!force && hash === rec.hash) return
+  if (hash === rec.hash) return
   rec.last = now
   rec.hash = hash
   const query = `id=${rec.id}&t=${(now - rec.start).toFixed(1)}&w=${width}&h=${height}`
@@ -431,31 +437,33 @@ function recordFrame(force = false) {
   }).catch(() => undefined))
 }
 function startRecording(id: string, fps: number, video: boolean, scale: number) {
+  if (recording) { void post('/api/record-done', { id, error: 'A recording is already in progress in this canvas' }); return }
   const now = performance.now()
-  recording = { id, interval: 1000 / fps, start: now, last: -Infinity, hash: -1, rendered: 0, uploads: [] }
-  if (video) {
-    const canvas = document.createElement('canvas')
-    const factor = scale || (screen.width >= 320 ? 2 : 4)
-    canvas.width = screen.width * factor
-    canvas.height = screen.height * factor
+  recording = { id, interval: 1000 / fps, start: now, last: -Infinity, hash: -1, rendered: 0, uploads: [], fps, scale, captureVideo: video, stopping: false }
+  recordFrame(true)
+}
+function startRecordingVideo(rec: Recording) {
+  const canvas = document.createElement('canvas')
+  const factor = rec.scale || (screen.width >= 320 ? 2 : 4)
+  canvas.width = screen.width * factor
+  canvas.height = screen.height * factor
+  try {
     const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
     const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t))
-    try {
-      const recorder = new MediaRecorder(canvas.captureStream(fps), mimeType ? { mimeType, videoBitsPerSecond: 4_000_000 } : undefined)
-      const chunks: Blob[] = []
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
-      recorder.start(250)
-      recording.video = { canvas, recorder, chunks }
-    } catch (error) {
-      recording.video = { canvas, recorder: null as unknown as MediaRecorder, chunks: [], error: String(error) }
-    }
+    const recorder = new MediaRecorder(canvas.captureStream(rec.fps), mimeType ? { mimeType, videoBitsPerSecond: 4_000_000 } : undefined)
+    const chunks: Blob[] = []
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+    recorder.start(250)
+    rec.video = { canvas, recorder, chunks }
+  } catch (error) {
+    rec.video = { canvas, chunks: [], error: String(error) }
   }
-  recordFrame(true)
 }
 async function stopRecording(id: string) {
   const rec = recording
-  if (!rec || rec.id !== id) { void post('/api/record-done', { id, error: 'No active recording in this canvas' }); return }
-  recording = null
+  if (!rec || rec.id !== id || rec.stopping) { void post('/api/record-done', { id, error: 'No active recording in this canvas' }); return }
+  recordFrame(true)
+  rec.stopping = true
   const duration = performance.now() - rec.start
   let video: { mime: string; data: string } | undefined
   let videoError = rec.video?.error
@@ -472,6 +480,7 @@ async function stopRecording(id: string) {
   }
   await Promise.all(rec.uploads)
   void post('/api/record-done', { id, duration_ms: duration, rendered_frames: rec.rendered, video, video_error: videoError })
+  recording = null
 }
 
 // ---- server events ------------------------------------------------------------

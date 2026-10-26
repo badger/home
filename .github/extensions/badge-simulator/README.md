@@ -58,6 +58,12 @@ animation, `record` the interaction and view the contact sheet; the GIF or
 video is ready to attach to a pull request. Keep the canvas visible
 while testing: a hidden panel pauses the simulator.
 
+Only one `record` action can run per canvas at a time, including its optional
+restart and export. An explicit `scale` must be an integer from 1 to 4.
+Capture waits for a real app frame rather than recording the initial placeholder,
+includes the latest screen when stopped, and excludes export time from its
+reported capture duration and GIF timing.
+
 The simulator approximates the badge firmware, so test on real hardware before
 you open a pull request.
 
@@ -93,3 +99,9 @@ The script clones `badger/badger.github.io`, installs its dependencies, bundles
 which also selects the matching runtime. Pass `--site <checkout>` to reuse a
 local clone. Reload extensions in Copilot (or restart the app) to pick up
 changes to `extension.mjs`.
+
+Run the dependency-free recording regression tests with Node.js 24 or newer:
+
+```powershell
+node --test .github\extensions\badge-simulator\recording.test.mjs
+```

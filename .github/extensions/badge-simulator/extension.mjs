@@ -415,6 +415,18 @@ function recordingClient(inst) {
 }
 const recordingByteLimit = 256 * 1024 * 1024;
 async function doRecord(inst, input = {}) {
+    if (input.scale !== undefined && (!Number.isInteger(input.scale) || input.scale < 1 || input.scale > 4)) {
+        throw new Error("Recording scale must be an integer from 1 to 4.");
+    }
+    if (inst.recordingActive) throw new Error("A recording is already in progress in this canvas.");
+    inst.recordingActive = true;
+    try {
+        return await recordScreen(inst, input);
+    } finally {
+        inst.recordingActive = false;
+    }
+}
+async function recordScreen(inst, input) {
     await requireClient(inst);
     if (input.restart) { doReload(inst, false); await waitForRun(inst); }
     const steps = Array.isArray(input.steps) ? input.steps : [];
@@ -427,7 +439,7 @@ async function doRecord(inst, input = {}) {
     const send = (event) => client.write(`data: ${JSON.stringify(event)}\n\n`);
     const since = cursorOf(inst);
     const started = Date.now();
-    send({ type: "record-start", id, fps, video: Boolean(input.video), scale: Number(input.scale) || 0 });
+    send({ type: "record-start", id, fps, video: Boolean(input.video), scale: input.scale ?? 0 });
     let script, done;
     try {
         if (steps.length) script = await runScript(inst, { steps, stop_on_crash: input.stop_on_crash });
@@ -441,7 +453,7 @@ async function doRecord(inst, input = {}) {
         });
         inst.recordings.delete(id);
     }
-    const elapsed = Math.max(Number(done.duration_ms) || 0, Date.now() - started);
+    const elapsed = Number.isFinite(done.duration_ms) && done.duration_ms >= 0 ? done.duration_ms : Date.now() - started;
     const result = { app: inst.app, sample_fps: fps, duration_ms: elapsed, ...(script ? { steps: script.steps } : {}) };
     if (done.error) result.error = done.error;
     const frames = rec.frames.sort((a, b) => a.t - b.t);
@@ -453,7 +465,7 @@ async function doRecord(inst, input = {}) {
     const usable = frames.filter((f) => f.width === width && f.height === height);
     const end = Math.max(elapsed, usable.at(-1).t + 1000 / fps);
     usable.forEach((f, i) => { f.delayMs = (usable[i + 1]?.t ?? end) - f.t; });
-    const scale = Math.max(1, Math.min(4, Number(input.scale) || (width >= 320 ? 1 : 2)));
+    const scale = input.scale ?? (width >= 320 ? 1 : 2);
 
     const dir = join(session.workspacePath ?? cacheDir, "files", "badge-simulator");
     mkdirSync(dir, { recursive: true });
@@ -754,7 +766,7 @@ session = await joinSession({
                             restart: { type: "boolean", description: "Reload the app before recording" },
                             stop_on_crash: { type: "boolean" },
                             label: { type: "string" },
-                            scale: { type: "number", description: "GIF/video upscale 1-4 (default 2 for 160x120, 1 for 320x240)" },
+                            scale: { type: "integer", minimum: 1, maximum: 4, description: "GIF/video upscale 1-4 (default 2 for 160x120, 1 for 320x240)" },
                             gif: { type: "boolean", description: "Write an animated GIF (default true)" },
                             video: { type: "boolean", description: "Also record MP4 (or WebM) video with the browser's MediaRecorder" },
                             sheet_frames: { type: "number", description: "Frames in the contact sheet (default 12)" },
