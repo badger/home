@@ -1544,3 +1544,40 @@ def tombstone_lines(record):
         '"' + EPITAPHS[epitaph] + '"',
         "Beamed in over IR" if beamed else "From your own wagon",
     )
+
+
+# ----- saved data -------------------------------------------------------------
+MAX_TOMBSTONES = 12
+
+
+def default_save():
+    return {"best": 0, "visual": 0, "auto_camp": True, "tombstones": [], "victories": 0,
+            "runs": 0, "beamed": 0, "met": 0, "run": None}
+
+
+def clean_save(data):
+    """Validate everything loaded from State so bad JSON cannot crash the app."""
+    clean = default_save()
+    if not isinstance(data, dict):
+        return clean
+    clean["best"] = clamp_int(data.get("best"), 0, 10000000, 0)
+    clean["visual"] = clamp_int(data.get("visual"), 0, 1, 0)
+    clean["auto_camp"] = data.get("auto_camp") is not False
+    for key in ("victories", "runs", "beamed", "met"):
+        clean[key] = clamp_int(data.get(key), 0, 100000, 0)
+    stones = data.get("tombstones")
+    if isinstance(stones, list):
+        for stone in stones:
+            if isinstance(stone, list) and len(stone) == 5:
+                clean["tombstones"].append(tombstone_record(stone[0], stone[1], stone[2], stone[3], stone[4]))
+    clean["tombstones"] = clean["tombstones"][-MAX_TOMBSTONES:]
+    run = data.get("run")
+    clean["run"] = run if isinstance(run, dict) else None
+    return clean
+
+
+def add_tombstone(save, record):
+    stones = [stone for stone in save["tombstones"] if stone[:4] != record[:4]]
+    stones.append(record)
+    save["tombstones"] = stones[-MAX_TOMBSTONES:]
+    return save["tombstones"]

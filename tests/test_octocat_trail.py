@@ -1163,6 +1163,33 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(tl.tombstone_lines([5, 0, 0, 0, 0])[4], "From your own wagon")
 
 
+class SaveDataTests(unittest.TestCase):
+    def test_clean_save(self):
+        self.assertEqual(tl.clean_save(None), tl.default_save())
+        self.assertEqual(tl.clean_save("junk"), tl.default_save())
+        stones = [[i, 0, 0, 0, 0] for i in range(15)] + ["bad", [1, 2]]
+        clean = tl.clean_save({"best": -4, "visual": 7, "auto_camp": False, "tombstones": stones, "victories": "3",
+                               "runs": 2.5, "beamed": None, "met": 10 ** 9, "run": {"v": 2}})
+        self.assertEqual((clean["best"], clean["visual"], clean["auto_camp"]), (0, 1, False))
+        self.assertEqual((clean["victories"], clean["runs"], clean["beamed"], clean["met"]), (3, 2, 0, 100000))
+        self.assertEqual(len(clean["tombstones"]), tl.MAX_TOMBSTONES)
+        self.assertEqual(clean["tombstones"][0], [3, 0, 0, 0, 0])
+        self.assertEqual(clean["run"], {"v": 2})
+        self.assertIsNone(tl.clean_save({"run": [1]})["run"])
+        self.assertTrue(tl.clean_save({"auto_camp": 0})["auto_camp"])
+        self.assertIsNot(tl.default_save()["tombstones"], tl.default_save()["tombstones"])
+
+    def test_add_tombstone(self):
+        save = tl.default_save()
+        tl.add_tombstone(save, [10, 1, 2, 0, 0])
+        tl.add_tombstone(save, [10, 1, 2, 0, 1])
+        self.assertEqual(save["tombstones"], [[10, 1, 2, 0, 1]])
+        for i in range(20):
+            tl.add_tombstone(save, [i + 100, 0, 0, 0, 0])
+        self.assertEqual(len(save["tombstones"]), tl.MAX_TOMBSTONES)
+        self.assertEqual(save["tombstones"][-1][0], 119)
+
+
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
 
