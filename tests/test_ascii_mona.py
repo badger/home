@@ -28,6 +28,7 @@ MODULE_ORDER = (
     "mona_octo",
     "mona_dna",
     "mona_wheel",
+    "mona_ir",
     "mona_ascii",
 )
 _MISSING = object()
@@ -1086,6 +1087,62 @@ class TestAscii(unittest.TestCase):
         self.assertTrue(view.failed)
         self.assertFalse(view.typing)
         self.assertFalse(view.draw(FakeImage(), 0, 0, 0))
+
+
+class TestIr(unittest.TestCase):
+    """NEC framing on 0x4C, the 0x45/0x88 quest beam and the IrPort lifecycle."""
+
+    def setUp(self):
+        self.I = M["mona_ir"]
+        self.D = M["mona_dna"]
+
+    def test_crc8_and_packet_layout(self):
+        I, D = self.I, self.D
+        self.assertEqual(I.crc8(b"123456789"), 0xF4)
+        self.assertEqual(I.crc8(b""), 0)
+        for handle, size in (("octocat", 31), ("mona", 28), ("ada", 27), ("wmarkus", 31), ("", 24)):
+            dna = D.dna_for(handle or "mystery")
+            packet = I.encode_packet(handle, dna)
+            self.assertEqual(len(packet), size)
+            self.assertEqual(packet[:2], [0xA5, 0x5A])
+            self.assertEqual(packet[2], len(packet) - 4)
+            self.assertEqual(packet[3], I.VERSION)
+            self.assertEqual(tuple(packet[4:4 + D.SIZE]), dna)
+            self.assertEqual(bytes(packet[4 + D.SIZE:-1]), handle.encode())
+            self.assertEqual(packet[-1], I.crc8(packet[2:-1]))
+            self.assertTrue(all(0 <= byte <= 255 for byte in packet))
+            self.assertTrue(all(byte < 0x80 for byte in dna))
+        self.assertEqual(I.encode_packet(None, D.dna_for("x")), I.encode_packet("", D.dna_for("x")))
+        for handle, dna in (("bad handle", D.dna_for("x")), ("x" * 40, D.dna_for("x")),
+                            ("ok", (0,) * 5), ("ok", None)):
+            with self.assertRaises(ValueError):
+                I.encode_packet(handle, dna)
+
+    def test_payload_round_trip_and_rejections(self):
+        I, D = self.I, self.D
+        for handle in ("octocat", "MonaLisa", "a", "x" * 39, "hub-ot", ""):
+            dna = D.dna_for(handle or "y")
+            payload = I.encode_packet(handle, dna)[3:-1]
+            self.assertEqual(I.parse_payload(payload), (handle, dna))
+            self.assertEqual(I.parse_payload(bytes(payload)), (handle, dna))
+        good = I.encode_packet("octocat", D.dna_for("octocat"))[3:-1]
+        broken = []
+        broken.append(good[:I.MIN_LEN - 1])
+        broken.append([3] + good[1:])
+        too_big = list(good)
+        too_big[1] = D.LIMITS[0]
+        broken.append(too_big)
+        high = list(good)
+        high[2] = 200
+        broken.append(high)
+        for bad_char in (32, 127, 10):
+            odd = list(good)
+            odd[-1] = bad_char
+            broken.append(odd)
+        broken.append(list(good[:I.MIN_LEN]) + [ord("-")] + list(b"ab"))
+        broken.append(list(good[:I.MIN_LEN]) + [ord("a")] * 40)
+        for payload in broken:
+            self.assertIsNone(I.parse_payload(payload), payload)
 
 
 class TestWheel(unittest.TestCase):
