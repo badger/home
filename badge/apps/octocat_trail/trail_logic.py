@@ -6,6 +6,7 @@ injected Rng, ordered data lives in tuples (MicroPython dicts are unordered),
 and only APIs that exist in MicroPython 1.29 are used.
 """
 PARTY = ("Markus", "Mona", "Cameron", "Hubot", "Tufty")
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 # (title, handle, starting Copilot Credits, score multiplier, perk)
 ROLES = (
@@ -36,6 +37,13 @@ RATIONS = (
     ("Drip", 0.2, 1),
     ("Decaf", 0.1, -1),
 )
+
+MONTHS = (
+    ("September", 30), ("October", 31), ("November", 30), ("December", 31),
+    ("January", 31), ("February", 28), ("March", 31), ("April", 30),
+    ("May", 31), ("June", 30), ("July", 31), ("August", 31),
+)
+WEATHER = ("Foggy", "Sunny", "Breezy", "Foggy", "Drizzle", "Karl the Fog", "Sunny", "Cool")
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
@@ -187,6 +195,7 @@ class Trail:
         self.role = clamp_int(role, 0, len(ROLES) - 1)
         self.supplies = {"credits": ROLES[self.role][2], "brew": 0.0, "lgtm": 0, "patches": 0}
         self.members = [Member(name) for name in PARTY]
+        self.day = 1
         self.rations = 1
         self.at = 0
         self.basket = {}
@@ -219,6 +228,32 @@ class Trail:
     def brew_per_day(self):
         need = self.living_count() * RATIONS[self.rations][1]
         return need
+
+    # ----- calendar -----------------------------------------------------------
+    def weekday(self):
+        # Day 1 is Tuesday, September 1, 2026.
+        return WEEKDAYS[self.day % 7]
+
+    def date(self):
+        """(month name, day of month, year) for the current day."""
+        day = self.day - 1
+        cycle = 0
+        while day >= 365:
+            day -= 365
+            cycle += 1
+        for index in range(len(MONTHS)):
+            name, length = MONTHS[index]
+            if day < length:
+                return name, day + 1, 2026 + cycle + (1 if index >= 4 else 0)
+            day -= length
+        return MONTHS[-1][0], MONTHS[-1][1], 2027 + cycle
+
+    def date_text(self):
+        name, day, year = self.date()
+        return "%s %d, %d" % (name, day, year)
+
+    def weather(self):
+        return WEATHER[fnv1a("wx%d" % self.day) % len(WEATHER)]
 
     # ----- shop -------------------------------------------------------------
     def markup(self):

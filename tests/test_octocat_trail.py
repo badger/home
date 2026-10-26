@@ -184,6 +184,21 @@ class RngTests(unittest.TestCase):
         self.assertEqual(set(rng.weighted(((1, "a"), (1, "b"))) for _ in range(200)), {"a", "b"})
 
 
+class TrailTests(unittest.TestCase):
+
+    def test_calendar(self):
+        trail = tl.Trail(0, QuietRng())
+        expected = ((1, "September 1, 2026", "Tue"), (4, "September 4, 2026", "Fri"),
+                    (122, "December 31, 2026", "Thu"), (123, "January 1, 2027", "Fri"),
+                    (366, "September 1, 2027", "Wed"))
+        for day, text, weekday in expected:
+            trail.day = day
+            self.assertEqual(trail.date_text(), text)
+            self.assertEqual(trail.weekday(), weekday)
+            self.assertIn(trail.weather(), tl.WEATHER)
+            self.assertEqual(trail.weather(), trail.weather())
+
+
 class TrailShopRiverTests(unittest.TestCase):
     def test_store_prices(self):
         trail = stocked()
