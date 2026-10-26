@@ -1341,6 +1341,72 @@ class ShakeDetector:
         return False
 
 
+class DarkDetector:
+    """Detects the room going dark relative to its own recent brightness.
+
+    The sensor must first show a reference of at least min_ref so a missing
+    or stuck-at-zero sensor never triggers. update() returns "dark" or
+    "light" on transitions, otherwise None."""
+
+    def __init__(self, dark_ratio=0.3, light_ratio=0.6, min_ref=160, hold_ms=1200,
+                 fast_ms=300, rise_ms=1000, decay_ms=60000):
+        self.dark_ratio = dark_ratio
+        self.light_ratio = light_ratio
+        self.min_ref = min_ref
+        self.hold_ms = hold_ms
+        self.fast_ms = fast_ms
+        self.rise_ms = rise_ms
+        self.decay_ms = decay_ms
+        self.fast = -1.0
+        self.reference = 0.0
+        self.dark = False
+        self.suppressed = False
+        self.since = -1
+
+    def armed(self):
+        return self.reference >= self.min_ref
+
+    def suppress(self):
+        """The player broke camp by hand: wait for light before re-arming."""
+        self.suppressed = True
+
+    def update(self, now_ms, dt_ms, value):
+        value = float(value)
+        if self.fast < 0:
+            self.fast = value
+        else:
+            self.fast += (value - self.fast) * min(1.0, dt_ms / float(self.fast_ms))
+        if not self.dark:
+            tau = self.rise_ms if self.fast > self.reference else self.decay_ms
+            self.reference += (self.fast - self.reference) * min(1.0, dt_ms / float(tau))
+        if not self.armed():
+            self.since = -1
+            return None
+        if self.dark or self.suppressed:
+            if self.fast <= self.reference * self.light_ratio:
+                self.since = -1
+                return None
+            if self.since < 0:
+                self.since = now_ms
+            if now_ms - self.since >= self.hold_ms:
+                self.since = -1
+                self.suppressed = False
+                if self.dark:
+                    self.dark = False
+                    return "light"
+            return None
+        if self.fast >= self.reference * self.dark_ratio:
+            self.since = -1
+            return None
+        if self.since < 0:
+            self.since = now_ms
+        if now_ms - self.since >= self.hold_ms:
+            self.since = -1
+            self.dark = True
+            return "dark"
+        return None
+
+
 def tombstone_record(step, cause, epitaph, role, beamed):
     return [
         clamp_int(step, 0, MAX_STEPS),

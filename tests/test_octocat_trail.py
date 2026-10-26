@@ -1043,6 +1043,19 @@ class HuntTests(unittest.TestCase):
         self.assertTrue(trail.start_hunt().meadow)
 
 
+def feed_light(detector, steps, start=0, dt=50):
+    """Feed (value, duration_ms) pairs and return the [(event, ms)] it raised."""
+    events = []
+    now = start
+    for value, duration in steps:
+        for _ in range(duration // dt):
+            now += dt
+            event = detector.update(now, dt, value)
+            if event:
+                events.append((event, now))
+    return events
+
+
 class DetectorTests(unittest.TestCase):
     def test_shake_fires_once_per_burst(self):
         for sign in (1, -1):
@@ -1061,6 +1074,32 @@ class DetectorTests(unittest.TestCase):
         tilted = tl.ShakeDetector()
         tilted.update(0, 0, 16384, 0)
         self.assertFalse(any(tilted.update(t * 50, 16384, 0, 0) for t in range(1, 50)))
+
+    def test_room_going_dark_and_light(self):
+        detector = tl.DarkDetector()
+        events = feed_light(detector, ((40000, 3000), (0, 2000), (40000, 3000)))
+        self.assertEqual([event for event, _ms in events], ["dark", "light"])
+        self.assertTrue(4000 <= events[0][1] <= 5000 and 6000 <= events[1][1] <= 7000)
+
+    def test_no_sensor_never_camps(self):
+        zero = tl.DarkDetector()
+        self.assertEqual(feed_light(zero, ((0, 10000),)), [])
+        self.assertFalse(zero.armed())
+        bright = tl.DarkDetector()
+        self.assertEqual(feed_light(bright, ((40000, 20000),)), [])
+        self.assertTrue(bright.armed())
+
+    def test_brief_shadow_is_ignored(self):
+        detector = tl.DarkDetector()
+        self.assertEqual(feed_light(detector, ((40000, 3000), (0, 800), (40000, 3000))), [])
+
+    def test_suppress_waits_for_light(self):
+        detector = tl.DarkDetector()
+        feed_light(detector, ((40000, 3000),))
+        detector.suppress()
+        self.assertEqual(feed_light(detector, ((0, 3000), (40000, 3000)), 3000), [])
+        self.assertFalse(detector.suppressed)
+        self.assertEqual([event for event, _ms in feed_light(detector, ((0, 3000),), 9000)], ["dark"])
 
 
 class FakeDevice:
