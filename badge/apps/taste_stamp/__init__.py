@@ -94,6 +94,7 @@ INK_ALPHA = 225
 # Older impressions fade as new ones land on the same sheet.
 FADES = (150, 95, 55)
 SPLATS = 14
+SPECKS = 90
 STAMP_MAX_W = 220.0
 STAMP_MAX_H = 136.0
 STAMP_MAX_SCALE = 5.5
@@ -178,14 +179,37 @@ class Slam:
         self.y = PAPER_CY + rng.uniform(-6.0, 6.0)
         self.rot = rng.uniform(-10.0, 10.0)
         self.spin = rng.uniform(-stamp.DROP_SPIN, stamp.DROP_SPIN)
+        self.seed = rng.next_u32()
         self.splats = None
         self.dots = []
+        self.specks = None
         self.inked = False
         self.dried = False
 
 
+def specks_for(mark):
+    # Paper-coloured flecks knocked out of the ink, in stamp units, so they
+    # follow the stamp's own transform.
+    if mark.specks is None:
+        r = verdicts.Rng(mark.seed)
+        contours = []
+        for _ in range(SPECKS):
+            x = r.uniform(-0.5 * mark.w, 0.5 * mark.w)
+            y = r.uniform(-0.5 * mark.h, 0.5 * mark.h)
+            s = r.uniform(0.12, 0.42)
+            contours.append([x, y - s, x + s, y, x, y + s, x - s, y])
+        mark.specks = contour_shape(contours)
+    return mark.specks
+
+
 def draw_mark(target, mark, alpha):
     draw_stamp(target, mark.index, mark.x, mark.y, mark.rot, mark.scale, alpha)
+    specks = specks_for(mark)
+    specks.transform = mat3().translate(mark.x, mark.y).rotate(mark.rot).scale(mark.scale)
+    target.pen = rgb(PAPER, alpha * 190 // INK_ALPHA)
+    target.fill_rule = image.NON_ZERO
+    target.shape(specks)
+    target.fill_rule = image.EVEN_ODD
     if mark.dots:
         target.pen = rgb(verdicts.INKS[mark.index], alpha)
         for d in mark.dots:
@@ -311,6 +335,12 @@ class App:
         self.marks.append(s)
         d = self.desk
         draw_stamp(d, s.index, s.x, s.y, s.rot, s.scale, INK_ALPHA)
+        specks = specks_for(s)
+        specks.transform = mat3().translate(s.x, s.y).rotate(s.rot).scale(s.scale)
+        d.pen = rgb(PAPER, 190)
+        d.fill_rule = image.NON_ZERO
+        d.shape(specks)
+        d.fill_rule = image.EVEN_ODD
 
     def bake_splats(self, s):
         s.dried = True
