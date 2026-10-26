@@ -4,6 +4,8 @@ Lead the Studio party across a Fort Mason-inspired venue to the GitHub Universe 
 
 The GitHub Ducky pulls the wagon, Mona rides up front, and Markus, Mona, Cameron, Hubot and Tufty walk about 2,000 steps from the Gatehouse (`git init`) to the Festival Pavilion Mainstage. The app runs in 320x240 HIRES mode and needs no network, Wi-Fi or `secrets.py`.
 
+![The Ducky wagon on the Festival Pavilion pier by the Mainstage door, above the trail status card](assets/octocat_trail_screenshot.png)
+
 ## Usage
 
 Open **The Octocat Trail** from the menu. The title screen offers:

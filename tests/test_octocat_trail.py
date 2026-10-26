@@ -4377,8 +4377,19 @@ class PackagingTests(unittest.TestCase):
     def test_the_folder_ships_only_the_app_files(self):
         names = sorted(path.name for path in APP.iterdir()
                        if not path.name.startswith(".") and path.name != "__pycache__")
-        expected = sorted(("README.md", "__init__.py", "icon.png") + tuple("%s.py" % name for name in MODULES))
+        expected = sorted(("README.md", "__init__.py", "assets", "icon.png")
+                          + tuple("%s.py" % name for name in MODULES))
         self.assertEqual(names, expected)
+        shots = sorted(path.name for path in (APP / "assets").iterdir() if not path.name.startswith("."))
+        self.assertEqual(shots, ["octocat_trail_screenshot.png"])
+
+    def test_the_screenshot_is_a_320x240_png_shown_in_the_readme(self):
+        data = (APP / "assets" / "octocat_trail_screenshot.png").read_bytes()
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+        self.assertEqual((width, height), (320, 240))
+        readme = (APP / "README.md").read_text(encoding="utf-8")
+        self.assertIn("](assets/octocat_trail_screenshot.png)", readme)
 
     def test_the_icon_is_a_24x24_png(self):
         data = (APP / "icon.png").read_bytes()
