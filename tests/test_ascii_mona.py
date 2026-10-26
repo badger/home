@@ -1144,6 +1144,23 @@ class TestIr(unittest.TestCase):
         for payload in broken:
             self.assertIsNone(I.parse_payload(payload), payload)
 
+    def test_beam_frames_carry_two_copies_then_the_quest_code(self):
+        I, D = self.I, self.D
+        for handle, total in (("octocat", 62), ("ada", 54)):
+            dna = D.dna_for(handle)
+            packet = I.encode_packet(handle, dna)
+            frames = I.beam_frames(handle, dna)
+            self.assertEqual(len(frames), total)
+            self.assertEqual(len(frames), 2 * len(packet))
+            self.assertEqual([f[1] for f in frames[:len(packet)]], packet)
+            self.assertEqual([f[1] for f in frames[len(packet):2 * len(packet)]], packet)
+            self.assertEqual(frames[0][2], 0)
+            self.assertEqual(frames[len(packet)][2], I.COPY_GAP_MS)
+            for address, command, wait in frames:
+                self.assertEqual(address, 0x4C)
+                self.assertTrue(0 <= command <= 255)
+                self.assertGreaterEqual(wait, 0)
+
 
 class TestWheel(unittest.TestCase):
     """The arcade letter wheel for typing a handle with the badge buttons."""
