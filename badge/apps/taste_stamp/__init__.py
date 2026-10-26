@@ -217,6 +217,16 @@ def draw_mark(target, mark, alpha):
             target.shape(shape.circle(d[0], d[1], d[2]))
 
 
+def set_lights(levels):
+    try:
+        if levels is None:
+            badge.caselights(0)
+        else:
+            badge.caselights(levels[0], levels[1], levels[2], levels[3])
+    except Exception:
+        pass
+
+
 class App:
     def __init__(self):
         self.choice = None
@@ -229,6 +239,7 @@ class App:
         self.desk.fill_rule = image.EVEN_ODD
         self.toast_text = None
         self.toast_until = 0
+        self.lights = None
         self.render_desk()
 
     # Frame loop.
@@ -237,11 +248,13 @@ class App:
         now = badge.ticks
         dt = max(0, min(100, badge.ticks_delta))
         if not self.handle_buttons(now):
+            on_exit()
             return False
         if self.slam is not None:
             self.advance_slam(now, dt)
         self.draw_stamp_mode(now)
         self.draw_toast(now)
+        self.update_lights(now)
         if self.slam is None:
             warm_stamps()
         return None
@@ -313,7 +326,7 @@ class App:
             self.bake_stamp(s)
         if not s.dried and s.splats is not None and t >= stamp.DROP_MS + stamp.SPLAT_MS:
             self.bake_splats(s)
-        if s.inked and s.dried and t >= stamp.DROP_MS + stamp.SHAKE_MS:
+        if s.inked and s.dried and t >= stamp.DROP_MS + stamp.STROBE_MS:
             self.slam = None
 
     def finish_slam(self):
@@ -463,12 +476,24 @@ class App:
         screen.text(self.toast_text, x + 10, 32)
         screen.font = UI_FONT
 
+    def update_lights(self, now):
+        levels = None
+        if self.slam is not None:
+            levels = stamp.strobe_levels(now - self.slam.start - stamp.DROP_MS)
+        if levels != self.lights:
+            self.lights = levels
+            set_lights(levels)
+
 
 app = App()
 
 
 def update():
     return app.update()
+
+
+def on_exit():
+    set_lights(None)
 
 
 run(update)

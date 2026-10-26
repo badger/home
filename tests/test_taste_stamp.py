@@ -217,6 +217,27 @@ class StampTests(unittest.TestCase):
             self.assertLessEqual(abs(x), limit)
             self.assertLessEqual(abs(y), limit)
 
+    def test_strobe_flashes_then_chases_then_fades(self):
+        self.assertIsNone(S.strobe_levels(-1))
+        self.assertIsNone(S.strobe_levels(S.STROBE_MS))
+        self.assertEqual(S.strobe_levels(0), (1.0,) * 4)
+        self.assertEqual(S.strobe_levels(100), (0.0,) * 4)
+        lit = set()
+        for t in range(140, 700, 5):
+            levels = S.strobe_levels(t)
+            self.assertEqual(sorted(levels), [0.15, 0.15, 0.15, 1.0])
+            self.assertEqual(levels.index(1.0), ((t - 140) // 70) % 4)
+            lit.add(levels.index(1.0))
+        self.assertEqual(lit, {0, 1, 2, 3})
+        self.assertEqual(S.strobe_levels(700), (0.6,) * 4)
+        previous = 0.6
+        for t in range(701, S.STROBE_MS):
+            levels = S.strobe_levels(t)
+            self.assertEqual(len(set(levels)), 1)
+            self.assertLess(levels[0], previous)
+            self.assertGreaterEqual(levels[0], 0.0)
+            previous = levels[0]
+
     def test_splats_fly_outward_from_the_rim(self):
         rng = V.Rng(7)
         splats = S.make_splats(rng.random, 40, 160.0, 121.0, 80.0, 50.0)

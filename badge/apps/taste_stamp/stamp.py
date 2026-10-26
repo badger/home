@@ -1,5 +1,5 @@
 # Rubber-stamp artwork for Taste Stamp: a stroked block font, the stamp
-# layout, and the slam, shake and ink-splatter curves.
+# layout, and the slam, shake, strobe and ink-splatter curves.
 #
 # Everything here is plain Python that emits flat [x0, y0, x1, y1, ...]
 # contours for shape.custom(), so it runs unchanged on the badge and under
@@ -336,6 +336,7 @@ SQUASH_MS = 120
 BAKE_MS = DROP_MS + SQUASH_MS
 SHAKE_MS = 450
 SHAKE_PX = 9.0
+STROBE_MS = 1000
 SPLAT_MS = 400
 DROP_SCALE = 2.6
 DROP_SPIN = 20.0
@@ -357,6 +358,25 @@ def shake_offset(t, phase=0.0):
         return 0.0, 0.0
     a = SHAKE_PX * (1.0 - t / SHAKE_MS) ** 2
     return a * math.sin(0.09 * t + phase), a * math.cos(0.13 * t + phase)
+
+
+def strobe_levels(t):
+    # Case-light levels (0-1, one per LED) t ms after impact, or None when
+    # the strobe has finished: flash, blackout, chase, then fade.
+    if t < 0 or t >= STROBE_MS:
+        return None
+    if t < 80:
+        return (1.0, 1.0, 1.0, 1.0)
+    if t < 140:
+        return (0.0, 0.0, 0.0, 0.0)
+    if t < 700:
+        lit = int((t - 140) // 70) % 4
+        levels = []
+        for i in range(4):
+            levels.append(1.0 if i == lit else 0.15)
+        return tuple(levels)
+    v = 0.6 * (1.0 - (t - 700) / 300.0)
+    return (v, v, v, v)
 
 
 def make_splats(rand, count, cx, cy, half_w, half_h):
