@@ -5,6 +5,9 @@ badge's MicroPython and under CPython tests. Randomness comes from an
 injected Rng, ordered data lives in tuples (MicroPython dicts are unordered),
 and only APIs that exist in MicroPython 1.29 are used.
 """
+
+import trail_map as tm
+MAX_STEPS = 99999
 PARTY = ("Markus", "Mona", "Cameron", "Hubot", "Tufty")
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
@@ -31,6 +34,14 @@ STORE_ITEMS = (
 # (stop, price percent): stores and the Firehouse, which only sells patches.
 STORE_MARKUP = ((0, 100), (1, 125), (9, 150), (6, 160))
 FIREHOUSE = 6
+
+# (name, steps per day, daily health change)
+PACES = (
+    ("Sustainable", 20, 0),
+    ("Crunch", 26, -1),
+    ("Death March", 34, -3),
+)
+DAY_MS = 640
 # (name, kegs per person per day, daily health change)
 RATIONS = (
     ("Nitro", 0.3, 2),
@@ -195,9 +206,16 @@ class Trail:
         self.role = clamp_int(role, 0, len(ROLES) - 1)
         self.supplies = {"credits": ROLES[self.role][2], "brew": 0.0, "lgtm": 0, "patches": 0}
         self.members = [Member(name) for name in PARTY]
+        self.x = tm.START[0]
+        self.y = tm.START[1]
+        self.facing = 1
+        self.steps = 0
+        self.pending_ms = 0
         self.day = 1
+        self.pace = 0
         self.rations = 1
         self.at = 0
+        self.deployed = 0
         self.basket = {}
 
     # ----- party -----------------------------------------------------------
@@ -254,6 +272,48 @@ class Trail:
 
     def weather(self):
         return WEATHER[fnv1a("wx%d" % self.day) % len(WEATHER)]
+
+    # ----- walking ------------------------------------------------------------
+    def steps_per_day(self):
+        steps = PACES[self.pace][1]
+        if self.supplies["brew"] <= 0:
+            steps = steps * 3 // 4
+        if self.average_health() < 40:
+            steps = steps * 4 // 5
+        return max(tm.STEPS_PER_TILE, steps)
+
+    def tile_ms(self):
+        """How long one tile takes to walk; DAY_MS is one day on the move."""
+        return DAY_MS * tm.STEPS_PER_TILE // self.steps_per_day()
+
+    def blocked_reason(self, dx, dy):
+        """Why the party cannot step this way, or "" if it can."""
+        x = self.x + dx
+        y = self.y + dy
+        if tm.walkable(x, y, self.deployed):
+            return ""
+        code = tm.terrain(x, y)
+        if code == tm.WATER:
+            return "That way lies San Francisco Bay."
+        return ""
+
+    def step(self, dx, dy):
+        """Walk one tile. Returns how long the walk takes in ms, or 0 if blocked."""
+        if dx:
+            self.facing = 1 if dx > 0 else -1
+        if self.all_dead() or (dx == 0 and dy == 0):
+            return 0
+        x = self.x + dx
+        y = self.y + dy
+        if not tm.walkable(x, y, self.deployed):
+            return 0
+        self.x = x
+        self.y = y
+        self.at = -1
+        self.steps = min(MAX_STEPS, self.steps + tm.STEPS_PER_TILE)
+        ms = self.tile_ms()
+        self.pending_ms += ms
+        return ms
 
     # ----- shop -------------------------------------------------------------
     def markup(self):

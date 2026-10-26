@@ -4,6 +4,7 @@
 
 W = 104
 H = 140
+STEPS_PER_TILE = 8
 
 WATER, LOT, GRASS, DECK, PATH, ROOF, FENCE, TREE, GANG1, GANG2, DOOR, DOCK, FLAG = range(13)
 WALK = bytes((0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1))
@@ -41,6 +42,7 @@ STOPS = (
     ("DNS Propagation Rapids", "DNS Rapids", "river", 46, 36),
     ("Festival Pavilion: GitHub Universe Mainstage", "Mainstage", "end", 73, 59),
 )
+START = (8, 135)
 
 PATHS = (
     ((61, 105), (70, 110), (77, 102), (88, 85), (95, 78), (103, 71)),

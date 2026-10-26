@@ -55,6 +55,7 @@ def load_modules(prefix="octocat_trail_", extra=None, names=MODULES):
 
 
 _APP = load_modules()
+tm = _APP["trail_map"]
 tl = _APP["trail_logic"]
 
 
@@ -197,6 +198,22 @@ class TrailTests(unittest.TestCase):
             self.assertEqual(trail.weekday(), weekday)
             self.assertIn(trail.weather(), tl.WEATHER)
             self.assertEqual(trail.weather(), trail.weather())
+
+    def test_step(self):
+        trail = stocked()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            if tm.walkable(tm.START[0] + dx, tm.START[1] + dy):
+                break
+        self.assertEqual(trail.step(dx, dy), 256)
+        self.assertEqual((trail.x, trail.y), (tm.START[0] + dx, tm.START[1] + dy))
+        self.assertEqual((trail.at, trail.steps, trail.pending_ms), (-1, 8, 256))
+        self.assertEqual(trail.step(0, 0), 0)
+        trail.x, trail.y = 0, 0
+        self.assertEqual(trail.step(-1, 0), 0)
+        self.assertEqual(trail.facing, -1)
+        self.assertEqual(trail.step(1, 0), 0)
+        self.assertEqual(trail.facing, 1)
+        self.assertEqual((trail.x, trail.y, trail.steps), (0, 0, 8))
 
 
 class TrailShopRiverTests(unittest.TestCase):
