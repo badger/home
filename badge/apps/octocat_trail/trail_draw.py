@@ -29,6 +29,7 @@ CHART_X = 4
 CHART_Y = 15
 CHART_W = tm.W * 3 // 2
 CHART_H = tm.H * 3 // 2
+RIVER_TOP = 160
 
 BLACK, WHITE, GREEN, VIOLET, ORANGE = ta.BLACK, ta.WHITE, ta.GREEN, ta.VIOLET, ta.ORANGE
 BLUE, NAVY, GREY, DKGREEN, YELLOW = ta.BLUE, ta.NAVY, ta.GREY, ta.DKGREEN, ta.YELLOW
@@ -969,6 +970,75 @@ class Renderer:
                 x0 = x * 3 // 2
                 surface.rectangle(ox + x0, oy + y0, (x + n) * 3 // 2 - x0, h)
         self.slot = -1
+
+    # ----- Production Deployment rivers --------------------------------------------------------
+    def draw_river(self, view, game):
+        y = self.bar(view.title)
+        y = self.lines(view.lines, y, limit=RIVER_TOP - 40)
+        self.menu_block(view, y + 2, RIVER_TOP - 2)
+        stop = view.data if isinstance(view.data, int) else tm.MERGE
+        self.river_scene(stop, RIVER_TOP, 0.0, -1, False)
+        self.hint(view.hint)
+
+    def river_scene(self, stop, top, progress, option, failed):
+        """A deploy river side on, 64 px tall. The party crosses from the left
+        bank to the right one as progress runs from 0 to 1."""
+        for hx, hr in ((96, 12), (150, 16), (214, 10)):
+            self.circle(DKGREEN, hx, top + 30, hr)
+        self.fill(NAVY, 60, top + 32, 200, 32)
+        self.waves(62, top + 36, 196, 26, 9)
+        if stop == tm.DNS:
+            for rx, ry, rr in ((104, 44, 4), (168, 52, 5), (222, 40, 3)):
+                self.circle(GREY, rx, top + ry, rr)
+                self.fill(WHITE, rx - rr - 4, top + ry + 1, 3, 1)
+        self.fill(GREEN, 0, top + 28, 60, 36)
+        self.fill(GREEN, 260, top + 28, 60, 36)
+        self.fill(DKGREEN, 0, top + 28, 60, 2)
+        self.fill(DKGREEN, 260, top + 28, 60, 2)
+        progress = max(0.0, min(1.0, progress))
+        x = int(progress * 256)
+        over = 28 <= x <= 228
+        bob = (self.now // 200) & 1 if over else 0
+        y = top + 4 + bob
+        if option == tl.FERRY:
+            self.fill(GREY, 56, top + 12, 3, 18)
+            self.fill(GREY, 261, top + 12, 3, 18)
+            self.fill(WHITE, 58, top + 14, 204, 1)
+            if over:
+                self.fill(BROWN, x + 2, top + 28 + bob, 60, 5)
+                self.fill(WHITE, x + 31, top + 15, 1, 13 + bob)
+        elif over:
+            y += 6 if option == tl.CAULK else 8
+        self.token(x, y, (self.now // 200) & 1, False, 2)
+        if over and option == tl.FORD:
+            left = max(60, x)
+            right = min(260, x + 64)
+            self.fill(NAVY, left, top + 32, right - left, y + 24 - top - 32)
+            self.waves(left, top + 33, right - left, 2, 3)
+        if failed and progress > 0.5:
+            spread = int((progress - 0.5) * 80)
+            self.circle(WHITE, x + 32, top + 32, 8 + spread // 3, 1)
+            for i in range(3):
+                self.fill(BROWN, x + 8 + i * 20 + spread * (i - 1) // 2, top + 30 + (i & 1) * 3, 6, 5)
+
+    def draw_crossing(self, view, game):
+        stop, option, failed = view.data or (tm.MERGE, tl.FORD, False)
+        progress = view.progress if view.progress is not None else 0.0
+        y = self.bar(view.title)
+        if view.lines:
+            self.pen(WHITE)
+            self.centred(self.fit(view.lines[0], TEXT_W), y + 6)
+        self.river_scene(stop, 60, progress, option, failed)
+        self.pen(WHITE)
+        self.outline(MARGIN, 140, TEXT_W, 10)
+        self.fill(GREEN, MARGIN + 2, 142, int((TEXT_W - 4) * progress), 6)
+        if failed and progress > 0.5:
+            self.pen(ORANGE)
+            self.centred("The deploy failed! Rolling back...", 160)
+        else:
+            self.pen(GREY)
+            self.centred("Shipping to production...", 160)
+        self.hint(view.hint)
 
     # ----- Dark Mode Camp ------------------------------------------------------------------------
     def camp_scene(self):
