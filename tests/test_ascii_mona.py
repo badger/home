@@ -2433,6 +2433,166 @@ class TestNet(unittest.TestCase):
         self.assertEqual(unset.start("mona", 0), ("failed", "add Wi-Fi in Settings"))
 
 
+# Your Mona -------------------------------------------------------------------
+
+
+class FakeBadge:
+    """The runtime's badge object, as far as the app needs it to start."""
+
+    def __init__(self):
+        self.ticks = 0
+        self.uid = "bad9e0051e000001"
+        self.modes = []
+
+    def mode(self, value):
+        self.modes.append(value)
+
+
+MAIN = {}
+
+
+def load_app_main():
+    """Load the app's __init__.py once, with fake runtime globals in its namespace.
+
+    The plain mona_* names, and stubs that make badgeware and missing_details
+    imports fail, sit in sys.modules only while it loads.
+    """
+    if MAIN:
+        return MAIN["module"]
+    load_app_modules()
+    stubs = {"badgeware": None, "missing_details": None, "secrets": types.SimpleNamespace()}
+    names = list(MODULE_ORDER) + list(stubs)
+    saved_modules = dict((name, sys.modules.get(name, _MISSING)) for name in names)
+    saved_path = list(sys.path)
+    saved_cwd = os.getcwd()
+    saved_flag = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        for name in MODULE_ORDER:
+            sys.modules[name] = M[name]
+        sys.modules.update(stubs)
+        spec = importlib.util.spec_from_file_location(PREFIX + "main", str(APP_DIR / "__init__.py"))
+        module = importlib.util.module_from_spec(spec)
+        module.__dict__.update({
+            "is_dir": lambda path: False,
+            "run": lambda update: None,
+            "badge": FakeBadge(),
+            "screen": FakeImage(),
+            "image": FakeImage,
+            "font": FAKE_FONT,
+            "color": FakeColor,
+            "shape": FakeShapes,
+            "mat3": FakeMat3,
+            "vec2": fake_vec2,
+            "rect": fake_rect,
+            "HIRES": 1,
+            "VSYNC": 2,
+            "BUTTON_UP": "up",
+            "BUTTON_DOWN": "down",
+            "BUTTON_LEFT": "left",
+            "BUTTON_RIGHT": "right",
+            "BUTTON_SELECT": "select",
+            "BUTTON_BACK": "back",
+        })
+        spec.loader.exec_module(module)
+    finally:
+        for name, old in saved_modules.items():
+            _restore_module(name, old)
+        sys.path[:] = saved_path
+        os.chdir(saved_cwd)
+        sys.dont_write_bytecode = saved_flag
+    MAIN["module"] = module
+    return module
+
+
+class TestOwner(unittest.TestCase):
+    """Your own Mona, as the app rebuilds it each time it opens."""
+
+    PROFILE = {
+        "login": "octocat", "name": "The Octocat", "bio": "I maintain open source and play guitar",
+        "company": "@github", "followers": 15300, "public_repos": 8, "public_gists": 8,
+        "created_at": "2011-01-25T18:44:36Z", "site_admin": False,
+    }
+
+    def setUp(self):
+        self.A = load_app_main()
+        self.D = M["mona_dna"]
+        self.L = M["mona_link"]
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.user_file = os.path.join(folder.name, "badge_user.json")
+        self.store = FakeState()
+        inject(self, self.A, BADGE_USER_FILE=self.user_file, STORE=self.store, badge=FakeBadge())
+        install_modules(self, {"badgeware": None, "missing_details": None})
+        self.settings("octocat")
+
+    def settings(self, handle):
+        install_modules(self, {"secrets": types.SimpleNamespace(GITHUB_USERNAME=handle)})
+
+    def badge_user(self, profile):
+        with open(self.user_file, "w") as file:
+            json.dump(profile, file)
+
+    def tuned(self, profile):
+        return self.D.apply_profile(self.D.dna_for("octocat"), profile)[0]
+
+    def look_up_own_profile(self):
+        """A first visit where you look up your own handle; the app saves."""
+        app = self.A.MonaApp()
+        found = M["mona_net"].slim(self.PROFILE)
+        app.lookup = types.SimpleNamespace(update=lambda now: ("profile", found))
+        app.lookup_events(0)
+        return app
+
+    def assert_owner(self, app, dna, name):
+        self.assertEqual(app.owner[:3], ("octocat", dna, name))
+        self.assertEqual(app.current, ("octocat", dna, name, "you"))
+        self.assertEqual(app.link.card, self.L.make_card("octocat", dna, name))
+
+    def test_reopen_keeps_your_looked_up_profile_without_badge_user(self):
+        first = self.look_up_own_profile()
+        dna = self.tuned(self.PROFILE)
+        self.assertNotEqual(dna, self.D.dna_for("octocat"))
+        self.assert_owner(first, dna, "The Octocat")
+        self.assertFalse(os.path.exists(self.user_file))
+        again = self.A.MonaApp()
+        self.assert_owner(again, dna, "The Octocat")
+        self.assertEqual(again.owner[3], first.owner[3])
+        self.assertTrue(again.notes)
+        self.assertEqual(again.notes, first.notes)
+
+    def test_reopen_keeps_your_saved_tweak_over_the_cached_profile(self):
+        first = self.look_up_own_profile()
+        first.tweak = self.D.nudge(first.current[1], self.D.EDIT[0][1], 1)
+        first.save_tweak()
+        mine = first.owner[1]
+        self.assertNotEqual(mine, self.tuned(self.PROFILE))
+        self.assert_owner(first, mine, "The Octocat")
+        again = self.A.MonaApp()
+        self.assert_owner(again, mine, "The Octocat")
+        self.assertEqual(again.mine, ("octocat", mine))
+
+    def test_badge_user_profile_still_comes_first_when_it_is_yours(self):
+        self.look_up_own_profile()
+        newer = dict(self.PROFILE, name="Mona Lisa Octocat", bio="", company="", followers=12)
+        self.assertNotEqual(self.tuned(newer), self.tuned(self.PROFILE))
+        self.badge_user(newer)
+        self.assert_owner(self.A.MonaApp(), self.tuned(newer), "Mona Lisa Octocat")
+        self.settings("")
+        self.assert_owner(self.A.MonaApp(), self.tuned(newer), "Mona Lisa Octocat")
+
+    def test_badge_user_for_someone_else_falls_back_to_your_cached_profile(self):
+        self.look_up_own_profile()
+        self.badge_user(dict(self.PROFILE, login="hubot", name="Hubot"))
+        self.assert_owner(self.A.MonaApp(), self.tuned(self.PROFILE), "The Octocat")
+
+    def test_no_handle_keeps_the_mystery_mona_whatever_is_cached(self):
+        self.look_up_own_profile()
+        self.settings("")
+        app = self.A.MonaApp()
+        self.assertEqual(app.owner, ("", self.D.dna_for_uid(self.A.badge.uid), "", None))
+
+
 # App files -------------------------------------------------------------------
 
 

@@ -369,14 +369,24 @@ def read_mine(value):
     return (handle, dna)
 
 
-def load_owner(mine=None):
-    """(handle, dna, name, profile) for whoever wears this badge."""
+def load_owner(mine=None, profiles=()):
+    """(handle, dna, name, profile) for whoever wears this badge.
+
+    The Badge app's saved profile tunes the Mona. When that is missing or
+    belongs to someone else, a cached lookup of the owner's handle does.
+    A saved Tweak (mine) still wins.
+    """
     profile = mona_net.slim(read_json(BADGE_USER_FILE))
     handle = nice_handle(secret("GITHUB_USERNAME"))
     if not handle and profile is not None:
         handle = profile["login"]
     if profile is not None and not same(profile["login"], handle):
         profile = None
+    if profile is None:
+        for cached in profiles:
+            if same(cached.get("login", ""), handle):
+                profile = cached
+                break
     name = profile.get("name", "") if profile is not None else ""
     if handle:
         dna = mona_dna.dna_for(handle)
@@ -426,7 +436,7 @@ class MonaApp:
         self.current = None
         self.mine = None
         self.load()
-        self.owner = load_owner(self.mine)
+        self.owner = load_owner(self.mine, self.profiles)
         if self.owner[3] is not None:
             self.remember_profile(self.owner[3])
         if self.current is None or self.current[3] == "you":
