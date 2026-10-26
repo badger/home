@@ -26,7 +26,7 @@ PERSONAL INSTALL (any project)
 5. Open your badge project folder (a plain folder is fine) before asking
    Copilot to build an app. Do not use the skill folder as the project.
    On the Hack Your Badge conference Windows machines, work directly in the
-   badger/home repository checkout (there is no "Badger Projects" Desktop
+   badger/home repository checkout (there is no "Badge Projects" Desktop
    folder).
 
 CHECK THE RESULT
