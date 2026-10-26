@@ -897,6 +897,47 @@ class TestDna(unittest.TestCase):
         self.assertEqual(D.counted(2, "repo"), "2 repos")
         self.assertEqual(D.counted(15300, "follower"), "15k followers")
 
+    def test_profile_tunes_the_mona(self):
+        D = self.D
+        base = D.dna_for("octocat")
+        profile = {
+            "login": "octocat", "bio": "I maintain open source and play guitar",
+            "company": "@github", "followers": 15300, "public_repos": 8, "public_gists": 8,
+            "created_at": "2011-01-25T18:44:36Z", "site_admin": False,
+        }
+        dna, notes = D.apply_profile(base, profile)
+        self.assertEqual(notes, ["Maintainer: from bio", "Ship It Squirrel: works at GitHub",
+                                 "Crown: 15k followers"])
+        self.assertEqual([(i, base[i], dna[i]) for i in range(D.SIZE) if base[i] != dna[i]],
+                         [(8, 12, 17), (12, 0, 35), (17, 6, 0)])
+        self.assertTrue(D.valid_dna(dna))
+        self.assertEqual(D.apply_profile(base, profile), (dna, notes))
+
+    def test_profile_rules(self):
+        D = self.D
+        base = D.dna_for("octocat")
+        dna, notes = D.apply_profile(base, {"login": "old", "created_at": "2008-01-01T00:00:00Z",
+                                            "public_repos": 150, "site_admin": True})
+        self.assertEqual(notes, ["Maintainer: 150 repos", "Ship It Squirrel: GitHub staff",
+                                 "Classic colours: joined 2008"])
+        self.assertEqual(dna[D.BODY], 0)
+        dna, notes = D.apply_profile(base, {"bio": "I make music"})
+        self.assertEqual(notes, ["Guitar: from bio"])
+        self.assertEqual(dna[D.PART0 + self.O.PROPS], self.O.find_part(self.O.PROPS, "Guitar") + 1)
+        dna, notes = D.apply_profile(base, {"bio": "Docs and design"})
+        self.assertEqual(notes, ["Designer: from bio", "Paintbrush: from bio"])
+        self.assertEqual(dna[D.TITLE], D.TITLES.index("Designer"))
+        dna, notes = D.apply_profile(base, {"public_gists": 25, "followers": 999,
+                                            "created_at": "2010-12-31T00:00:00Z"})
+        self.assertEqual(notes, ["Hacker: 25 gists", "Classic colours: joined 2010"])
+        dna, notes = D.apply_profile(base, {
+            "bio": "maintain music design docs security", "site_admin": True,
+            "followers": 5000, "created_at": "2008-01-01", "public_repos": 500})
+        self.assertEqual(len(notes), D.MAX_NOTES)
+        self.assertTrue(D.valid_dna(dna))
+        for empty in ({}, None, "nonsense", {"bio": None, "followers": "lots", "created_at": 7}):
+            self.assertEqual(D.apply_profile(base, empty), (base, []), repr(empty))
+
 
 def art_blocks(parts):
     """Every (offset, length) block the art index points at."""

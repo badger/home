@@ -20,6 +20,7 @@ MASK = 0xFFFFFFFF
 MAX_HANDLE = 39
 HANDLE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
 PREFIXES = ("https://", "http://", "www.", "github.com/", "@")
+WORD_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
 HEX = "0123456789abcdefABCDEF"
 
 # DNA fields, in byte order
@@ -118,6 +119,46 @@ THEMES = (
     ((O.HEADGEAR, "Cowboy Hat"), (O.TOPS, "Cowboy Vest"), (O.FOOTWEAR, "Cowboy Boots"), (O.PROPS, "Lasso"), (O.MISC, "Cowboy Buckle Belt")),
     ((O.TOPS, "World Cup Jersey"), (O.BOTTOMS, "Soccer Shorts"), (O.FOOTWEAR, "Cleats"), (O.PROPS, "Soccer Ball")),
 )
+
+# Bio keywords, checked in order; a leading space anchors the start of a word
+# and a trailing space the end of one.
+TITLE_WORDS = (
+    (" maintain", 0), (" open source", 0), (" oss ", 0), (" foss ", 0),
+    (" hack", 1), (" security", 1), (" infosec", 1), (" ctf ", 1),
+    (" design", 2), (" ux ", 2), (" ui ", 2), (" artist", 2), (" illustrat", 2),
+    (" ship", 3), (" devops", 3), (" sre ", 3), (" founder", 3), (" startup", 3),
+    (" docs ", 4), (" documentation", 4), (" writer", 4), (" author", 4),
+    (" bug", 5), (" qa ", 5), (" tester", 5), (" testing", 5), (" quality", 5),
+    (" mentor", 6), (" teach", 6), (" educat", 6), (" advocate", 6), (" devrel", 6),
+    (" community", 6), (" speaker", 6),
+    (" explor", 7), (" research", 7), (" student", 7), (" learn", 7), (" scien", 7),
+)
+# (bio keywords, items): interests a bio states, earliest first. The first
+# match for a category wins.
+BIO_ITEMS = (
+    ((" music", " guitar", " band "), ((O.PROPS, "Guitar"),)),
+    ((" design", " artist", " illustrat", " paint"), ((O.PROPS, "Paintbrush"),)),
+    ((" game", " gaming"), ((O.PROPS, "Game Controller"),)),
+    ((" space ", " astro", " nasa ", " rocket", " aerospace"),
+     ((O.TOPS, "Astronaut"), (O.BOTTOMS, "Space Pants"), (O.FOOTWEAR, "Astronaut"))),
+    ((" wizard", " magic"), ((O.HEADGEAR, "Wizard Hat"), (O.TOPS, "Wizard Robe"), (O.PROPS, "Wizard Wand"))),
+    ((" security", " hacker", " infosec", " ctf "), ((O.TOPS, "Zip Up Hoodie"),)),
+    ((" ship", " devops", " sre "), ((O.PROPS, "Ship It Squirrel"),)),
+    ((" sponsor", " open source", " oss ", " foss "), ((O.PROPS, "Sponsor Heart"),)),
+    ((" boba",), ((O.PROPS, "Boba Cup"),)),
+    ((" tea ", " coffee", " espresso", " caffeine"), ((O.PROPS, "Tea Mug"),)),
+    ((" scien", " research", " phd ", " lab "), ((O.TOPS, "Lab Coat"),)),
+    ((" data ", " analyst", " analytics"), ((O.PROPS, "Magnifying Glass"),)),
+    ((" book", " writer", " author", " docs ", " documentation", " reading"), ((O.PROPS, "Books"),)),
+    ((" photo",), ((O.MISC, "Camera"),)),
+    ((" ruby", " rails "), ((O.PROPS, "Ruby Gem"),)),
+    ((" skate",), ((O.PROPS, "Skateboard"),)),
+    ((" soccer", " football "), ((O.PROPS, "Soccer Ball"),)),
+    ((" podcast", " speaker", " singer"), ((O.PROPS, "Microphone"),)),
+    ((" mobile", " ios ", " android "), ((O.PROPS, "Smartphone"),)),
+    ((" developer", " engineer", " programmer", " coder", " code ", " laptop"), ((O.PROPS, "Laptop"),)),
+)
+MAX_NOTES = 4
 
 # (label, field) in Tweak order
 EDIT = (
@@ -519,8 +560,111 @@ def counted(n, word):
     return compact(n) + " " + word + ("" if _count(n) == 1 else "s")
 
 
+def _words(text):
+    """Lower-case text with every non [a-z0-9] run as one space, space-padded."""
+    if not isinstance(text, str) or not text:
+        return " "
+    out = [" "]
+    for ch in text.lower():
+        if ch in WORD_CHARS:
+            out.append(ch)
+        elif out[-1] != " ":
+            out.append(" ")
+    if out[-1] != " ":
+        out.append(" ")
+    return "".join(out)
+
+
+def _first_match(words, table):
+    for needle, value in table:
+        if needle in words:
+            return value
+    return None
+
+
 def _count(value):
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _year(value):
+    if not isinstance(value, str) or len(value) < 4:
+        return 0
+    try:
+        return int(value[:4])
+    except ValueError:
+        return 0
+
+
+def _put(dna, cat, name, taken):
+    """Wear a named part unless something earlier claimed its category."""
+    if cat in taken:
+        return False
+    index = O.find_part(cat, name)
+    if index < 0:
+        return False
+    _set_part(dna, cat, index)
+    taken.append(cat)
+    return True
+
+
+def apply_profile(dna, profile):
+    """Tune DNA with a public GitHub profile; returns (dna, notes).
+
+    Only what a profile states changes the Mona: bio interests, activity,
+    followers and join year. It never guesses faith, culture, ethnicity,
+    gender or disability.
+    """
+    notes = []
+    if not isinstance(profile, dict) or not valid_dna(dna):
+        return dna, notes
+    out = list(dna)
+    taken = []
+    bio = _words(profile.get("bio"))
+    company = _words(profile.get("company"))
+
+    title_index = _first_match(bio, TITLE_WORDS)
+    if title_index is not None:
+        notes.append(TITLES[title_index] + ": from bio")
+    else:
+        repos = _count(profile.get("public_repos"))
+        gists = _count(profile.get("public_gists"))
+        if repos >= 100:
+            title_index = 0
+            notes.append("Maintainer: %s repos" % compact(repos))
+        elif gists >= 20:
+            title_index = 1
+            notes.append("Hacker: %s gists" % compact(gists))
+    if title_index is not None:
+        out[TITLE] = title_index
+
+    staff = profile.get("site_admin") is True
+    if (staff or " github " in company) and _put(out, O.PROPS, "Ship It Squirrel", taken):
+        notes.append("Ship It Squirrel: " + ("GitHub staff" if staff else "works at GitHub"))
+
+    followers = _count(profile.get("followers"))
+    if followers >= 1000 and _put(out, O.HEADGEAR, "Crown", taken):
+        notes.append("Crown: %s followers" % compact(followers))
+
+    year = _year(profile.get("created_at"))
+    if year and year <= 2010:
+        out[BODY] = 0
+        notes.append("Classic colours: joined %d" % year)
+
+    for needles, items in BIO_ITEMS:
+        hit = False
+        for needle in needles:
+            if needle in bio:
+                hit = True
+                break
+        if not hit:
+            continue
+        first = None
+        for cat, name in items:
+            if _put(out, cat, name, taken) and first is None:
+                first = name
+        if first is not None:
+            notes.append(first + ": from bio")
+    return tuple(out), notes[:MAX_NOTES]
