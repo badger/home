@@ -404,6 +404,26 @@ class TrailTests(unittest.TestCase):
         self.assertEqual(trail.facing, 1)
         self.assertEqual((trail.x, trail.y, trail.steps), (0, 0, 8))
 
+    def test_steps_per_day_modifiers(self):
+        trail = stocked()
+        speeds = []
+        for pace in range(3):
+            trail.pace = pace
+            speeds.append(trail.steps_per_day())
+        self.assertEqual(speeds, [20, 26, 34])
+        trail.pace = 0
+        trail.turbo_days = 1
+        self.assertEqual(trail.steps_per_day(), 35)
+        trail.turbo_days = 0
+        trail.tailwind = 2
+        self.assertEqual(trail.steps_per_day(), 35)
+        trail.tailwind = 0
+        trail.supplies["brew"] = 0
+        self.assertEqual(trail.steps_per_day(), 15)
+        for member in trail.members:
+            member.health = 30
+        self.assertEqual(trail.steps_per_day(), 12)
+
     def test_blocked_reasons(self):
         trail = stocked()
         cases = ((tm.FENCE, 0, "Load-in zone: no entry from the plaza."),
@@ -582,6 +602,17 @@ class TrailEventTests(unittest.TestCase):
         self.assertEqual(trail.store_keys(), ("patches",))
         self.assertEqual(trail.price("patches"), 40)
 
+    def test_arrive_kinds(self):
+        trail = stocked()
+        trail.turbo_days = 3
+        self.assertEqual(trail.arrive(tm.END, []), "victory")
+        self.assertEqual(trail.turbo_days, 0)
+        self.assertTrue(trail.finished())
+        river = stocked()
+        self.assertEqual(river.arrive(tm.MERGE, []), "river")
+        self.assertEqual(river.river, [20, 140])
+        self.assertFalse(river.has_visited(tm.MERGE))
+
 
 class TrailShopRiverTests(unittest.TestCase):
     def test_store_prices(self):
@@ -609,6 +640,27 @@ class TrailShopRiverTests(unittest.TestCase):
         trail.arrive(1, [])
         self.assertEqual(trail.basket, {})
         self.assertEqual(trail.sell_back("brew", 10), 0)
+
+    def test_turbo_sprint_cycle(self):
+        trail = stocked(brew=0.0)
+        self.assertFalse(trail.can_sprint())
+        self.assertFalse(trail.start_sprint())
+        trail.supplies["brew"] = 100.0
+        self.assertTrue(trail.start_sprint())
+        self.assertEqual((trail.turbo_days, trail.ticker), (tl.TURBO_DAYS, "Turbo sprint! 6 days of hustle."))
+        self.assertFalse(trail.start_sprint())
+        self.assertAlmostEqual(trail.brew_per_day(), 1.5)
+        trail.idle_days(1, [])
+        self.assertAlmostEqual(trail.supplies["brew"], 98.5)
+        self.assertEqual(trail.members[0].health, 98)
+        for _ in range(5):
+            trail._end_day()
+        self.assertEqual((trail.turbo_days, trail.turbo_cooldown), (0, tl.TURBO_COOLDOWN))
+        self.assertEqual(trail.ticker, "Turbo sprint over. Catch your breath.")
+        self.assertFalse(trail.can_sprint())
+        for _ in range(tl.TURBO_COOLDOWN):
+            trail._end_day()
+        self.assertTrue(trail.can_sprint())
 
     def test_river_risk(self):
         trail = at_river(tm.MERGE)

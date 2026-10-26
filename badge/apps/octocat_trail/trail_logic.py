@@ -58,6 +58,10 @@ REST_HEAL = 5
 DRY_STRAIN = 7
 SICK_DANGER = 35
 SICK_DEATH = 0.12
+TURBO_DAYS = 6
+TURBO_COOLDOWN = 8
+TURBO_BREW = 1.5
+TURBO_STRAIN = 2
 # (stop, supply or "health", amount, line) granted on the first visit.
 SIGHTS = (
     (2, "lgtm", 20, "The maintainers stamped 20 LGTMs for the road."),
@@ -290,6 +294,8 @@ class Trail:
         self.healed_day = -HEAL_DAYS
         self.basket = {}
         self.river = None
+        self.turbo_days = 0
+        self.turbo_cooldown = 0
         self.tailwind = 0
         self.last_cause = CAUSE_EXHAUSTION
         self.ticker = "Outfit the wagon at the Gatehouse store."
@@ -323,6 +329,8 @@ class Trail:
 
     def brew_per_day(self):
         need = self.living_count() * RATIONS[self.rations][1]
+        if self.turbo_days > 0:
+            need *= TURBO_BREW
         return need
 
     # ----- calendar -----------------------------------------------------------
@@ -400,7 +408,7 @@ class Trail:
     # ----- walking ------------------------------------------------------------
     def steps_per_day(self):
         steps = PACES[self.pace][1]
-        if self.tailwind > 0:
+        if self.turbo_days > 0 or self.tailwind > 0:
             steps = steps * 7 // 4
         if self.supplies["brew"] <= 0:
             steps = steps * 3 // 4
@@ -482,6 +490,7 @@ class Trail:
         first = not self.has_visited(stop)
         self.visited |= 1 << stop
         if kind == "end":
+            self.turbo_days = 0
             return "victory"
         if first:
             for entry in SIGHTS:
@@ -576,7 +585,10 @@ class Trail:
         living = self.living()
         if not living:
             return
+        sprinting = self.turbo_days > 0 and not resting
         need = len(living) * RATIONS[self.rations][1]
+        if sprinting:
+            need *= TURBO_BREW
         dry = self.supplies["brew"] + 0.0001 < need
         self.supplies["brew"] = max(0.0, self.supplies["brew"] - need)
         for member in living:
@@ -585,6 +597,8 @@ class Trail:
                 delta += REST_HEAL
             else:
                 delta += PACES[self.pace][2] - TRAIL_WEAR
+                if sprinting:
+                    delta -= TURBO_STRAIN
             sick = member.illness >= 0
             if sick:
                 delta -= ILLNESSES[member.illness][3]
@@ -611,6 +625,13 @@ class Trail:
         self.day += 1
         if self.tailwind > 0:
             self.tailwind -= 1
+        if self.turbo_days > 0:
+            self.turbo_days -= 1
+            if self.turbo_days == 0:
+                self.turbo_cooldown = TURBO_COOLDOWN
+                self.ticker = "Turbo sprint over. Catch your breath."
+        elif self.turbo_cooldown > 0:
+            self.turbo_cooldown -= 1
 
     def idle_days(self, days, lines, resting=False):
         for _ in range(days):
@@ -623,6 +644,18 @@ class Trail:
         lines = []
         self.idle_days(1, lines, resting=True)
         return lines
+
+    # ----- sprinting ----------------------------------------------------------
+    def can_sprint(self):
+        return (self.turbo_days == 0 and self.turbo_cooldown == 0 and self.supplies["brew"] > 0
+                and not self.all_dead())
+
+    def start_sprint(self):
+        if not self.can_sprint():
+            return False
+        self.turbo_days = TURBO_DAYS
+        self.ticker = "Turbo sprint! %d days of hustle." % TURBO_DAYS
+        return True
 
     # ----- events -------------------------------------------------------------
     def _illness_chance(self):
