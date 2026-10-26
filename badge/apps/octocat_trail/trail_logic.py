@@ -1296,6 +1296,51 @@ class Hunt:
         return lines
 
 
+# ----- sensors --------------------------------------------------------------
+class ShakeDetector:
+    """Orientation- and unit-agnostic shake detection from accelerometer
+    magnitude spikes around a slowly adapting gravity baseline."""
+
+    def __init__(self, threshold=0.55, peaks=3, window_ms=1200, cooldown_ms=2000, min_baseline=0.5):
+        self.threshold = threshold
+        self.peaks_needed = peaks
+        self.window_ms = window_ms
+        self.cooldown_ms = cooldown_ms
+        self.min_baseline = min_baseline
+        self.baseline = 0.0
+        self.above = False
+        self.peaks = []
+        self.quiet_until = 0
+
+    def update(self, now_ms, ax, ay, az):
+        ax = float(ax)
+        ay = float(ay)
+        az = float(az)
+        magnitude = math.sqrt(ax * ax + ay * ay + az * az)
+        if self.baseline < self.min_baseline:
+            self.baseline = magnitude
+            return False
+        deviation = abs(magnitude - self.baseline) / self.baseline
+        if deviation < self.threshold * 0.5:
+            self.baseline += (magnitude - self.baseline) * 0.02
+            self.above = False
+        elif deviation >= self.threshold and not self.above:
+            self.above = True
+            self.peaks.append(now_ms)
+        recent = []
+        for stamp in self.peaks:
+            if now_ms - stamp <= self.window_ms:
+                recent.append(stamp)
+        self.peaks = recent
+        if now_ms < self.quiet_until:
+            return False
+        if len(self.peaks) >= self.peaks_needed:
+            self.peaks = []
+            self.quiet_until = now_ms + self.cooldown_ms
+            return True
+        return False
+
+
 def tombstone_record(step, cause, epitaph, role, beamed):
     return [
         clamp_int(step, 0, MAX_STEPS),

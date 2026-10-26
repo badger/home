@@ -1043,6 +1043,26 @@ class HuntTests(unittest.TestCase):
         self.assertTrue(trail.start_hunt().meadow)
 
 
+class DetectorTests(unittest.TestCase):
+    def test_shake_fires_once_per_burst(self):
+        for sign in (1, -1):
+            shake = tl.ShakeDetector()
+            self.assertFalse(shake.update(0, 0, 16384 * sign, 0))
+            fired = [shake.update((i + 1) * 50, 0, (40000 if i % 2 == 0 else 16384) * sign, 0) for i in range(12)]
+            self.assertEqual((fired.index(True), fired.count(True)), (4, 1))
+
+    def test_shake_ignores_steady_and_slow_motion(self):
+        for value in (16384, -16384, 0):
+            steady = tl.ShakeDetector()
+            self.assertFalse(any(steady.update(t * 50, 0, value, 0) for t in range(100)))
+        slow = tl.ShakeDetector()
+        slow.update(0, 0, 16384, 0)
+        self.assertFalse(any(slow.update((i + 1) * 500, 0, 40000 if i % 2 == 0 else 16384, 0) for i in range(20)))
+        tilted = tl.ShakeDetector()
+        tilted.update(0, 0, 16384, 0)
+        self.assertFalse(any(tilted.update(t * 50, 16384, 0, 0) for t in range(1, 50)))
+
+
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
 
