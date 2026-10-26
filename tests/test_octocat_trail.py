@@ -73,6 +73,16 @@ def reachable_stops(deployed):
     return found
 
 
+def sprite_frames(value):
+    """Flatten a sprite (rows of strings) or a tuple of frames into frames."""
+    if isinstance(value, tuple) and value and isinstance(value[0], str):
+        return [value]
+    frames = []
+    for item in value:
+        frames.extend(sprite_frames(item))
+    return frames
+
+
 class LoaderTests(unittest.TestCase):
     def test_modules_load_under_unique_names_without_leaking(self):
         for name in MODULES:
@@ -168,6 +178,7 @@ class MapTests(unittest.TestCase):
 
 
 class ArtTests(unittest.TestCase):
+    SPRITES = ("DUCK", "WAGON", "WHEEL", "ROPE", "MONA", "BUG", "SLOP", "STAMP", "TREE", "FLAG", "FIRE")
 
     def test_palette_matches_letters(self):
         self.assertEqual(len(ta.PALETTE), 18)
@@ -192,6 +203,24 @@ class ArtTests(unittest.TestCase):
             self.assertGreaterEqual(rgb[1], 60)
             self.assertGreater(rgb[1], rgb[0])
             self.assertGreater(rgb[1], rgb[2])
+
+    def test_every_sprite_compiles_with_palette_letters(self):
+        for name in self.SPRITES:
+            frames = sprite_frames(getattr(ta, name))
+            self.assertTrue(frames, name)
+            for rows in frames:
+                for row in rows:
+                    for ch in row:
+                        self.assertTrue(ch == "." or ch in ta.LETTERS, (name, ch))
+                width, height, runs = ta.compile_rows(rows)
+                self.assertTrue(0 < width < 64 and 0 < height < 64, name)
+                self.assertTrue(runs, name)
+                keys = [run[3] * 4096 + run[1] * 64 + run[0] for run in runs]
+                self.assertEqual(keys, sorted(keys))
+                self.assertEqual(len(set(keys)), len(keys))
+                for x, y, n, slot in runs:
+                    self.assertTrue(0 <= x and x + n <= width and 0 <= y < height)
+                    self.assertEqual(rows[y][x:x + n], ta.LETTERS[slot] * n)
 
     def test_compile_rows_example_and_bad_letter(self):
         self.assertEqual(ta.compile_rows(("KK.W",)), (4, 1, ((0, 0, 2, 0), (3, 0, 1, 1))))

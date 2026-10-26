@@ -156,6 +156,113 @@ MONA = (
     ),
 )
 
+# ----- the hunt ------------------------------------------------------------
+BUG = (
+    (
+        ".W.....W.",
+        "..W.R.W..",
+        "W..RRR..W",
+        ".WRRKRRW.",
+        "...RKR...",
+        ".WRRKRRW.",
+        "W..RRR..W",
+    ),
+    (
+        ".W.....W.",
+        "..W.R.W..",
+        ".W.RRR.W.",
+        "W.RRKRR.W",
+        "...RKR...",
+        "W.RRKRR.W",
+        ".W.RRR.W.",
+    ),
+)
+SLOP = (
+    (
+        "......AAAAA....V.",
+        "....AAAAAAAAA.VVV",
+        "...AAAAAAAAAAA.V.",
+        "..AAAWKAAAAWKAA..",
+        "..AAAKKAAAAKKAA..",
+        ".AAAAAAAAAAAAAAA.",
+        ".AAAAAKKKKKAAAAA.",
+        "AAAAAAAAAAAAAAAAA",
+        "AAAAAAAAAAAAAAAAA",
+        ".AAAAAAAAAAAAAAA.",
+        ".AA.AAAAA.AAAA.A.",
+        ".A...AAA...AA....",
+        ".....A...........",
+    ),
+    (
+        ".................",
+        ".....AAAAAAA..V..",
+        "...AAAAAAAAAAVVV.",
+        "..AAAWKAAAAWKAV..",
+        ".AAAAKKAAAAKKAAA.",
+        ".AAAAAAAAAAAAAAA.",
+        "AAAAAAKKKKKAAAAAA",
+        "AAAAAAAAAAAAAAAAA",
+        "AAAAAAAAAAAAAAAAA",
+        ".AAAAAAAAAAAAAAA.",
+        "..AAAA.AAAAA.AA..",
+        "...AA...AAA...A..",
+        ".........A.......",
+    ),
+)
+STAMP = (
+    "GGGGG",
+    "GWGWG",
+    "GGWGG",
+    "GWGWG",
+    "GGGGG",
+)
+
+# ----- scenery --------------------------------------------------------------
+TREE = (
+    "..DDDD..",
+    ".DGGDDD.",
+    "DGGDDDDD",
+    "DGDDDDDD",
+    ".DDDDDD.",
+    "..DDDD..",
+    "...bb...",
+    "...bb...",
+)
+FLAG = (
+    "VV...",
+    "VVVV.",
+    "VVVVV",
+    "VVV..",
+    "W....",
+    "W....",
+    "W....",
+    "W....",
+)
+FIRE = (
+    (
+        "....R....",
+        "...ROR...",
+        "..ROYOR..",
+        "..OYYYO..",
+        ".ROYWYOR.",
+        ".OYYWYYO.",
+        "bbOYYYObb",
+        ".bbbbbbb.",
+        "bb.....bb",
+    ),
+    (
+        "...R.....",
+        "...RO..R.",
+        "..ROYOR..",
+        ".ROYYYO..",
+        ".OYYWYOR.",
+        ".OYWWYYO.",
+        "bbOYYYObb",
+        ".bbbbbbb.",
+        "bb.....bb",
+    ),
+)
+
 _cache = {}
 
 
