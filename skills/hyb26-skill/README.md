@@ -19,12 +19,18 @@ Universe 2026 badge. It works on macOS, Linux, and Windows.
 
 ## Use it in this repository
 
-Copilot discovers skills in `.github/skills/` automatically. Open a session in
-a `badger/home` checkout and ask, for example:
+Copilot discovers the thin loader in `.github/skills/` automatically; the
+canonical skill and tools live here in `skills/hyb26-skill/`. Open a session
+in a `badger/home` checkout and ask, for example:
 
 > Use hyb26-skill to make a dice app and install it on my badge.
 
 ## Install it for your own projects
+
+For the complete plugin, including the 2026 canvas and its testing skill, use
+`copilot plugin install badger/home` after the plugin is published. See the
+[repository README](../../README.md#agent-plugin). The personal installer below
+copies only this development skill, not the canvas.
 
 Requires Python 3.10+. From this folder:
 

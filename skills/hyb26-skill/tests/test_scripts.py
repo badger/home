@@ -85,7 +85,7 @@ class SkillScriptTests(unittest.TestCase):
             self.assertFalse([issue for issue in issues if "README" in issue.message])
 
     def test_scaffold_readme_passes_repository_readme_check(self):
-        checker = SCRIPT_DIR.parents[3] / ".github" / "scripts" / "validate_app_readmes.py"
+        checker = SCRIPT_DIR.parents[2] / ".github" / "scripts" / "validate_app_readmes.py"
         if not checker.is_file():
             self.skipTest("Repository README checker is not available")
         spec = importlib.util.spec_from_file_location("validate_app_readmes", checker)

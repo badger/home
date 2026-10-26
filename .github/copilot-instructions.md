@@ -45,7 +45,8 @@ The repository targets the **GitHub Universe 2026 badge** by default.
 ## Testing apps in the Badge Simulator canvas
 
 This repository ships a **Badge Simulator** canvas in
-`.github/extensions/badge-simulator/` (see its `README.md`). When creating,
+`com.github.copilot/extensions/badge-simulator/` (with a thin loader under
+`.github/extensions/badge-simulator/`; see its `README.md`). When creating,
 changing or testing an app, open it beside the conversation with
 `open_canvas` using `canvasId: "badge-simulator"` and
 `input: { "app": "<folder under badge/apps>" }`.

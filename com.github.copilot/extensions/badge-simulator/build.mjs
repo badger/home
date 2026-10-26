@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Rebuilds the Badge Simulator canvas assets from badger/badger.github.io.
 //
-//   node .github/extensions/badge-simulator/build.mjs [--ref <git-ref>] [--site <checkout>]
+//   node com.github.copilot/extensions/badge-simulator/build.mjs [--ref <git-ref>] [--site <checkout>]
 //
 // It bundles src/entry.ts with the site's simulator modules into
 // web/simulator.js and records the site revision in web/BUILD_INFO.json. At

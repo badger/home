@@ -98,6 +98,58 @@ If your app includes images, sounds, or other assets:
 - Optimize file sizes when possible (the badge has limited storage)
 - Ensure you have the rights to use any third-party assets
 
+## Agent Plugin and canvas
+
+The repository root is the installable plugin; do not add a legacy
+`.github/plugin/plugin.json` or Awesome Copilot's internal composition
+namespace. Portable skills belong in `skills/`, with their scripts and
+references. Copilot canvas code belongs in
+`com.github.copilot/extensions/badge-simulator/`. Keep the `.github/` project
+loaders thin so project and installed-plugin behavior cannot drift.
+Only the Universe 2026 simulator is exposed.
+
+Run these checks from the repository root (Node.js 24+ and Python 3.10+):
+
+```sh
+node --experimental-vm-modules --test tests/plugin.test.mjs
+python -m unittest discover -s skills/hyb26-skill/tests -v
+copilot --plugin-dir . plugin list
+```
+
+CI also runs Awesome Copilot's pinned `@microsoft/vally` skill checks via
+`.github/scripts/lint_plugin.mjs`. This validator is a development-only tool;
+the installed canvas has no npm dependencies to restore.
+
+The Node tests exercise the actual extension with a mocked SDK connection,
+including installation outside the app project, HTTP assets, app switching,
+live reload, deployment requests, and lifecycle cleanup. Also open the
+`badge-simulator` canvas in the Copilot app, run `check_app`, and exercise
+`run_script`, `get_output`, `screenshot`, and `exec`. A real simulator screen
+capture belongs at `assets/preview.png`; it is the marketplace logo, not a
+placeholder.
+
+### Awesome Copilot external-plugin submission
+
+Follow [Awesome Copilot's external-plugin workflow](https://github.com/github/awesome-copilot/blob/main/CONTRIBUTING.md#adding-external-plugins).
+Do **not** send a PR editing its `plugins/external.json`.
+
+1. Publish these changes in the public `badger/home` repository. Choose a
+   release tag and/or full 40-character commit SHA containing the plugin.
+   Do not submit a mutable branch or a SHA predating these files.
+2. Open its [external plugin submission form](https://github.com/github/awesome-copilot/issues/new?template=external-plugin.yml).
+   Use `universe-2026-badge`, version `1.0.0` (or the current manifest version),
+   repository `badger/home`, and plugin path `/` (repository root).
+   Copy the description, author, license, and keywords from `plugin.json`.
+   Include **canvas** in the keywords and the immutable revision from step 1.
+3. Note that the canvas entry point is
+   `com.github.copilot/extensions/badge-simulator/extension.mjs`, the logo is
+   `assets/preview.png` via `extensions.com.github.copilot.logo`, and skills
+   are discovered from `skills/`. No materialization step is needed.
+4. Intake checks the manifest, skill lint, installation, version/revision
+   consistency, and canvas structure. Resolve any requested fixes and update
+   the submitted immutable revision before requesting another intake pass.
+   Marketplace listing still requires maintainer approval.
+
 ## Code Review
 
 All submissions require review before being merged. We'll check that:
