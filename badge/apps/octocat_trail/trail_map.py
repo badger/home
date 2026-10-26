@@ -12,6 +12,9 @@ SHORE = ((0, 116), (4, 66), (66, 64), (82, 52), (96, 56))
 # (row, column) points of the plaza/meadow boundary: plaza west of it, meadow east.
 EDGE = ((52, 96), (63, 87), (92, 72), (101, 66), (106, 59), (120, 25), (139, 25))
 
+PIERS = ((5, 16, 13, 65), (34, 1, 45, 65), (66, 1, 80, 63))
+SHEDS = ((7, 18, 11, 62), (36, 3, 43, 61), (68, 3, 78, 59))
+
 _grid = None
 
 
@@ -34,6 +37,13 @@ def _edge16(y):
     return EDGE[-1][1] * 16
 
 
+def _fill(g, x0, y0, x1, y1, code):
+    for y in range(y0, y1 + 1):
+        row = y * W
+        for x in range(x0, x1 + 1):
+            g[row + x] = code
+
+
 def build():
     g = bytearray(W * H)
     shore = [_shore(x) for x in range(W)]
@@ -43,6 +53,10 @@ def build():
         for x in range(W):
             if y >= shore[x]:
                 g[row + x] = LOT if x * 16 < edge else GRASS
+    for x0, y0, x1, y1 in PIERS:
+        _fill(g, x0, y0, x1, y1, DECK)
+    for x0, y0, x1, y1 in SHEDS:
+        _fill(g, x0, y0, x1, y1, ROOF)
     return g
 
 
