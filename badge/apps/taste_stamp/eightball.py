@@ -23,6 +23,9 @@ SETTLE_MS_PER_DEG = 2.2
 IDLE_SPIN = 0.7
 # The app hides the numbers while the d20 spins at least this fast.
 BLUR_SPEED = 6.0
+# A reroll waits for this speed, so friction alone keeps the numbers hidden
+# for FRICTION_TAU * ln(1.5), about 280 ms, after the swap.
+REROLL_SPEED = 1.5 * BLUR_SPEED
 
 
 def _sub(a, b):
@@ -382,12 +385,15 @@ class Ball:
                 w = self.omega
                 self.omega = (w[0] * k, w[1] * k, w[2] * k)
             self._rotate(dt)
-            if self.reroll and self.speed() >= BLUR_SPEED:
+            if self.reroll and self.speed() >= REROLL_SPEED:
                 # Friction turns the d20 through nearly the same angle on
                 # every spin, so the landing face would follow the face shown
                 # at the kick. While the numbers are hidden, swap in one of
                 # its 60 identical-looking symmetric poses at random, which
-                # makes every face equally likely.
+                # makes every face equally likely. A nudge adds to a d20 that
+                # may have slowed enough to show its numbers; swapping just
+                # past BLUR_SPEED would show them again a frame later on
+                # different faces.
                 self.reroll = False
                 pose = min(59, int(self.rand() * 60))
                 self.q = q_normalise(q_mul(self.q, self.symmetry(pose // 3, pose % 3)))

@@ -803,6 +803,37 @@ class EightBallTests(unittest.TestCase):
             for speed in jumps:
                 self.assertGreaterEqual(speed, E.BLUR_SPEED)
 
+    def test_a_nudge_never_rerolls_just_before_the_numbers_show(self):
+        # A reversal nudge adds to a d20 that may have slowed enough to show
+        # its numbers. Rerolling just past BLUR_SPEED showed them again a
+        # frame later on different faces, so a reroll must leave them hidden
+        # for at least a quarter of a second.
+        step = E.MAX_SPIN * 16 / 1000 + 0.01
+        hidden = []
+        for seed in range(120):
+            for slow in (E.BLUR_SPEED, 4.9):
+                ball = E.Ball(V.Rng(seed).random)
+                ball.kick(18, 0)
+                t = 0
+                while ball.speed() >= slow:
+                    t += 16
+                    ball.update(16, t)
+                ball.kick(5, t)
+                q = ball.q
+                swapped = None
+                while ball.state == E.SPINNING:
+                    t += 16
+                    ball.update(16, t)
+                    if E.q_angle(q, ball.q) > step:
+                        self.assertIsNone(swapped, seed)
+                        swapped = t
+                    q = ball.q
+                    if swapped is not None and ball.speed() < E.BLUR_SPEED:
+                        hidden.append(t - swapped)
+                        break
+        self.assertGreaterEqual(len(hidden), 10)
+        self.assertGreaterEqual(min(hidden), 250)
+
     def test_repeat_spins_land_fairly(self):
         # Friction turns the d20 through nearly the same angle on every spin,
         # so without the reroll back-to-back DOWN presses landed on the same
