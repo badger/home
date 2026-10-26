@@ -404,6 +404,7 @@ class App:
         self.glow_start = None
         self.lights = None
         self.link = beam.Beam(len(verdicts.VERDICTS), len(verdicts.PROMPTS), beam.make_sender())
+        self.link.receiving = beam.listen(self.link.heard)
         self.render_desk()
 
     # Frame loop.
@@ -494,6 +495,18 @@ class App:
     def handle_ir(self, now):
         if not self.link.pump(now):
             self.toast("IR SEND FAILED", now)
+        message = self.link.receive(now)
+        if message is None:
+            return
+        kind, index = message
+        if kind == beam.VERDICT:
+            self.switch_mode(STAMP_MODE)
+            self.start_slam(index, now)
+            self.toast("FROM A NEARBY BADGE", now)
+        else:
+            self.switch_mode(BALL_MODE)
+            self.kick(16, now, index + 1)
+            self.toast("INCOMING PROMPT", now)
 
     # Modes and choices.
 
@@ -525,8 +538,8 @@ class App:
             return "RANDOM"
         return verdicts.VERDICTS[self.choice]
 
-    def kick(self, strength, now):
-        self.ball.kick(strength, now)
+    def kick(self, strength, now, forced=None):
+        self.ball.kick(strength, now, forced)
         self.prompt = None
 
     def toast(self, text, now):
