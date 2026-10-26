@@ -70,6 +70,7 @@ SIGHTS = (
     (5, "brew", 15, "A recruiter slipped you 15 Cold Brew Kegs."),
     (10, "health", 10, "A standing ovation lifts every spirit. Health +10."),
 )
+SIGHT_POINTS = 40
 HEAL_DAYS = 5
 HEAL_AMOUNT = 15
 
@@ -114,6 +115,7 @@ RIVERS = (
 FORD, CAULK, FERRY, WAIT = 0, 1, 2, 3
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
+HEALTH_POINTS = ((70, 500), (40, 400), (20, 300), (0, 200))
 
 EVENT_CHANCE = 0.09
 FRIDAY_FORCE_PUSH = 0.12
@@ -191,6 +193,13 @@ def health_label(health):
         if health >= floor:
             return label
     return HEALTH_LABELS[-1][1]
+
+
+def health_points(health):
+    for floor, points in HEALTH_POINTS:
+        if health >= floor:
+            return points
+    return HEALTH_POINTS[-1][1]
 
 
 def role_label(index):
@@ -900,6 +909,20 @@ class Trail:
         self.facing = 1
         self.at = -1
         self.river = None
+
+    # ----- scoring ----------------------------------------------------------
+    def score(self):
+        points = 0
+        for member in self.living():
+            points += health_points(member.health)
+        if points:
+            points += 50
+            points += int(self.supplies["patches"]) * 2
+            points += int(self.supplies["lgtm"]) // 50
+            points += int(self.supplies["brew"]) // 25
+            points += int(self.supplies["credits"]) // 5
+            points += self.sights_seen() * SIGHT_POINTS
+        return points * self.multiplier()
 
 
 # ----- hunt mini-game -------------------------------------------------------

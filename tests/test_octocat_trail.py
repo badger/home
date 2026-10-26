@@ -285,6 +285,14 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(tl.wrap("  a  b ", 10, len), ["a b"])
         self.assertEqual(tl.wrap("", 10, len), [""])
 
+    def test_health_tables(self):
+        cases = ((100, "Good", 500), (70, "Good", 500), (69, "Fair", 400), (40, "Fair", 400),
+                 (39, "Poor", 300), (20, "Poor", 300), (19, "Very poor", 200), (0, "Very poor", 200),
+                 (-5, "Very poor", 200))
+        for health, label, points in cases:
+            self.assertEqual(tl.health_label(health), label)
+            self.assertEqual(tl.health_points(health), points)
+
     def test_store_items(self):
         self.assertEqual(tl.store_item("brew")[1], 4)
         self.assertEqual(tl.carry_limit("patches"), 9)
@@ -458,6 +466,22 @@ class TrailTests(unittest.TestCase):
         self.assertEqual([member.health for member in trail.members], [56] * 5)
         self.assertEqual(trail.day, 2)
         self.assertAlmostEqual(trail.supplies["brew"], 199.0)
+
+    def test_running_dry_kills_by_withdrawal(self):
+        trail = stocked(brew=0.0)
+        for member in trail.members:
+            member.health = 5
+        lines = []
+        trail.idle_days(1, lines)
+        self.assertTrue(trail.all_dead())
+        self.assertEqual(trail.last_cause, tl.CAUSE_WITHDRAWAL)
+        self.assertIn("Markus has died of caffeine withdrawal.", lines)
+        self.assertEqual(trail.ticker, "Out of Cold Brew Kegs! The party is fading.")
+        self.assertEqual((trail.score(), trail.average_health()), (0, 0))
+        self.assertEqual(trail.step(1, 0), 0)
+        self.assertEqual(trail.after_step(), ([], "game_over"))
+        trail.idle_days(3, lines)
+        self.assertEqual(trail.day, 2)
 
 
 class TrailEventTests(unittest.TestCase):
@@ -739,6 +763,17 @@ class TrailShopRiverTests(unittest.TestCase):
         self.assertAlmostEqual(trail.rng.asked[0], 0.7)
         self.assertAlmostEqual(trail.rng.asked[1], 0.33)
         self.assertLess(trail.supplies["brew"], 200.0)
+
+
+class TrailScoreSaveTests(unittest.TestCase):
+    def test_score(self):
+        self.assertEqual(tl.Trail(0, QuietRng()).score(), 2870)
+        self.assertEqual(tl.Trail(tl.ATC_LEAD, QuietRng()).score(), (2500 + 50 + 120) * 3)
+        trail = stocked(patches=3, lgtm=120, brew=260.0)
+        trail.visited |= 1 << 2
+        trail.members[0].health = 30
+        trail.members[1].alive = False
+        self.assertEqual(trail.score(), 300 + 1500 + 50 + 6 + 2 + 10 + 320 + 40)
 
 
 class HuntTests(unittest.TestCase):
