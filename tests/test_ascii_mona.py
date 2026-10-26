@@ -910,6 +910,21 @@ class TestAscii(unittest.TestCase):
                 steps = [A.dither_index(level, x, y, 10) for level in range(256)]
                 self.assertEqual(steps, sorted(steps))
 
+    def test_palette_colours(self):
+        A = self.A
+        self.assertEqual([A.colour_for(p, (110, 84, 240), 200) for p in range(4)],
+                         [(163, 113, 247), (85, 85, 255), (38, 191, 76), (191, 132, 0)])
+        self.assertEqual(A.blend((0, 0, 0), (200, 100, 50), 50), (100, 50, 25))
+        self.assertEqual(A.blend((10, 20, 30), (200, 100, 50), 0), (10, 20, 30))
+        self.assertEqual(A.blend((10, 20, 30), (200, 100, 50), 100), (200, 100, 50))
+        self.assertEqual(A.hue(255, 0, 0, 255, 0), 0)
+        for p in range(4):
+            for rgb in ((0, 0, 0), (255, 255, 255), (110, 84, 240), (255, 0, 0)):
+                for level in (0, 1, 128, 255):
+                    out = A.colour_for(p, rgb, level)
+                    self.assertEqual(len(out), 3)
+                    self.assertTrue(all(isinstance(c, int) and 0 <= c <= 255 for c in out))
+
 
 # App files -------------------------------------------------------------------
 

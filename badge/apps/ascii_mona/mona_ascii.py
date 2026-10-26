@@ -2,9 +2,45 @@
 
 The technique ideas come from Cameron Foxly's Ascii-Motion
 (https://github.com/CameronFoxly/Ascii-Motion): 6D shape-vector glyph
-matching and Bayer 4x4 ordered dithering. This module is written from
-scratch for the badge and shares no code with it.
+matching, Bayer 4x4 ordered dithering and ANSI/Phosphor/Amber/Primer
+character and colour palettes. This module is written from scratch for the
+badge and shares no code with it.
 """
+
+PALETTE_NAMES = ("Primer", "ANSI", "Phosphor", "Amber")
+PRIMER = 0
+ANSI = 1
+PHOSPHOR = 2
+AMBER = 3
+
+RAMPS = (" .:+*o%e&@", " .-=?o%S&@", " .:;!*xtk$", " .-=~*oO0@")
+BACKS = ((13, 17, 23), (0, 0, 0), (2, 14, 6), (16, 9, 0))
+TINTS = (None, None, (51, 255, 102), (255, 176, 0))
+
+# Primer dark-theme foreground tokens, picked by hue band (upper bound, rgb)
+PRIMER_FG = (230, 237, 243)
+PRIMER_MUTED = (125, 133, 144)
+PRIMER_HUES = (
+    (15, (248, 81, 73)),
+    (40, (219, 109, 40)),
+    (70, (210, 153, 34)),
+    (160, (63, 185, 80)),
+    (200, (86, 211, 196)),
+    (250, (88, 166, 255)),
+    (290, (163, 113, 247)),
+    (345, (219, 97, 162)),
+    (361, (248, 81, 73)),
+)
+# ANSI hues: red, yellow, green, cyan, blue, magenta as (normal, bright)
+ANSI_HUES = (
+    ((170, 0, 0), (255, 85, 85)),
+    ((170, 170, 0), (255, 255, 85)),
+    ((0, 170, 0), (85, 255, 85)),
+    ((0, 170, 170), (85, 255, 255)),
+    ((0, 0, 170), (85, 85, 255)),
+    ((170, 0, 170), (255, 85, 255)),
+)
+ANSI_GREYS = ((85, 85, 85), (170, 170, 170), (255, 255, 255))
 
 BAYER = (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
@@ -76,3 +112,53 @@ def dither_index(level, x, y, steps):
     if base >= steps:
         base = steps - 1
     return base
+
+
+def hue(r, g, b, mx, mn):
+    d = mx - mn
+    if d <= 0:
+        return 0
+    if mx == r:
+        h = 60.0 * (g - b) / d
+    elif mx == g:
+        h = 60.0 * (b - r) / d + 120
+    else:
+        h = 60.0 * (r - g) / d + 240
+    return int(h) % 360
+
+
+def blend(a, b, percent):
+    """Mix colour a toward b by an integer percent."""
+    return (
+        a[0] + (b[0] - a[0]) * percent // 100,
+        a[1] + (b[1] - a[1]) * percent // 100,
+        a[2] + (b[2] - a[2]) * percent // 100,
+    )
+
+
+def colour_for(palette, rgb, level):
+    """Glyph colour for a cell's average colour and 0..255 level."""
+    tint = TINTS[palette] if 0 <= palette < len(TINTS) else None
+    if tint is not None:
+        step = 3 + (level * 5) // 255
+        return (tint[0] * step // 8, tint[1] * step // 8, tint[2] * step // 8)
+    r, g, b = rgb[0], rgb[1], rgb[2]
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    sat = (mx - mn) * 100 // mx if mx else 0
+    if palette == ANSI:
+        if mx < 24 or sat < 28:
+            return ANSI_GREYS[2] if level > 170 else ANSI_GREYS[1] if level > 80 else ANSI_GREYS[0]
+        h = (hue(r, g, b, mx, mn) + 30) % 360
+        pair = ANSI_HUES[h // 60]
+        return pair[1] if level > 110 else pair[0]
+    if mx < 24 or sat < 12:
+        return PRIMER_FG if level > 150 else PRIMER_MUTED
+    h = hue(r, g, b, mx, mn)
+    tone = PRIMER_FG
+    for top, hue_tone in PRIMER_HUES:
+        if h < top:
+            tone = hue_tone
+            break
+    # Pale colours (Mona's lavender face) stay pale instead of turning grey.
+    return blend(PRIMER_FG, tone, sat * 3 if sat < 33 else 100)
