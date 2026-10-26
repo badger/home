@@ -27,6 +27,7 @@ MODULE_ORDER = (
     "mona_parts",
     "mona_octo",
     "mona_dna",
+    "mona_wheel",
     "mona_ascii",
 )
 _MISSING = object()
@@ -1085,6 +1086,125 @@ class TestAscii(unittest.TestCase):
         self.assertTrue(view.failed)
         self.assertFalse(view.typing)
         self.assertFalse(view.draw(FakeImage(), 0, 0, 0))
+
+
+class TestWheel(unittest.TestCase):
+    """The arcade letter wheel for typing a handle with the badge buttons."""
+
+    def setUp(self):
+        self.W = M["mona_wheel"]
+        self.D = M["mona_dna"]
+
+    def tap(self, wheel, now, name):
+        result = wheel.update(now, (name,), (name,))
+        wheel.update(now + 20, (), ())
+        return result
+
+    def test_alphabet_covers_every_handle_character(self):
+        W, D = self.W, self.D
+        self.assertEqual(W.CHARS[W.BLANK], " ")
+        self.assertEqual(W.CHARS[1:], "abcdefghijklmnopqrstuvwxyz0123456789-")
+        self.assertEqual(D.MAX_HANDLE, 39)
+
+    def test_load_cleans_text_into_slots(self):
+        W, D = self.W, self.D
+        empty = W.Wheel()
+        self.assertEqual((empty.slots, empty.cursor, empty.text), ([W.BLANK], 0, ""))
+        self.assertTrue(empty.problem)
+        wheel = W.Wheel("Octo-Cat!")
+        self.assertEqual((wheel.text, wheel.cursor, wheel.problem), ("octo-cat", 7, ""))
+        self.assertEqual(W.Wheel(" a b ").text, "ab")
+        self.assertEqual(W.Wheel("a" * 50).text, "a" * D.MAX_HANDLE)
+        for junk in (None, 5, "!!!"):
+            self.assertEqual(W.Wheel(junk).slots, [W.BLANK])
+        for text in ("-a", "a-", "a--b"):
+            self.assertEqual(W.Wheel(text).problem, D.handle_problem(text))
+            self.assertTrue(W.Wheel(text).problem)
+
+    def test_spinning_wraps_around_the_wheel(self):
+        W = self.W
+        wheel = W.Wheel()
+        self.assertEqual((wheel.letter(), wheel.letter(1), wheel.letter(-1)), (" ", "a", "-"))
+        seen = []
+        for _ in range(len(W.CHARS)):
+            wheel.spin(1)
+            seen.append(wheel.letter())
+        self.assertEqual("".join(seen), W.CHARS[1:] + " ")
+        wheel.spin(-1)
+        self.assertEqual(wheel.text, "-")
+
+    def test_cursor_moves_add_and_drop_slots(self):
+        W, D = self.W, self.D
+        wheel = W.Wheel()
+        wheel.right()
+        self.assertEqual((wheel.slots, wheel.cursor), ([W.BLANK], 0))
+        wheel.spin(1)
+        wheel.right()
+        self.assertEqual((wheel.slots, wheel.cursor), ([1, W.BLANK], 1))
+        wheel.right()
+        self.assertEqual(len(wheel.slots), 2)
+        wheel.left()
+        self.assertEqual((wheel.slots, wheel.cursor), ([1], 0))
+        wheel.left()
+        self.assertEqual(wheel.cursor, 0)
+        middle = W.Wheel("abc")
+        middle.left()
+        self.assertEqual((middle.text, middle.cursor), ("abc", 1))
+        middle.spin(-2)
+        self.assertEqual(middle.text, "ac")
+        full = W.Wheel("a" * D.MAX_HANDLE)
+        full.right()
+        self.assertEqual((len(full.slots), full.cursor), (D.MAX_HANDLE, D.MAX_HANDLE - 1))
+
+    def test_delete_and_window(self):
+        W = self.W
+        wheel = W.Wheel("abc")
+        wheel.cursor = 1
+        wheel.nudge = "nope"
+        wheel.delete()
+        self.assertEqual((wheel.text, wheel.cursor, wheel.nudge), ("ac", 1, ""))
+        wheel.delete()
+        self.assertEqual((wheel.text, wheel.cursor), ("a", 0))
+        wheel.delete()
+        wheel.delete()
+        self.assertEqual(wheel.slots, [W.BLANK])
+        long = W.Wheel("abcdefghij")
+        for cursor, first in ((0, 0), (3, 1), (9, 5)):
+            long.cursor = cursor
+            start, slots = long.window(5)
+            self.assertEqual(start, first)
+            self.assertEqual(slots, long.slots[first:first + 5])
+            self.assertTrue(start <= cursor < start + len(slots))
+        self.assertEqual(W.Wheel("ab").window(5), (0, [1, 2]))
+
+    def test_buttons_type_a_handle_and_accept_it(self):
+        W = self.W
+        wheel = W.Wheel()
+        now = 0
+        for index, ch in enumerate("mona"):
+            if index:
+                self.assertIsNone(self.tap(wheel, now, "right"))
+                now += 100
+            for _ in range(W.CHARS.find(ch)):
+                self.assertIsNone(self.tap(wheel, now, "up"))
+                now += 100
+        self.assertEqual(wheel.text, "mona")
+        self.assertEqual(wheel.update(now, ("select",), ("select",)), "done")
+        self.assertEqual(wheel.update(now, ("back",), ("back",)), "cancel")
+        self.assertEqual(wheel.update(now, ("back", "select"), ("back", "select")), "cancel")
+
+    def test_select_refuses_invalid_handles(self):
+        W, D = self.W, self.D
+        for text in ("", "a-", "a--b"):
+            wheel = W.Wheel(text)
+            self.assertIsNone(wheel.update(0, ("select",), ("select",)))
+            self.assertEqual(wheel.nudge, D.handle_problem(text))
+        wheel = W.Wheel("a-")
+        wheel.update(0, ("select",), ("select",))
+        self.assertTrue(wheel.nudge)
+        self.assertIsNone(wheel.update(10, ("menu",), ("menu",)))
+        self.assertEqual((wheel.text, wheel.nudge), ("a", ""))
+        self.assertEqual(wheel.update(20, ("select",), ("select",)), "done")
 
 
 # App files -------------------------------------------------------------------
