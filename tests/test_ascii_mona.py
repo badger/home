@@ -625,6 +625,26 @@ class TestDna(unittest.TestCase):
         self.assertEqual(D.item_name(self.O.PROPS, -1), "None")
         self.assertEqual(D.item_name(self.O.MISC, 3), "Dress Buckle Belt")
 
+    def test_nudge_wraps_inside_each_field(self):
+        D = self.D
+        dna = D.dna_for("octocat")
+        self.assertEqual(D.lowest(D.PART0), 1)
+        self.assertEqual(D.lowest(D.PART0 + 1), 1)
+        self.assertEqual(D.lowest(D.PART0 + 2), 0)
+        self.assertEqual(D.lowest(D.BODY), 0)
+        self.assertEqual(D.nudge(dna, D.PART0, -1)[D.PART0], 8)
+        self.assertEqual(D.nudge(dna, D.PART0, 100)[D.PART0], 14)
+        self.assertEqual(D.nudge(dna, D.BODY, -18)[D.BODY], 17)
+        self.assertEqual(D.nudge(dna, D.TITLE, 1)[D.TITLE], 7)
+        self.assertEqual(D.nudge(dna, D.BACKDROP, -4)[D.BACKDROP], 3)
+        value = dna[D.PART0]
+        span = D.LIMITS[D.PART0] - D.lowest(D.PART0)
+        for _ in range(span * 2):
+            dna = D.nudge(dna, D.PART0, 1)
+            self.assertTrue(1 <= dna[D.PART0] < D.LIMITS[D.PART0])
+            self.assertTrue(D.valid_dna(dna))
+        self.assertEqual(dna[D.PART0], value)
+
 
 def art_blocks(parts):
     """Every (offset, length) block the art index points at."""

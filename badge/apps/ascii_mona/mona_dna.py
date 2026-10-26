@@ -119,6 +119,16 @@ THEMES = (
     ((O.TOPS, "World Cup Jersey"), (O.BOTTOMS, "Soccer Shorts"), (O.FOOTWEAR, "Cleats"), (O.PROPS, "Soccer Ball")),
 )
 
+# (label, field) in Tweak order
+EDIT = (
+    ("Body colour", BODY), ("Face colour", FACE), ("Eyes", PART0 + O.EYES),
+    ("Eye colour", EYE_COLOUR), ("Mouth", PART0 + O.MOUTHS), ("Hair", PART0 + O.HAIR),
+    ("Hair colour", HAIR_COLOUR), ("Hat", PART0 + O.HEADGEAR), ("Top", PART0 + O.TOPS),
+    ("Bottoms", PART0 + O.BOTTOMS), ("Shoes", PART0 + O.FOOTWEAR), ("Prop", PART0 + O.PROPS),
+    ("Eyewear", PART0 + O.EYEWEAR), ("Face hair", PART0 + O.FACEHAIR),
+    ("Face hair colour", FACEHAIR_COLOUR), ("Extra", MISC_A), ("Second extra", MISC_B),
+    ("Title", TITLE), ("Backdrop", BACKDROP),
+)
 SHOWCASE = (O.HEADGEAR, O.PROPS, O.TOPS, O.EYEWEAR, O.FACEHAIR, O.FOOTWEAR, O.BOTTOMS, O.HAIR)
 
 
@@ -371,6 +381,24 @@ def title_of(dna):
 
 def backdrop_of(dna):
     return dna[BACKDROP] % len(BACKDROPS)
+
+
+def lowest(field):
+    """The smallest value Tweak offers: eyes and mouth are never none."""
+    if field == PART0 + O.EYES or field == PART0 + O.MOUTHS:
+        return 1
+    return 0
+
+
+def nudge(dna, field, step):
+    """DNA with one field moved step places, wrapping around."""
+    low = lowest(field)
+    value = dna[field]
+    if value < low:
+        value = low
+    out = list(dna)
+    out[field] = low + (value - low + step) % (LIMITS[field] - low)
+    return tuple(out)
 
 
 def value_name(dna, field):
