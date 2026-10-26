@@ -6,6 +6,8 @@ injected Rng, ordered data lives in tuples (MicroPython dicts are unordered),
 and only APIs that exist in MicroPython 1.29 are used.
 """
 
+import math
+
 import trail_map as tm
 MAX_STEPS = 99999
 PARTY = ("Markus", "Mona", "Cameron", "Hubot", "Tufty")
@@ -36,6 +38,7 @@ STORE_ITEMS = (
 # (stop, price percent): stores and the Firehouse, which only sells patches.
 STORE_MARKUP = ((0, 100), (1, 125), (9, 150), (6, 160))
 FIREHOUSE = 6
+MEADOW = 7
 
 # (name, steps per day, daily health change)
 PACES = (
@@ -745,6 +748,21 @@ class Trail:
             member.health = clamp(member.health + 8, 0, 100)
         lines.append("You spotted the GitHub unicorn. Morale soars.")
 
+    # ----- hunting ----------------------------------------------------------
+    def in_meadow(self):
+        return self.at == MEADOW or tm.terrain(self.x, self.y) == tm.GRASS
+
+    def start_hunt(self):
+        return Hunt(self.rng, self.supplies["lgtm"], self.in_meadow())
+
+    def finish_hunt(self, hunt):
+        hauled = hunt.haul(self.supplies["brew"], carry_limit("brew"))
+        self.supplies["lgtm"] = max(0, int(hunt.stamps))
+        self.supplies["brew"] += hauled
+        lines = hunt.summary(hauled)
+        self.idle_days(1, lines)
+        return lines
+
     # ----- rivers -----------------------------------------------------------
     def river_spec(self):
         for spec in RIVERS:
@@ -849,3 +867,256 @@ class Trail:
         self.facing = 1
         self.at = -1
         self.river = None
+
+
+# ----- hunt mini-game -------------------------------------------------------
+HUNT_MS = 30000
+HUNT_CARRY = 100
+HUNT_W = 320
+HUNT_H = 196
+HUNTER_SPEED = 70
+HUNTER_RADIUS = 6
+SHOT_SPEED = 220
+SHOT_RADIUS = 2
+MAX_SHOTS = 3
+MAX_TARGETS = 6
+# (name, radius px, speed px/s, hit points, bounty kegs, spawn weight)
+TARGET_KINDS = (
+    ("bug", 5, 50, 1, 6, 4),
+    ("slop", 9, 20, 2, 25, 1),
+)
+BUG, SLOP = 0, 1
+# (name, radius px) of the cover that blocks walking and stamps.
+COVER = (("tree", 9), ("bush", 6), ("rock", 5))
+
+
+def near(ax, ay, bx, by, reach):
+    dx = ax - bx
+    dy = ay - by
+    return dx * dx + dy * dy < reach * reach
+
+
+class Hunt:
+    """Bug & AI Slop Hunt: walk Mona around a top-down field and throw LGTM
+    Stamps the way she faces. Cover blocks both Mona and her stamps."""
+
+    def __init__(self, rng, stamps, meadow=False, width=HUNT_W, height=HUNT_H):
+        self.rng = rng
+        self.width = width
+        self.height = height
+        self.meadow = bool(meadow)
+        self.x = width / 2.0
+        self.y = height / 2.0
+        self.aim_x = 1
+        self.aim_y = 0
+        self.walk_ms = 0
+        self.cover = []
+        self._scatter()
+        self.targets = []
+        self.flying = []
+        self.splats = []
+        self.elapsed = 0
+        self.spawn_in = 300
+        self.stamps = int(stamps)
+        self.thrown = 0
+        self.kills = [0, 0]
+        self.bounty = 0
+        self.done = self.stamps <= 0
+        self.reason = "stamps" if self.done else ""
+        self.last_hit = False
+
+    def _scatter(self):
+        count = 9 if self.meadow else 7
+        tries = 0
+        while len(self.cover) < count and tries < 300:
+            tries += 1
+            kind = self.rng.randint(0, len(COVER) - 1)
+            radius = COVER[kind][1]
+            x = self.rng.uniform(radius + 6, self.width - radius - 6)
+            y = self.rng.uniform(radius + 6, self.height - radius - 6)
+            if near(x, y, self.x, self.y, radius + 34):
+                continue
+            clear = True
+            for cx, cy, cr, _kind in self.cover:
+                if near(x, y, cx, cy, radius + cr + 16):
+                    clear = False
+                    break
+            if clear:
+                self.cover.append((x, y, radius, kind))
+
+    def blocked(self, x, y, radius):
+        for cx, cy, cr, _kind in self.cover:
+            if near(x, y, cx, cy, radius + cr):
+                return True
+        return False
+
+    def remaining_ms(self):
+        return max(0, HUNT_MS - self.elapsed)
+
+    def radius(self, target):
+        return TARGET_KINDS[target[0]][1]
+
+    def spawn(self, kind=None):
+        if kind is None:
+            kind = self.rng.weighted(((TARGET_KINDS[BUG][5], BUG), (TARGET_KINDS[SLOP][5], SLOP)))
+        _name, radius, speed, hp, _bounty, _weight = TARGET_KINDS[kind]
+        speed *= self.rng.uniform(0.8, 1.25)
+        drift = self.rng.uniform(-0.4, 0.4) * speed
+        side = self.rng.randint(0, 3)
+        if side < 2:
+            x = -radius if side == 0 else self.width + radius
+            y = self.rng.uniform(radius, self.height - radius)
+            vx = speed if side == 0 else -speed
+            vy = drift
+        else:
+            x = self.rng.uniform(radius, self.width - radius)
+            y = -radius if side == 2 else self.height + radius
+            vx = drift
+            vy = speed if side == 2 else -speed
+        target = [kind, x, y, vx, vy, hp, self.rng.randint(300, 800)]
+        self.targets.append(target)
+        return target
+
+    def update(self, dt, dx=0, dy=0, fire=False):
+        self.last_hit = False
+        if self.done:
+            return
+        dt = clamp(int(dt), 0, 100)
+        seconds = dt / 1000.0
+        if dx or dy:
+            self.aim_x = dx
+            self.aim_y = dy
+            reach = HUNTER_SPEED * seconds * (0.7071 if dx and dy else 1.0)
+            x = clamp(self.x + dx * reach, HUNTER_RADIUS, self.width - HUNTER_RADIUS)
+            if not self.blocked(x, self.y, HUNTER_RADIUS):
+                self.x = x
+            y = clamp(self.y + dy * reach, HUNTER_RADIUS, self.height - HUNTER_RADIUS)
+            if not self.blocked(self.x, y, HUNTER_RADIUS):
+                self.y = y
+            self.walk_ms += dt
+        self.elapsed += dt
+        self.spawn_in -= dt
+        if self.spawn_in <= 0:
+            if len(self.targets) < MAX_TARGETS:
+                self.spawn()
+            self.spawn_in = self.rng.randint(250, 650) if self.meadow else self.rng.randint(400, 1000)
+        self._move_targets(dt, seconds)
+        self._move_stamps(seconds)
+        aged = []
+        for splat in self.splats:
+            splat[2] += dt
+            if splat[2] < 450:
+                aged.append(splat)
+        self.splats = aged
+        if fire:
+            self.fire()
+        if self.elapsed >= HUNT_MS:
+            self.done = True
+            self.reason = "time"
+        elif self.stamps <= 0 and not self.flying:
+            self.done = True
+            self.reason = "stamps"
+
+    def _move_targets(self, dt, seconds):
+        kept = []
+        for target in self.targets:
+            radius = TARGET_KINDS[target[0]][1]
+            target[6] -= dt
+            if target[6] <= 0:
+                turn = self.rng.uniform(-0.8, 0.8) if target[0] == BUG else self.rng.uniform(-0.3, 0.3)
+                c = math.cos(turn)
+                s = math.sin(turn)
+                vx = target[3]
+                vy = target[4]
+                target[3] = vx * c - vy * s
+                target[4] = vx * s + vy * c
+                target[6] = self.rng.randint(300, 800)
+            x = target[1] + target[3] * seconds
+            y = target[2] + target[4] * seconds
+            if self.blocked(x, y, radius):
+                target[3] = -target[3]
+                target[4] = -target[4]
+            else:
+                target[1] = x
+                target[2] = y
+            margin = radius * 2 + 2
+            if -margin <= target[1] <= self.width + margin and -margin <= target[2] <= self.height + margin:
+                kept.append(target)
+        self.targets = kept
+
+    def _move_stamps(self, seconds):
+        kept = []
+        for stamp in self.flying:
+            dx = stamp[2] * seconds
+            dy = stamp[3] * seconds
+            parts = int(max(abs(dx), abs(dy)) / 4) + 1
+            alive = True
+            for _ in range(parts):
+                stamp[0] += dx / parts
+                stamp[1] += dy / parts
+                x = stamp[0]
+                y = stamp[1]
+                if x < 0 or y < 0 or x >= self.width or y >= self.height:
+                    alive = False
+                    break
+                if self.blocked(x, y, SHOT_RADIUS):
+                    self.splats.append([x, y, 0, -1])
+                    alive = False
+                    break
+                target = self.target_at(x, y)
+                if target is not None:
+                    self._hit(target)
+                    alive = False
+                    break
+            if alive:
+                kept.append(stamp)
+        self.flying = kept
+
+    def target_at(self, x, y):
+        for target in self.targets:
+            if near(x, y, target[1], target[2], TARGET_KINDS[target[0]][1] + SHOT_RADIUS + 1):
+                return target
+        return None
+
+    def _hit(self, target):
+        self.last_hit = True
+        target[5] -= 1
+        if target[5] <= 0:
+            self.targets.remove(target)
+            self.kills[target[0]] += 1
+            self.bounty += TARGET_KINDS[target[0]][4]
+            self.splats.append([target[1], target[2], 0, target[0]])
+
+    def fire(self):
+        """Throw a stamp the way Mona faces. Returns True if one was thrown."""
+        if self.done or self.stamps <= 0 or len(self.flying) >= MAX_SHOTS:
+            return False
+        self.stamps -= 1
+        self.thrown += 1
+        scale = 0.7071 if self.aim_x and self.aim_y else 1.0
+        self.flying.append([
+            self.x + self.aim_x * (HUNTER_RADIUS + 2),
+            self.y + self.aim_y * (HUNTER_RADIUS + 2),
+            self.aim_x * SHOT_SPEED * scale,
+            self.aim_y * SHOT_SPEED * scale,
+        ])
+        return True
+
+    def finish(self):
+        if not self.done:
+            self.done = True
+            self.reason = "quit"
+
+    def haul(self, current_brew, cap=500):
+        return int(max(0, min(self.bounty, HUNT_CARRY, cap - current_brew)))
+
+    def summary(self, hauled):
+        lines = ["You stamped out %s and %s." % (
+            plural(self.kills[BUG], "bug"), plural(self.kills[SLOP], "AI slop blob"))]
+        if self.bounty <= 0:
+            lines.append("No bounty this time. Used %s." % plural(self.thrown, "LGTM Stamp"))
+        else:
+            lines.append("Bounty: %s of cold brew." % plural(self.bounty, "keg"))
+            if hauled < self.bounty:
+                lines.append("You could only haul %s back to the wagon." % plural(hauled, "keg"))
+        return lines

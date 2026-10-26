@@ -689,6 +689,182 @@ class TrailShopRiverTests(unittest.TestCase):
         self.assertLess(trail.supplies["brew"], 200.0)
 
 
+class HuntTests(unittest.TestCase):
+    def quiet_hunt(self, stamps=10):
+        hunt = tl.Hunt(tl.Rng(5), stamps)
+        hunt.cover = []
+        hunt.targets = []
+        hunt.spawn_in = 10 ** 9
+        return hunt
+
+    def target(self, hunt, kind, offset):
+        target = [kind, hunt.x + offset, hunt.y, 0.0, 0.0, tl.TARGET_KINDS[kind][3], 10 ** 6]
+        hunt.targets.append(target)
+        return target
+
+    def test_cover_layout(self):
+        for seed in range(25):
+            for meadow, count in ((False, 7), (True, 9)):
+                hunt = tl.Hunt(tl.Rng(seed), 10, meadow)
+                self.assertEqual(len(hunt.cover), count)
+                for x, y, radius, kind in hunt.cover:
+                    self.assertEqual(radius, tl.COVER[kind][1])
+                    self.assertTrue(radius + 6 <= x <= hunt.width - radius - 6)
+                    self.assertTrue(radius + 6 <= y <= hunt.height - radius - 6)
+                self.assertFalse(hunt.blocked(hunt.x, hunt.y, tl.HUNTER_RADIUS + 20))
+
+    def test_no_stamps_no_hunt(self):
+        hunt = tl.Hunt(tl.Rng(1), 0)
+        self.assertEqual((hunt.done, hunt.reason), (True, "stamps"))
+        self.assertFalse(hunt.fire())
+        hunt.update(100, 1, 0, True)
+        self.assertEqual(hunt.elapsed, 0)
+
+    def test_walking_is_frame_rate_independent(self):
+        hunt = self.quiet_hunt()
+        x0, y0 = hunt.x, hunt.y
+        hunt.update(100, 1, 0)
+        self.assertAlmostEqual(hunt.x, x0 + 7.0)
+        self.assertEqual((hunt.aim_x, hunt.aim_y, hunt.walk_ms), (1, 0, 100))
+        hunt.update(100, 1, 1)
+        self.assertAlmostEqual(hunt.x, x0 + 7.0 + 7.0 * 0.7071)
+        self.assertAlmostEqual(hunt.y, y0 + 7.0 * 0.7071)
+        for _ in range(100):
+            hunt.update(100, -1, -1)
+        self.assertEqual((hunt.x, hunt.y), (tl.HUNTER_RADIUS, tl.HUNTER_RADIUS))
+        hunt.update(5000)
+        self.assertEqual(hunt.elapsed, 103 * 100)
+        self.assertEqual(hunt.remaining_ms(), tl.HUNT_MS - 10300)
+
+    def test_cover_blocks_mona(self):
+        hunt = self.quiet_hunt()
+        x0 = hunt.x
+        hunt.cover = [(x0 + 20, hunt.y, 9, 0)]
+        for _ in range(20):
+            hunt.update(100, 1, 0)
+        self.assertEqual(hunt.x, x0)
+        hunt.update(100, 0, 1)
+        self.assertGreater(hunt.y, tl.HUNT_H / 2.0)
+
+    def test_stamp_squashes_a_bug(self):
+        hunt = self.quiet_hunt(5)
+        self.target(hunt, tl.BUG, 40)
+        self.assertTrue(hunt.fire())
+        self.assertEqual((hunt.stamps, hunt.thrown, len(hunt.flying)), (4, 1, 1))
+        hits = []
+        for _ in range(5):
+            hunt.update(100)
+            hits.append(hunt.last_hit)
+        self.assertEqual(hits, [False, True, False, False, False])
+        self.assertEqual((hunt.kills, hunt.bounty, hunt.targets, hunt.flying), ([1, 0], 6, [], []))
+        self.assertEqual(hunt.splats[0][3], tl.BUG)
+
+    def test_slop_takes_two_stamps(self):
+        hunt = self.quiet_hunt(5)
+        slop = self.target(hunt, tl.SLOP, 60)
+        hunt.fire()
+        for _ in range(4):
+            hunt.update(100)
+        self.assertEqual((slop[5], hunt.kills, hunt.bounty), (1, [0, 0], 0))
+        hunt.update(100, fire=True)
+        for _ in range(4):
+            hunt.update(100)
+        self.assertEqual((hunt.kills, hunt.bounty), ([0, 1], 25))
+
+    def test_cover_stops_stamps(self):
+        hunt = self.quiet_hunt(5)
+        hunt.cover = [(hunt.x + 30, hunt.y, 5, 2)]
+        self.target(hunt, tl.BUG, 60)
+        hunt.fire()
+        for _ in range(2):
+            hunt.update(100)
+        self.assertEqual((hunt.kills, len(hunt.targets), hunt.flying), ([0, 0], 1, []))
+        self.assertEqual(hunt.splats[-1][3], -1)
+        for _ in range(3):
+            hunt.update(100)
+        self.assertEqual(hunt.splats, [])
+
+    def test_three_stamps_in_the_air(self):
+        hunt = self.quiet_hunt()
+        hunt.aim_x, hunt.aim_y = 1, -1
+        self.assertEqual([hunt.fire() for _ in range(4)], [True, True, True, False])
+        self.assertEqual((hunt.stamps, len(hunt.flying)), (7, tl.MAX_SHOTS))
+        self.assertAlmostEqual(hunt.flying[0][2], tl.SHOT_SPEED * 0.7071)
+        self.assertAlmostEqual(hunt.flying[0][3], -tl.SHOT_SPEED * 0.7071)
+        for _ in range(20):
+            hunt.update(100)
+        self.assertEqual(hunt.flying, [])
+        self.assertTrue(hunt.fire())
+
+    def test_endings(self):
+        hunt = self.quiet_hunt(1)
+        hunt.fire()
+        hunt.update(100)
+        self.assertFalse(hunt.done)
+        for _ in range(10):
+            hunt.update(100)
+        self.assertEqual((hunt.done, hunt.reason), (True, "stamps"))
+        timed = self.quiet_hunt()
+        for _ in range(tl.HUNT_MS // 100 - 1):
+            timed.update(100)
+        self.assertEqual((timed.done, timed.remaining_ms()), (False, 100))
+        timed.update(100)
+        self.assertEqual((timed.done, timed.reason, timed.remaining_ms()), (True, "time", 0))
+        timed.finish()
+        self.assertEqual(timed.reason, "time")
+        quit_early = self.quiet_hunt()
+        quit_early.finish()
+        self.assertEqual((quit_early.done, quit_early.reason), (True, "quit"))
+
+    def test_targets_spawn_from_edges(self):
+        hunt = self.quiet_hunt()
+        for _ in range(80):
+            kind, x, y, vx, vy, hp, turn = hunt.spawn()
+            radius = tl.TARGET_KINDS[kind][1]
+            self.assertEqual(hp, tl.TARGET_KINDS[kind][3])
+            self.assertTrue(300 <= turn <= 800)
+            if x == -radius:
+                self.assertGreater(vx, 0)
+            elif x == hunt.width + radius:
+                self.assertLess(vx, 0)
+            elif y == -radius:
+                self.assertGreater(vy, 0)
+            else:
+                self.assertEqual(y, hunt.height + radius)
+                self.assertLess(vy, 0)
+        live = tl.Hunt(tl.Rng(11), 10, True)
+        most = 0
+        for _ in range(200):
+            live.update(100)
+            most = max(most, len(live.targets))
+        self.assertTrue(0 < most <= tl.MAX_TARGETS)
+
+    def test_haul_and_summary(self):
+        hunt = self.quiet_hunt()
+        hunt.bounty = 150
+        self.assertEqual([hunt.haul(0), hunt.haul(450), hunt.haul(500), hunt.haul(600)], [100, 50, 0, 0])
+        hunt.kills, hunt.bounty = [2, 1], 37
+        self.assertEqual(hunt.summary(37), ["You stamped out 2 bugs and 1 AI slop blob.", "Bounty: 37 kegs of cold brew."])
+        self.assertEqual(hunt.summary(10)[-1], "You could only haul 10 kegs back to the wagon.")
+        hunt.kills, hunt.bounty, hunt.thrown = [0, 0], 0, 3
+        self.assertEqual(hunt.summary(0), ["You stamped out 0 bugs and 0 AI slop blobs.",
+                                           "No bounty this time. Used 3 LGTM Stamps."])
+
+    def test_trail_hunt_round_trip(self):
+        trail = stocked(lgtm=12, brew=450.0)
+        trail.at = -1
+        hunt = trail.start_hunt()
+        self.assertEqual((hunt.stamps, hunt.meadow), (12, trail.in_meadow()))
+        hunt.stamps, hunt.bounty, hunt.kills = 9, 80, [5, 2]
+        lines = trail.finish_hunt(hunt)
+        self.assertEqual(lines, ["You stamped out 5 bugs and 2 AI slop blobs.", "Bounty: 80 kegs of cold brew.",
+                                 "You could only haul 50 kegs back to the wagon."])
+        self.assertEqual((trail.supplies["lgtm"], trail.day), (9, 2))
+        self.assertAlmostEqual(trail.supplies["brew"], 499.0)
+        trail.at = tl.MEADOW
+        self.assertTrue(trail.start_hunt().meadow)
+
+
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
 
