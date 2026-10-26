@@ -3,7 +3,8 @@
 A handle becomes 19 numbers of Mona DNA that pick parts and colours from
 GitHub's own MyOctocat library (myoctocat.com). The badge paints that outfit
 as vector art, or as ASCII art built with Ascii-Motion's techniques. Handles
-come from the badge owner and from saved Contacts cards.
+come from the badge owner, from saved Contacts cards or from the arcade
+letter wheel.
 """
 
 import gc
@@ -38,6 +39,7 @@ import mona_dna
 import mona_link
 import mona_net
 import mona_octo
+import mona_wheel
 
 
 class _NoState:
@@ -73,6 +75,19 @@ BODY_FONT = _body_font()
 VECTOR_TEXT = BODY_FONT is not None
 if BODY_FONT is None:
     BODY_FONT = font.sins
+MONO_FONT = getattr(font, "badgewaremax", None) or font.teatime
+
+
+def _mono_size():
+    screen.font = MONO_FONT
+    try:
+        w, h = screen.measure_text("W")
+        return int(w + 0.5), int(h + 0.5)
+    except Exception:
+        return 8, 12
+
+
+MONO_W, MONO_H = _mono_size()
 
 
 def _art_file():
@@ -86,6 +101,22 @@ def _art_file():
 
 
 ART_FILE = _art_file()
+
+try:
+    MENU_BUTTON = BUTTON_MENU
+except NameError:
+    MENU_BUTTON = None
+
+# (wheel name, logical button) pairs the letter wheel listens to
+BUTTONS = (
+    ("up", BUTTON_UP),
+    ("down", BUTTON_DOWN),
+    ("left", BUTTON_LEFT),
+    ("right", BUTTON_RIGHT),
+    ("select", BUTTON_SELECT),
+    ("back", BUTTON_BACK),
+    ("menu", MENU_BUTTON),
+)
 
 STATE_KEY = "ascii_mona"
 CONTACTS_FILE = "/state/contacts.json"
@@ -109,12 +140,17 @@ TITLE_SIZE = 15
 BODY_SIZE = 14
 SMALL_SIZE = 12
 WHO_ROWS = 6
+WHEEL_SLOTS = 13
+SLOT_W = 21
+PREVIEW = (208, 100, 96, 108)
 
 TOAST_MS = 2600
 HINT_SWAP_MS = 4000
+PAINT_DELAY_MS = 250
 
 MAIN = 0
 WHO = 1
+WHEEL = 2
 
 STYLES = ("Vector", "Shapes", "Dither", "Edges")
 VECTOR = 0
@@ -122,6 +158,7 @@ ASCII_STYLE = (0, mona_ascii.SHAPES, mona_ascii.DITHER, mona_ascii.EDGES)
 # (saved value, what the panel calls it)
 VIAS = (
     ("you", "Your Mona"),
+    ("typed", "Typed in"),
     ("contact", "From Contacts"),
     ("surprise", "Surprise Mona"),
     ("saved", "Saved Mona"),
@@ -177,6 +214,12 @@ def write(text, x, y, size=BODY_SIZE, pen=None, width=0, align="l"):
     return text
 
 
+def mono(text, x, y, pen):
+    screen.font = MONO_FONT
+    screen.pen = pen
+    screen.text(text, x, y)
+
+
 def box(x, y, w, h, pen, r=0):
     screen.pen = pen
     if r:
@@ -225,6 +268,7 @@ def new_image(w, h):
         return None
 
 
+ROW_TYPE = 0
 ROW_PICK = 1
 ROW_SURPRISE = 2
 
@@ -348,6 +392,7 @@ class MonaApp:
         self.recent = []
         self.style = VECTOR
         self.palette = mona_ascii.PRIMER
+        self.typed = ""
         self.current = None
         self.load()
         self.owner = load_owner()
@@ -365,6 +410,8 @@ class MonaApp:
         self.painter = mona_octo.Painter(ART_FILE)
         self.shown = None
         self.painted = False
+        self.pending = None
+        self.pending_at = 0
         self.art_warned = False
         self.ascii = mona_ascii.AsciiView()
         self.ascii_warned = False
@@ -374,6 +421,9 @@ class MonaApp:
         self.info = False
         self.rows = []
         self.row = 0
+        self.wheel = None
+        self.wheel_text = None
+        self.wheel_dna = None
         self.toast = ""
         self.toast_pen = WHITE
         self.toast_until = 0
@@ -383,7 +433,7 @@ class MonaApp:
         return (self.owner[0], self.owner[1], self.owner[2], "you")
 
     def load(self):
-        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0}
+        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0, "typed": ""}
         try:
             STORE.load(STATE_KEY, data)
         except Exception:
@@ -394,6 +444,9 @@ class MonaApp:
         palette = data.get("palette")
         if isinstance(palette, int) and 0 <= palette < len(mona_ascii.PALETTE_NAMES):
             self.palette = palette
+        typed = data.get("typed")
+        if isinstance(typed, str) and mona_dna.valid_handle(typed):
+            self.typed = typed
         recent = data.get("recent")
         if isinstance(recent, list):
             for item in recent:
@@ -408,6 +461,7 @@ class MonaApp:
             "recent": [make_record(r[0], r[1], r[2], r[3]) for r in self.recent],
             "style": self.style,
             "palette": self.palette,
+            "typed": self.typed,
         }
         try:
             STORE.save(STATE_KEY, data)
@@ -475,9 +529,10 @@ class MonaApp:
         self.save()
 
     def open_who(self):
-        """The handle picker: you, recent Monas, contacts, surprise."""
+        """The handle picker: type, you, recent Monas, contacts, surprise."""
         me = self.me()
-        rows = [(ROW_PICK, who_label(me[0], me[1]), "you", me)]
+        rows = [(ROW_TYPE, "Type a handle", "letter wheel", None)]
+        rows.append((ROW_PICK, who_label(me[0], me[1]), "you", me))
         seen = [me[0].lower()] if me[0] else []
         for rec in self.recent:
             if rec[0]:
@@ -492,7 +547,7 @@ class MonaApp:
             rows.append((ROW_PICK, "@" + handle, name or "contact", (handle, self.tuned(handle), name, "contact")))
         rows.append((ROW_SURPRISE, "Surprise me", "random DNA", None))
         self.rows = rows
-        self.row = 0
+        self.row = 1
         for i in range(len(rows)):
             rec = rows[i][3]
             if rec is not None and rec[0] == self.current[0] and rec[1] == self.current[1]:
@@ -513,6 +568,11 @@ class MonaApp:
 
     def pick(self, row, now):
         kind, rec = row[0], row[3]
+        if kind == ROW_TYPE:
+            self.wheel = mona_wheel.Wheel(self.current[0] or self.typed)
+            self.wheel_text = None
+            self.view = WHEEL
+            return
         self.view = MAIN
         if kind == ROW_SURPRISE:
             dna = mona_dna.random_dna((self.rng.next() ^ now) & mona_dna.MASK)
@@ -521,10 +581,44 @@ class MonaApp:
         else:
             self.adopt(rec[0], rec[1], rec[2], rec[3])
 
+    def wheel_input(self, now):
+        pressed = []
+        held = []
+        for name, button in BUTTONS:
+            if button is None:
+                continue
+            if badge.pressed(button):
+                pressed.append(name)
+            if badge.held(button):
+                held.append(name)
+        result = self.wheel.update(now, pressed, held)
+        if result == "cancel":
+            self.view = MAIN
+        elif result == "done":
+            handle = self.wheel.text
+            self.typed = handle
+            self.view = MAIN
+            if same(handle, self.owner[0]):
+                self.info = False
+                self.show(self.me())
+                self.save()
+                self.say("That's you, @" + handle, GREEN)
+            else:
+                self.adopt(handle, self.tuned(handle), "", "typed")
+                self.say("Hello, @" + handle, GREEN)
+
+    def update_wheel_dna(self):
+        text = self.wheel.text
+        if text != self.wheel_text:
+            self.wheel_text = text
+            self.wheel_dna = self.tuned(text) if mona_dna.valid_handle(text) else None
+
     # -- painting ---------------------------------------------------------------
 
     def wanted(self):
         """The DNA the art should show right now, or None to keep it."""
+        if self.view == WHEEL:
+            return self.wheel_dna
         return self.current[1]
 
     def start_paint(self, dna):
@@ -543,11 +637,22 @@ class MonaApp:
         if self.art is None:
             return
         want = self.wanted()
-        if want != self.shown:
-            self.start_paint(want)
+        if want is None or want == self.shown:
+            self.pending = None
+        else:
+            if want != self.pending:
+                self.pending = want
+                slow = self.view == WHEEL
+                self.pending_at = now + (PAINT_DELAY_MS if slow else 0)
+            if now - self.pending_at >= 0:
+                self.pending = None
+                self.start_paint(want)
         if self.shown is None or self.painted:
             return
-        budget = 20
+        if self.view == WHEEL:
+            budget = 12
+        else:
+            budget = 20
         if self.painter.step(budget):
             self.painted = True
             if self.painter.failed:
@@ -619,12 +724,16 @@ class MonaApp:
         if self.closed:
             return
         now = badge.ticks
-        if self.view == WHO:
+        if self.view == WHEEL:
+            self.wheel_input(now)
+        elif self.view == WHO:
             self.who_input(now)
         else:
             self.main_input(now)
         if self.closed:
             return
+        if self.view == WHEEL:
+            self.update_wheel_dna()
         self.paint(now)
         self.draw(now)
 
@@ -645,7 +754,9 @@ class MonaApp:
     # -- drawing ----------------------------------------------------------------
 
     def draw(self, now):
-        if self.view == WHO:
+        if self.view == WHEEL:
+            self.draw_wheel()
+        elif self.view == WHO:
             self.draw_who()
         else:
             self.draw_stage(now)
@@ -785,7 +896,69 @@ class MonaApp:
             room = WIDTH - 52 - (measure(note, SMALL_SIZE) if note else 0)
             write(label, 18, y + 4, BODY_SIZE, WHITE if kind == ROW_PICK else ACCENT, room)
 
+    def draw_wheel(self):
+        screen.pen = INK
+        screen.clear()
+        wheel = self.wheel
+        write("Type a GitHub handle", 16, 6, TITLE_SIZE, WHITE)
+        write("%d/%d" % (len(wheel.text), mona_dna.MAX_HANDLE), WIDTH - 16, 8, SMALL_SIZE, DIM, 0, "r")
+
+        first, slots = wheel.window(WHEEL_SLOTS)
+        count = len(slots)
+        left = (WIDTH - count * SLOT_W) // 2
+        top = 52
+        pad = (SLOT_W - MONO_W) // 2
+        for i in range(count):
+            x = left + i * SLOT_W
+            ch = mona_wheel.CHARS[slots[i]]
+            if first + i == wheel.cursor:
+                box(x + 1, top - 4, SLOT_W - 2, MONO_H + 8, PICKED, 4)
+                mono(wheel.letter(1), x + pad, top - MONO_H - 8, FAINT)
+                mono(wheel.letter(-1), x + pad, top + MONO_H + 8, FAINT)
+            else:
+                box(x + 1, top - 4, SLOT_W - 2, MONO_H + 8, BAR, 4)
+            if ch == " ":
+                mono("_", x + pad, top, FAINT)
+            else:
+                mono(ch, x + pad, top, WHITE)
+        if first > 0:
+            mono("<", left - MONO_W - 2, top, DIM)
+        if first + count < len(wheel.slots):
+            mono(">", left + count * SLOT_W + 2, top, DIM)
+
+        text = wheel.text
+        dna = self.wheel_dna if self.wheel_text == text else None
+        write("@" + text, 16, 100, TITLE_SIZE, WHITE, 180)
+        if dna is not None:
+            write(mona_dna.title_of(dna), 16, 122, SMALL_SIZE, ACCENT, 180)
+            items = mona_dna.highlights(dna, 3)
+            for i in range(len(items)):
+                write(items[i], 16, 140 + i * 16, SMALL_SIZE, WHITE, 180)
+        if wheel.nudge:
+            write(wheel.nudge, 16, 194, SMALL_SIZE, RED, 180)
+        elif wheel.problem:
+            write(wheel.problem, 16, 194, SMALL_SIZE, DIM, 180)
+        else:
+            write("SELECT makes this Mona", 16, 194, SMALL_SIZE, GREEN, 180)
+
+        px, py, pw, ph = PREVIEW
+        box(px, py, pw, ph, BAR, 8)
+        if dna is None:
+            write("?", px + pw / 2, py + ph / 2 - 9, TITLE_SIZE, FAINT, 0, "c")
+        elif dna != self.shown or self.art_problem():
+            write("...", px + pw / 2, py + ph / 2 - 9, TITLE_SIZE, FAINT, 0, "c")
+        else:
+            main = rgb_of(mona_dna.body_rgb(dna)[0])
+            box(px, py, pw, ph, pen_of(mix(NIGHT, main, 22)), 8)
+            screen.blit(self.art, rect(0, 0, ART_W, ART_H), rect(px, py, pw, ph), image.BILINEAR)
+
     def hints(self):
+        menu = MENU_BUTTON is not None
+        if self.view == WHEEL:
+            first = "UP/DOWN letter  LEFT/RIGHT move"
+            if menu:
+                first = first + "  MENU delete"
+            return (first, "SELECT done  BACK cancel")
         if self.view == WHO:
             return ("UP/DOWN choose  SELECT pick  BACK close",)
         if self.info:
