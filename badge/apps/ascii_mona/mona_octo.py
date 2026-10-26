@@ -1,4 +1,4 @@
-"""The real MyOctocat art and the builder's outfit rules.
+"""The real MyOctocat art: outfit rules and a progressive badge painter.
 
 The part library is GitHub's own MyOctocat builder
 (https://myoctocat.com/build-your-octocat/). The ascii_mona bake tool turned
@@ -7,10 +7,24 @@ its SVG parts into octocat.bin, and mona_parts indexes that file. Octocat art
 
 compose() applies the builder's paint order and hide rules (a hat hides big
 hair, a prop replaces the waving hand, a long top hides the trousers) and is
-plain Python, so the host tests share it with the badge.
+plain Python, so the host tests share it with the badge. Painter streams one
+outfit's polygons from flash into an offscreen image a few layers per frame.
 """
 
+from array import array
+
 import mona_parts as P
+
+try:
+    from time import ticks_diff, ticks_ms
+except ImportError:
+    import time
+
+    def ticks_ms():
+        return int(time.time() * 1000)
+
+    def ticks_diff(a, b):
+        return a - b
 
 
 EYES = 0
@@ -178,3 +192,117 @@ def fit(width, height, margin=0):
 
 def check_header(head):
     return len(head) >= 6 and head[0:4] == b"OCTO" and head[4] == P.VERSION and head[5] == P.Q
+
+
+class Painter:
+    """Draws one outfit into an offscreen image over several frames."""
+
+    def __init__(self, path=None):
+        self.path = path or P.BIN
+        self.file = None
+        self.failed = ""
+        self.target = None
+        self.blocks = ()
+        self.block = 0
+        self.current = None
+        self.skip = MASKED
+        self.colours = None
+        self.transform = None
+        self.done = True
+        self.drawn = 0
+        self.errors = 0
+
+    def _open(self):
+        if self.file is not None or self.failed:
+            return self.file is not None
+        try:
+            self.file = open(self.path, "rb")
+            if not check_header(self.file.read(6)):
+                self.failed = "art file is the wrong version"
+        except OSError:
+            self.failed = "art file missing"
+        if self.failed and self.file is not None:
+            self.close()
+        return self.file is not None
+
+    def close(self):
+        if self.file is not None:
+            try:
+                self.file.close()
+            except OSError:
+                pass
+        self.file = None
+
+    def start(self, target, blocks, flags, palette, scale, x, y):
+        """Begin painting blocks into target at scale, offset (x, y)."""
+        self.target = target
+        self.blocks = blocks
+        self.block = 0
+        self.current = None
+        self.skip = skip_variant(flags)
+        self.colours = palette
+        k = scale / P.Q
+        self.transform = mat3().translate(x, y).scale(k)
+        self.drawn = 0
+        self.errors = 0
+        self.done = not self._open()
+        target.antialias = image.X4
+        target.fill_rule = image.NON_ZERO
+
+    def progress(self):
+        """0..100 for a progress bar."""
+        if self.done or not self.blocks:
+            return 100
+        return self.block * 100 // len(self.blocks)
+
+    def _next_layer(self):
+        while True:
+            if self.current is not None:
+                for layer in self.current:
+                    return layer
+                self.current = None
+                self.block += 1
+            if self.block >= len(self.blocks):
+                return None
+            offset, length = self.blocks[self.block]
+            try:
+                self.file.seek(offset)
+                data = self.file.read(length)
+            except OSError:
+                data = b""
+            if len(data) != length:
+                self.errors += 1
+                self.block += 1
+                continue
+            self.current = layers(data)
+
+    def _pen(self, role, rgb, alpha):
+        if role != CUSTOM:
+            rgb = self.colours[role] if role < len(self.colours) else 0
+        return color.rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, alpha)
+
+    def step(self, budget_ms=18):
+        """Paint for about budget_ms; returns True once the outfit is done."""
+        if self.done:
+            return True
+        began = ticks_ms()
+        target = self.target
+        while True:
+            layer = self._next_layer()
+            if layer is None:
+                self.done = True
+                self.current = None
+                return True
+            role, rgb, alpha, variant, contours = layer
+            if variant != self.skip and contours:
+                try:
+                    made = shape.custom(*[array("f", array("h", c)) for c in contours])
+                    made.transform = self.transform
+                    target.pen = self._pen(role, rgb, alpha)
+                    target.shape(made)
+                    self.drawn += 1
+                except (ValueError, TypeError, MemoryError):
+                    self.errors += 1
+            if ticks_diff(ticks_ms(), began) >= budget_ms:
+                return False
+

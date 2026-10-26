@@ -11,6 +11,7 @@ runtime modules (badgeware.ir, aye_arr.nec, ...) are removed after each test.
 import ast
 import binascii
 import importlib.util
+import os
 import re
 import struct
 import sys
@@ -64,6 +65,103 @@ def load_app_modules():
 
 def setUpModule():
     load_app_modules()
+
+
+def _restore_attr(module, name, old):
+    if old is _MISSING:
+        if name in module.__dict__:
+            delattr(module, name)
+    else:
+        setattr(module, name, old)
+
+
+def inject(test, module, **names):
+    """Give one private app module runtime globals or constants for one test."""
+    for name, value in names.items():
+        old = module.__dict__.get(name, _MISSING)
+        setattr(module, name, value)
+        test.addCleanup(_restore_attr, module, name, old)
+
+
+# Badge runtime fakes ---------------------------------------------------------
+
+
+class FakeShape:
+    def __init__(self, kind, args):
+        self.kind = kind
+        self.args = args
+        self.transform = None
+
+
+class FakeShapes:
+    @staticmethod
+    def custom(*contours):
+        if not contours:
+            raise ValueError("no contours")
+        for contour in contours:
+            if len(contour) < 2 or len(contour) % 2:
+                raise ValueError("contours need x, y pairs")
+        return FakeShape("custom", contours)
+
+    @staticmethod
+    def rectangle(x, y, w, h):
+        return FakeShape("rectangle", (x, y, w, h))
+
+
+class FakeMat3:
+    def __init__(self):
+        self.ops = []
+
+    def translate(self, x, y):
+        self.ops.append(("translate", x, y))
+        return self
+
+    def scale(self, x, y=None):
+        self.ops.append(("scale", x, y))
+        return self
+
+
+class FakeColor:
+    @staticmethod
+    def rgb(r, g, b, a=255):
+        for value in (r, g, b, a):
+            if not 0 <= value <= 255:
+                raise ValueError("colour component out of range: %r" % (value,))
+        return (r, g, b, a)
+
+
+class FakeImage:
+    X2 = "X2"
+    X4 = "X4"
+    NON_ZERO = "NON_ZERO"
+    EVEN_ODD = "EVEN_ODD"
+    BILINEAR = "BILINEAR"
+    NEAREST = "NEAREST"
+
+    def __init__(self, width=320, height=240):
+        self.width = width
+        self.height = height
+        self.raw = bytearray(width * height * 4)
+        self.pen = None
+        self.font = None
+        self.antialias = None
+        self.fill_rule = None
+        self.calls = []
+
+    def clear(self, *args):
+        self.calls.append(("clear",) + args)
+
+    def blit(self, *args):
+        self.calls.append(("blit",) + args)
+
+    def shape(self, made):
+        self.calls.append(("shape", made, self.pen))
+
+    def text(self, *args):
+        self.calls.append(("text",) + args)
+
+    def count(self, kind):
+        return len([call for call in self.calls if call[0] == kind])
 
 
 def png_size(path):
@@ -513,6 +611,15 @@ class TestOcto(unittest.TestCase):
         self.D = M["mona_dna"]
         self.path = str(APP_DIR / self.P.BIN)
 
+    def paint_kit(self):
+        inject(self, self.O, mat3=FakeMat3, image=FakeImage, shape=FakeShapes, color=FakeColor)
+
+    def outfit(self, handle="octocat"):
+        dna = self.D.dna_for(handle)
+        picks, misc = self.D.picks_of(dna)
+        blocks, flags = self.O.compose(picks, misc)
+        return blocks, flags, self.D.colours_of(dna)
+
     def test_art_file_matches_its_index(self):
         O, P = self.O, self.P
         self.assertEqual(len(self.data), P.BIN_SIZE)
@@ -624,6 +731,89 @@ class TestOcto(unittest.TestCase):
             self.assertGreaterEqual(top, margin - 1e-6)
             self.assertLessEqual(bottom, height - margin + 1e-6)
             self.assertAlmostEqual(left - margin, width - margin - right, places=6)
+
+    def expected_layers(self, blocks, flags):
+        skip = self.O.skip_variant(flags)
+        total = 0
+        for offset, length in blocks:
+            for _role, _rgb, _alpha, variant, contours in self.O.layers(self.data[offset:offset + length]):
+                if variant != skip and contours:
+                    total += 1
+        return total
+
+    def test_painter_draws_the_whole_outfit(self):
+        O, P = self.O, self.P
+        self.paint_kit()
+        blocks, flags, palette = self.outfit()
+        painter = O.Painter(self.path)
+        target = FakeImage(192, 216)
+        painter.start(target, blocks, flags, palette, 0.1, 5, 7)
+        self.addCleanup(painter.close)
+        self.assertFalse(painter.done)
+        self.assertEqual(painter.failed, "")
+        self.assertEqual(painter.progress(), 0)
+        self.assertEqual(target.antialias, "X4")
+        self.assertEqual(target.fill_rule, "NON_ZERO")
+        self.assertEqual(painter.transform.ops, [("translate", 5, 7), ("scale", 0.1 / P.Q, None)])
+        for _ in range(1000):
+            if painter.step(budget_ms=10 ** 9):
+                break
+        self.assertTrue(painter.done)
+        self.assertEqual(painter.errors, 0)
+        self.assertEqual(painter.drawn, self.expected_layers(blocks, flags))
+        self.assertEqual(painter.drawn, 127)
+        self.assertEqual(target.count("shape"), painter.drawn)
+        self.assertEqual(painter.progress(), 100)
+        for call in target.calls:
+            made, pen = call[1], call[2]
+            self.assertEqual(made.kind, "custom")
+            self.assertIs(made.transform, painter.transform)
+            self.assertTrue(all(contour.typecode == "f" for contour in made.args))
+            self.assertEqual(len(pen), 4)
+        self.assertTrue(painter.step())
+
+    def test_painter_respects_its_frame_budget(self):
+        O = self.O
+        self.paint_kit()
+        blocks, flags, palette = self.outfit("ada")
+        painter = O.Painter(self.path)
+        painter.start(FakeImage(), blocks, flags, palette, 0.1, 0, 0)
+        self.assertFalse(painter.step(budget_ms=-1))
+        self.assertEqual(painter.drawn, 1)
+        self.assertLess(painter.progress(), 100)
+        painter.close()
+        self.assertIsNone(painter.file)
+        painter.close()
+
+    def test_painter_survives_missing_bad_and_short_art(self):
+        O = self.O
+        self.paint_kit()
+        blocks, flags, palette = self.outfit()
+        missing = O.Painter(str(APP_DIR / "no-such-art.bin"))
+        missing.start(FakeImage(), blocks, flags, palette, 1, 0, 0)
+        self.assertTrue(missing.done)
+        self.assertEqual(missing.failed, "art file missing")
+        self.assertTrue(missing.step())
+        self.assertEqual((missing.progress(), missing.drawn), (100, 0))
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        bad = os.path.join(folder.name, "bad.bin")
+        with open(bad, "wb") as handle:
+            handle.write(b"OCTO\x01\x04" + bytes(32))
+        wrong = O.Painter(bad)
+        wrong.start(FakeImage(), blocks, flags, palette, 1, 0, 0)
+        self.assertTrue(wrong.done)
+        self.assertEqual(wrong.failed, "art file is the wrong version")
+        self.assertIsNone(wrong.file)
+        short = os.path.join(folder.name, "short.bin")
+        with open(short, "wb") as handle:
+            handle.write(self.data[:6] + bytes(10))
+        cut = O.Painter(short)
+        target = FakeImage()
+        cut.start(target, blocks, flags, palette, 1, 0, 0)
+        self.addCleanup(cut.close)
+        self.assertTrue(cut.step(budget_ms=10 ** 9))
+        self.assertEqual((cut.errors, cut.drawn, target.count("shape")), (len(blocks), 0, 0))
 
 
 # App files -------------------------------------------------------------------
