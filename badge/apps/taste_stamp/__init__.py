@@ -132,6 +132,8 @@ CARD_X = 16
 CARD_Y = 180
 CARD_W = W - 2 * CARD_X
 CARD_H = 56
+NUMBER_SCALE = 0.078
+NUMBER_HW = 0.065
 
 TOAST_MS = 1800
 
@@ -279,6 +281,33 @@ def draw_mark(target, mark, alpha):
         target.pen = rgb(verdicts.INKS[mark.index], alpha)
         for d in mark.dots:
             target.shape(shape.circle(d[0], d[1], d[2]))
+
+
+def number_shape(n):
+    # A d20 face number as one shape in (s, t) face coordinates, built once;
+    # each frame only sets its transform. 6 and 9 get a dot like real dice.
+    text = str(n)
+    if n == 6 or n == 9:
+        text += "."
+    groups = []
+    stamp.text_groups(text, 0.0, -stamp.CAP * NUMBER_SCALE * 0.5, NUMBER_SCALE, NUMBER_HW, groups)
+    flat = []
+    for group in groups:
+        for contour in group:
+            flat.append(contour)
+    return contour_shape(eightball.to_face_uv(flat))
+
+
+NUMBER_SHAPES = [None]
+for _n in range(1, 21):
+    NUMBER_SHAPES.append(number_shape(_n))
+
+
+def place_number(n, top, left, right):
+    tx, ty, phi, sx, sy, theta = eightball.affine_parts(top, left, right)
+    s = NUMBER_SHAPES[n]
+    s.transform = mat3().translate(tx, ty).rotate(phi).scale(sx, sy).rotate(theta)
+    return s
 
 
 # One reused buffer for the d20's triangles; each is drawn before the next
@@ -677,6 +706,15 @@ class App:
                 p = points[i]
                 q = points[j]
                 screen.shape(shape.line(p[0], p[1], q[0], q[1], 1.3))
+        if ball.speed() < 6.0 or ball.state == eightball.SETTLING or ball.state == eightball.LANDED:
+            screen.fill_rule = image.NON_ZERO
+            for f, level, nz in visible:
+                if nz <= 0.3:
+                    continue
+                face = faces[f]
+                screen.pen = rgb(WHITE, min(255, int((nz - 0.3) * 637.5)))
+                screen.shape(place_number(ball.numbers[f], points[face[0]], points[face[1]], points[face[2]]))
+            screen.fill_rule = image.EVEN_ODD
         screen.pen = GLINT_C
         screen.shape(GLINT)
         self.draw_card(now)

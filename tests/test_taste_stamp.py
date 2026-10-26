@@ -143,7 +143,7 @@ class VerdictsTests(unittest.TestCase):
 class StampTests(unittest.TestCase):
     def all_text(self):
         texts = list(V.VERDICTS) + list(V.FOOTERS) + [V.STAMP_HEADER] + list(V.PROMPTS)
-        return texts
+        return texts + [str(n) for n in range(1, 21)] + ["6.", "9."]
 
     def test_glyphs_cover_every_string_the_app_draws(self):
         for text in self.all_text():
