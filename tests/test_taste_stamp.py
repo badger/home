@@ -32,6 +32,10 @@ S = load(APP / "stamp.py", "taste_stamp_stamp")
 M = load(APP / "motion.py", "taste_stamp_motion")
 README_CHECK = load(ROOT / ".github" / "scripts" / "validate_app_readmes.py", "taste_stamp_validate_app_readmes")
 
+REST_UP = (0, 16384, 0, 0, 0, 0)  # hardware, badge upright
+REST_SIM = (0, -16384, 0, 0, 0, 0)  # Badge Simulator, badge upright
+SPIKE = (30000, 16384, 0, 0, 0, 0)
+
 
 def luminance(c):
     def channel(v):
@@ -267,6 +271,16 @@ class StampTests(unittest.TestCase):
             self.assertLessEqual(travel, math.hypot(s[2], s[3]) * S.SPLAT_DRAG_MS / 1000.0 + 1e-9)
 
 
+def run_chop(detector, reading, start, end, dt=16):
+    fired = []
+    t = start
+    while t <= end:
+        if detector.update(reading, dt, t):
+            fired.append(t)
+        t += dt
+    return fired
+
+
 class MotionTests(unittest.TestCase):
     def test_flip_fires_once_the_new_orientation_settles(self):
         f = M.FlipDetector(False)
@@ -304,6 +318,67 @@ class MotionTests(unittest.TestCase):
         f.update(False, 2000)
         self.assertTrue(f.update(False, 2120))
         self.assertFalse(f.state)
+
+    def armed_chop(self, rest=REST_UP):
+        c = M.ChopDetector()
+        self.assertFalse(c.armed)
+        self.assertEqual(run_chop(c, rest, 0, 112), [])
+        self.assertFalse(c.armed)
+        self.assertFalse(c.update(rest, 16, 128))
+        self.assertTrue(c.armed)
+        return c
+
+    def test_chop_arms_after_calm_and_fires_on_a_spike(self):
+        c = self.armed_chop()
+        self.assertTrue(c.update(SPIKE, 16, 144))
+        self.assertAlmostEqual(c.jolt, 108, delta=1)
+        self.assertFalse(c.armed)
+        self.assertEqual(c.last_chop, 144)
+
+    def test_chop_works_with_either_gravity_sign(self):
+        c = self.armed_chop(REST_SIM)
+        self.assertTrue(c.update((30000, -16384, 0, 0, 0, 0), 16, 144))
+
+    def test_a_sudden_drop_in_acceleration_also_chops(self):
+        c = self.armed_chop()
+        self.assertTrue(c.update((0, 1000, 0, 0, 0, 0), 16, 144))
+
+    def test_a_moderate_jolt_needs_a_spin_to_chop(self):
+        c = self.armed_chop()
+        self.assertFalse(c.update((24000, 16384, 0, 0, 0, 0), 16, 144))
+        c = self.armed_chop()
+        self.assertTrue(c.update((24000, 16384, 0, 15000, 0, 0), 16, 144))
+
+    def test_chop_cooldown_then_rearm(self):
+        c = self.armed_chop()
+        t0 = 144
+        self.assertTrue(c.update(SPIKE, 16, t0))
+        self.assertEqual(run_chop(c, REST_UP, t0 + 16, t0 + 288), [])
+        self.assertFalse(c.update(SPIKE, 16, t0 + 304))
+        self.assertEqual(run_chop(c, REST_UP, t0 + 320, t0 + 688), [])
+        self.assertTrue(c.armed)
+        self.assertTrue(c.update(SPIKE, 16, t0 + 704))
+
+    def test_zero_reading_is_ignored(self):
+        c = self.armed_chop()
+        self.assertFalse(c.update((0, 0, 0, 0, 0, 0), 16, 144))
+        self.assertTrue(c.update(SPIKE, 16, 160))
+
+    def test_a_spike_as_the_first_reading_never_fires_and_recovers(self):
+        c = M.ChopDetector()
+        self.assertFalse(c.update(SPIKE, 16, 0))
+        self.assertEqual(run_chop(c, REST_UP, 16, 6000), [])
+        self.assertTrue(c.armed)
+        self.assertEqual(run_chop(c, REST_UP, 6016, 10000), [])
+        self.assertAlmostEqual(c.gravity, 16384, delta=200)
+        self.assertTrue(c.update(SPIKE, 16, 10016))
+
+    def test_a_chop_barely_moves_the_gravity_estimate(self):
+        c = self.armed_chop()
+        before = c.gravity
+        c.update(SPIKE, 16, 144)
+        c.update(SPIKE, 16, 160)
+        self.assertLess(abs(c.gravity - before), 0.02 * before)
 
 
 def read_png(path):
