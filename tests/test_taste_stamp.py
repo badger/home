@@ -207,6 +207,16 @@ class StampTests(unittest.TestCase):
             self.assertFalse(pose[3])
             previous = pose
 
+    def test_shake_offset_decays_to_nothing(self):
+        self.assertEqual(S.shake_offset(-1), (0.0, 0.0))
+        self.assertEqual(S.shake_offset(S.SHAKE_MS), (0.0, 0.0))
+        self.assertEqual(S.shake_offset(0, 0.0), (0.0, 9.0))
+        for t in range(0, S.SHAKE_MS, 7):
+            x, y = S.shake_offset(t, 1.3)
+            limit = S.SHAKE_PX * (1 - t / S.SHAKE_MS) ** 2 + 1e-9
+            self.assertLessEqual(abs(x), limit)
+            self.assertLessEqual(abs(y), limit)
+
     def test_splats_fly_outward_from_the_rim(self):
         rng = V.Rng(7)
         splats = S.make_splats(rng.random, 40, 160.0, 121.0, 80.0, 50.0)

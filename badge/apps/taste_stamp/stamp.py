@@ -1,5 +1,5 @@
 # Rubber-stamp artwork for Taste Stamp: a stroked block font, the stamp
-# layout, and the slam and ink-splatter curves.
+# layout, and the slam, shake and ink-splatter curves.
 #
 # Everything here is plain Python that emits flat [x0, y0, x1, y1, ...]
 # contours for shape.custom(), so it runs unchanged on the badge and under
@@ -334,6 +334,8 @@ def build_stamp(text, header=None, footer=None):
 DROP_MS = 140
 SQUASH_MS = 120
 BAKE_MS = DROP_MS + SQUASH_MS
+SHAKE_MS = 450
+SHAKE_PX = 9.0
 SPLAT_MS = 400
 DROP_SCALE = 2.6
 DROP_SPIN = 20.0
@@ -347,6 +349,14 @@ def slam_pose(t):
         return DROP_SCALE - (DROP_SCALE - 1.0) * p * p, (1.0 - p) * (1.0 - p), int(70 + 185 * p), False
     q = min(1.0, (t - DROP_MS) / SQUASH_MS)
     return 1.0 - SQUASH * (1.0 - q) * (1.0 - q), 0.0, 255, True
+
+
+def shake_offset(t, phase=0.0):
+    # Decaying screen shake, t ms after impact.
+    if t < 0 or t >= SHAKE_MS:
+        return 0.0, 0.0
+    a = SHAKE_PX * (1.0 - t / SHAKE_MS) ** 2
+    return a * math.sin(0.09 * t + phase), a * math.cos(0.13 * t + phase)
 
 
 def make_splats(rand, count, cx, cy, half_w, half_h):

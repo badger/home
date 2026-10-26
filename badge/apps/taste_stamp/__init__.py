@@ -179,6 +179,7 @@ class Slam:
         self.y = PAPER_CY + rng.uniform(-6.0, 6.0)
         self.rot = rng.uniform(-10.0, 10.0)
         self.spin = rng.uniform(-stamp.DROP_SPIN, stamp.DROP_SPIN)
+        self.phase = rng.uniform(0.0, 6.28)
         self.seed = rng.next_u32()
         self.splats = None
         self.dots = []
@@ -312,7 +313,7 @@ class App:
             self.bake_stamp(s)
         if not s.dried and s.splats is not None and t >= stamp.DROP_MS + stamp.SPLAT_MS:
             self.bake_splats(s)
-        if s.inked and s.dried:
+        if s.inked and s.dried and t >= stamp.DROP_MS + stamp.SHAKE_MS:
             self.slam = None
 
     def finish_slam(self):
@@ -387,17 +388,23 @@ class App:
 
     def draw_stamp_mode(self, now):
         s = self.slam
-        screen.blit(self.desk, vec2(0, 0))
+        ox = 0
+        oy = 0
+        if s is not None:
+            dx, dy = stamp.shake_offset(now - s.start - stamp.DROP_MS, s.phase)
+            ox = int(round(dx))
+            oy = int(round(dy))
+        screen.blit(self.desk, vec2(ox, oy))
         if s is None and not self.marks:
             self.draw_idle_box()
         if s is not None:
             t = now - s.start
             if not s.inked:
-                self.draw_falling(s, t)
+                self.draw_falling(s, t, ox, oy)
             if s.splats is not None and not s.dried:
                 screen.pen = rgb(verdicts.INKS[s.index], INK_ALPHA)
                 for p in s.splats:
-                    screen.shape(shape.circle(p[0], p[1], p[4]))
+                    screen.shape(shape.circle(p[0] + ox, p[1] + oy, p[4]))
         self.draw_title("TASTE STAMP")
         screen.font = SMALL_FONT
         if self.choice is None:
@@ -407,7 +414,7 @@ class App:
         screen.text("NEXT: " + self.choice_label(), PAPER_X, BOTTOM_Y)
         screen.font = UI_FONT
 
-    def draw_falling(self, s, t):
+    def draw_falling(self, s, t, ox, oy):
         k, wobble, alpha, landed = stamp.slam_pose(t)
         rot = s.rot + wobble * s.spin
         scale = s.scale * k
@@ -415,10 +422,10 @@ class App:
             # The stamp block's shadow closes in as it drops.
             lift = (k - 1.0) * 10.0
             block = shape.rounded_rectangle(-s.w * 0.5, -s.h * 0.5, s.w, s.h, 2)
-            block.transform = mat3().translate(s.x + lift, s.y + lift * 1.3).rotate(rot).scale(scale)
+            block.transform = mat3().translate(s.x + ox + lift, s.y + oy + lift * 1.3).rotate(rot).scale(scale)
             screen.pen = color.rgb(0, 0, 0, 50)
             screen.shape(block)
-        draw_stamp(screen, s.index, s.x, s.y, rot, scale, min(alpha, INK_ALPHA))
+        draw_stamp(screen, s.index, s.x + ox, s.y + oy, rot, scale, min(alpha, INK_ALPHA))
 
     def draw_idle_box(self):
         bw = 214
