@@ -1,5 +1,5 @@
-# Rubber-stamp artwork for Taste Stamp: a stroked block font and the
-# stamp layout.
+# Rubber-stamp artwork for Taste Stamp: a stroked block font, the stamp
+# layout and the slam curve.
 #
 # Everything here is plain Python that emits flat [x0, y0, x1, y1, ...]
 # contours for shape.custom(), so it runs unchanged on the badge and under
@@ -328,3 +328,21 @@ def build_stamp(text, header=None, footer=None):
             for i in range(1, len(contour), 2):
                 contour[i] += shift
     return groups, 2 * outer_half + BORDER, outer_bottom + BORDER
+
+
+# Slam timeline, in milliseconds from the trigger.
+DROP_MS = 140
+SQUASH_MS = 120
+BAKE_MS = DROP_MS + SQUASH_MS
+DROP_SCALE = 2.6
+DROP_SPIN = 20.0
+SQUASH = 0.06
+
+
+def slam_pose(t):
+    # (scale factor, wobble factor 0-1, alpha 0-255, landed) at t ms.
+    if t < DROP_MS:
+        p = max(0.0, t / DROP_MS)
+        return DROP_SCALE - (DROP_SCALE - 1.0) * p * p, (1.0 - p) * (1.0 - p), int(70 + 185 * p), False
+    q = min(1.0, (t - DROP_MS) / SQUASH_MS)
+    return 1.0 - SQUASH * (1.0 - q) * (1.0 - q), 0.0, 255, True

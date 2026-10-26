@@ -191,6 +191,21 @@ class StampTests(unittest.TestCase):
         bare = S.build_stamp("SHIP IT", None, "APPROVED")
         self.assertLess(bare[2], first[2])
 
+    def test_slam_pose(self):
+        self.assertEqual(S.slam_pose(0), (2.6, 1.0, 70, False))
+        k, wobble, alpha, landed = S.slam_pose(S.DROP_MS)
+        self.assertAlmostEqual(k, 0.94)
+        self.assertEqual((wobble, alpha, landed), (0.0, 255, True))
+        for t in (S.BAKE_MS, 400, 5000):
+            self.assertEqual(S.slam_pose(t), (1.0, 0.0, 255, True))
+        previous = S.slam_pose(0)
+        for t in range(1, S.DROP_MS):
+            pose = S.slam_pose(t)
+            self.assertLess(pose[0], previous[0])
+            self.assertGreaterEqual(pose[2], previous[2])
+            self.assertFalse(pose[3])
+            previous = pose
+
 
 def read_png(path):
     data = Path(path).read_bytes()

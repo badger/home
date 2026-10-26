@@ -1,4 +1,34 @@
 # Taste Stamp: a Creative Director's rubber stamp.
+#
+# Press DOWN to slam a verdict onto the brief.
+
+import os
+import random
+import sys
+from array import array
+
+APP_DIRS = ("/remote/apps/taste_stamp", "/system/apps/taste_stamp", "/apps/taste_stamp", "/taste_stamp")
+
+
+def find_app_dir():
+    for path in APP_DIRS:
+        try:
+            if is_dir(path):
+                return path
+        except Exception:
+            pass
+    return APP_DIRS[1]
+
+
+APP_DIR = find_app_dir()
+try:
+    os.chdir(APP_DIR)
+except OSError:
+    pass
+sys.path.insert(0, APP_DIR)
+
+import stamp  # noqa: E402
+import verdicts  # noqa: E402
 
 badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
@@ -38,6 +68,8 @@ PAPER_X = 14
 PAPER_Y = 26
 PAPER_W = W - 2 * PAPER_X
 PAPER_H = 190
+PAPER_CX = PAPER_X + PAPER_W // 2
+PAPER_CY = PAPER_Y + PAPER_H // 2
 STRIP_H = 20
 TEXT_X = PAPER_X + 16
 TEXT_W = PAPER_W - 32
@@ -46,9 +78,87 @@ TEXT_W = PAPER_W - 32
 # Negative values are headings and 0 is a paragraph gap.
 BRIEF = (-0.42, 0.94, 0.88, 0.97, 0.52, 0, -0.3, 0.9, 0.96, 0.84, 0.6, 0, 0.91, 0.7)
 
+INK_ALPHA = 225
+STAMP_MAX_W = 220.0
+STAMP_MAX_H = 136.0
+STAMP_MAX_SCALE = 5.5
+
+
+def text_width(text):
+    width, _ = screen.measure_text(text)
+    return width
+
+
+def make_seed():
+    seed = 0
+    try:
+        seed = random.getrandbits(32)
+    except Exception:
+        pass
+    try:
+        seed ^= int(badge.ticks) & 0xFFFFFFFF
+    except Exception:
+        pass
+    return seed
+
+
+rng = verdicts.Rng(make_seed())
+
+# Stamp artwork is built once per verdict, lazily, as (outlines, width, height)
+# in stamp units centred on the origin.
+STAMPS = [None] * len(verdicts.VERDICTS)
+
+
+def contour_shape(contours):
+    return shape.custom(*[array("f", c) for c in contours])
+
+
+def stamp_shapes(index):
+    cached = STAMPS[index]
+    if cached is None:
+        groups, w, h = stamp.build_stamp(verdicts.VERDICTS[index], verdicts.STAMP_HEADER, verdicts.FOOTERS[index])
+        outlines = []
+        for group in groups:
+            outlines.append(contour_shape(group))
+        cached = (outlines, w, h)
+        STAMPS[index] = cached
+    return cached
+
+
+def draw_stamp(target, index, x, y, rot, scale, alpha):
+    outlines, w, h = stamp_shapes(index)
+    transform = mat3().translate(x, y).rotate(rot).scale(scale)
+    target.pen = rgb(verdicts.INKS[index], alpha)
+    target.fill_rule = image.NON_ZERO
+    for s in outlines:
+        s.transform = transform
+        target.shape(s)
+    target.fill_rule = image.EVEN_ODD
+
+
+class Slam:
+    # One stamp impression: it falls, lands and is then baked into the desk
+    # image, where it stays as a mark.
+
+    def __init__(self, index, now):
+        outlines, w, h = stamp_shapes(index)
+        self.index = index
+        self.start = now
+        self.scale = min(STAMP_MAX_W / w, STAMP_MAX_H / h, STAMP_MAX_SCALE)
+        self.w = w
+        self.h = h
+        self.x = PAPER_CX + rng.uniform(-10.0, 10.0)
+        self.y = PAPER_CY + rng.uniform(-6.0, 6.0)
+        self.rot = rng.uniform(-10.0, 10.0)
+        self.spin = rng.uniform(-stamp.DROP_SPIN, stamp.DROP_SPIN)
+        self.inked = False
+
 
 class App:
     def __init__(self):
+        self.bag = verdicts.ShuffleBag(len(verdicts.VERDICTS), rng)
+        self.slam = None
+        self.marks = []
         self.desk = image(W, H)
         self.desk.antialias = image.X2
         # The brief's header is vector text, which needs EVEN_ODD.
@@ -61,6 +171,8 @@ class App:
         now = badge.ticks
         if not self.handle_buttons(now):
             return False
+        if self.slam is not None:
+            self.advance_slam(now)
         self.draw_stamp_mode(now)
         return None
 
@@ -68,9 +180,43 @@ class App:
         # Returns False when the app should exit.
         if badge.pressed(BUTTON_BACK):
             return False
+        if badge.pressed(BUTTON_DOWN):
+            self.start_slam(self.next_verdict(), now)
         return True
 
-    # The desk.
+    # Modes and choices.
+
+    def next_verdict(self):
+        return self.bag.next()
+
+    # Stamp slams.
+
+    def start_slam(self, index, now):
+        self.finish_slam()
+        self.slam = Slam(index, now)
+
+    def advance_slam(self, now):
+        s = self.slam
+        t = now - s.start
+        if not s.inked and t >= stamp.BAKE_MS:
+            self.bake_stamp(s)
+        if s.inked:
+            self.slam = None
+
+    def finish_slam(self):
+        # Lands the current slam at once.
+        s = self.slam
+        if s is None:
+            return
+        if not s.inked:
+            self.bake_stamp(s)
+        self.slam = None
+
+    def bake_stamp(self, s):
+        s.inked = True
+        self.marks.append(s)
+        d = self.desk
+        draw_stamp(d, s.index, s.x, s.y, s.rot, s.scale, INK_ALPHA)
 
     def render_desk(self):
         d = self.desk
@@ -101,13 +247,49 @@ class App:
     # Drawing.
 
     def draw_stamp_mode(self, now):
+        s = self.slam
         screen.blit(self.desk, vec2(0, 0))
+        if s is None and not self.marks:
+            self.draw_idle_box()
+        if s is not None:
+            t = now - s.start
+            if not s.inked:
+                self.draw_falling(s, t)
         self.draw_title("TASTE STAMP")
+
+    def draw_falling(self, s, t):
+        k, wobble, alpha, landed = stamp.slam_pose(t)
+        rot = s.rot + wobble * s.spin
+        scale = s.scale * k
+        if not landed:
+            # The stamp block's shadow closes in as it drops.
+            lift = (k - 1.0) * 10.0
+            block = shape.rounded_rectangle(-s.w * 0.5, -s.h * 0.5, s.w, s.h, 2)
+            block.transform = mat3().translate(s.x + lift, s.y + lift * 1.3).rotate(rot).scale(scale)
+            screen.pen = color.rgb(0, 0, 0, 50)
+            screen.shape(block)
+        draw_stamp(screen, s.index, s.x, s.y, rot, scale, min(alpha, INK_ALPHA))
+
+    def draw_idle_box(self):
+        bw = 214
+        bh = 56
+        x = PAPER_CX - bw // 2
+        y = PAPER_CY - bh // 2
+        screen.pen = PAPER_C
+        screen.shape(shape.rounded_rectangle(x, y, bw, bh, 6))
+        screen.pen = HEADING_C
+        screen.shape(shape.rounded_rectangle(x, y, bw, bh, 6).stroke(1.5))
+        screen.font = UI_FONT
+        self.centred("PRESS DOWN TO STAMP", y + 21, PAPER_TEXT_C)
 
     def draw_title(self, title):
         screen.font = UI_FONT
         screen.pen = WHITE_C
         screen.text(title, 10, TITLE_Y)
+
+    def centred(self, text, y, pen):
+        screen.pen = pen
+        screen.text(text, (W - text_width(text)) // 2, y)
 
 
 app = App()
