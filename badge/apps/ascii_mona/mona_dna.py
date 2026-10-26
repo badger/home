@@ -51,7 +51,9 @@ ODDS = (
     (O.EYES, 0), (O.MOUTHS, 0), (O.HAIR, 15), (O.HEADGEAR, 35), (O.TOPS, 10),
     (O.BOTTOMS, 15), (O.FOOTWEAR, 20), (O.PROPS, 30), (O.EYEWEAR, 50), (O.FACEHAIR, 60),
 )
+THEME_CHANCE = 30
 MATCH_MOUTH = 50  # chance the mouth shares the eyes' expression
+MISC_CHANCE = 50
 SAME_FACEHAIR = 75
 
 # Random picks never choose these. Faith, national and cultural dress, the
@@ -64,6 +66,49 @@ NOT_RANDOM = (
     (O.FOOTWEAR, ("Kimono", "Lederhosen", "Dirndl", "French Shoes")),
     (O.PROPS, ("Kimono", "Aussie", "Prosthetic Hand")),
     (O.MISC, ("Freckles", "Nose Ring", "Eyebrow Ring", "Earrings")),
+)
+# Costume pieces only appear as a whole THEMES outfit, so a random Mona is
+# either an everyday outfit or a matching costume, never a jumble of both.
+THEME_ONLY = (
+    (O.HEADGEAR, ("Hockey Helmet", "Panda Head", "Space Helmet", "Snow Helmet", "Cyclist Helmet", "PJ Cap",
+                  "Fire Helmet", "Bunny Hood", "Armor Helmet", "Scuba Hood")),
+    (O.TOPS, ("Panda Suit", "Hockey Jersey", "Football Jersey", "Robot Shirt", "Tracksuit", "Astronaut", "Cowboy Vest",
+              "Ski Jacket", "Cyclist Shirt", "PJs Shirt", "Super Hero Tights", "Firefighter Jacket", "Wizard Robe",
+              "Scuba Wetsuit", "Dancer Tights", "Bunny Suit", "Armor Suit", "World Cup Jersey")),
+    (O.BOTTOMS, ("Panda Bottoms", "Hockey Pants", "Football Shorts", "Robot Pants", "Tracksuit Pants", "Space Pants",
+                 "Snow Pants", "Cyclist Shorts", "PJ Pants", "Superhero Tights", "Firefighter Pants", "Scuba Pants",
+                 "Dancer Tights", "Bunny Suit", "Armor Suit", "Soccer Shorts")),
+    (O.FOOTWEAR, ("Panda Shoes", "Hockey", "Football Cleats", "Robot Shoes", "Tracksuit", "Astronaut", "Cyclist Shoes",
+                  "PJ Slippers", "Superhero Boots", "Firefighter Boots", "Wizard Sandals", "Scuba Flippers",
+                  "Ballet Shoes", "Bunny Suit", "Armor Suit Boots", "Cleats")),
+    (O.EYEWEAR, ("Scuba Goggles",)),
+)
+# Extras that would clash if a Mona wore two from the same group
+MISC_GROUPS = (
+    ("Cowboy Buckle Belt", "Dress Buckle Belt"),
+    ("Scarf", "Bow Tie", "Bolo Tie", "Oxford Tie", "Gold Chain", "Pearls"),
+    ("Watch", "Bracelet"),
+)
+# Matching costumes from the MyOctocat library
+THEMES = (
+    ((O.HEADGEAR, "Space Helmet"), (O.TOPS, "Astronaut"), (O.BOTTOMS, "Space Pants"), (O.FOOTWEAR, "Astronaut")),
+    ((O.HEADGEAR, "Wizard Hat"), (O.TOPS, "Wizard Robe"), (O.FOOTWEAR, "Wizard Sandals"), (O.PROPS, "Wizard Wand")),
+    ((O.HEADGEAR, "Fire Helmet"), (O.TOPS, "Firefighter Jacket"), (O.BOTTOMS, "Firefighter Pants"), (O.FOOTWEAR, "Firefighter Boots")),
+    ((O.HEADGEAR, "Scuba Hood"), (O.TOPS, "Scuba Wetsuit"), (O.BOTTOMS, "Scuba Pants"), (O.FOOTWEAR, "Scuba Flippers"), (O.EYEWEAR, "Scuba Goggles")),
+    ((O.HEADGEAR, "Armor Helmet"), (O.TOPS, "Armor Suit"), (O.BOTTOMS, "Armor Suit"), (O.FOOTWEAR, "Armor Suit Boots"), (O.PROPS, "Sword")),
+    ((O.HEADGEAR, "Bunny Hood"), (O.TOPS, "Bunny Suit"), (O.BOTTOMS, "Bunny Suit"), (O.FOOTWEAR, "Bunny Suit")),
+    ((O.HEADGEAR, "Panda Head"), (O.TOPS, "Panda Suit"), (O.BOTTOMS, "Panda Bottoms"), (O.FOOTWEAR, "Panda Shoes"), (O.PROPS, "Panda")),
+    ((O.HEADGEAR, "Hockey Helmet"), (O.TOPS, "Hockey Jersey"), (O.BOTTOMS, "Hockey Pants"), (O.FOOTWEAR, "Hockey"), (O.PROPS, "Hockey Stick")),
+    ((O.TOPS, "Football Jersey"), (O.BOTTOMS, "Football Shorts"), (O.FOOTWEAR, "Football Cleats"), (O.PROPS, "Football")),
+    ((O.TOPS, "Robot Shirt"), (O.BOTTOMS, "Robot Pants"), (O.FOOTWEAR, "Robot Shoes")),
+    ((O.TOPS, "Tracksuit"), (O.BOTTOMS, "Tracksuit Pants"), (O.FOOTWEAR, "Tracksuit")),
+    ((O.HEADGEAR, "Cyclist Helmet"), (O.TOPS, "Cyclist Shirt"), (O.BOTTOMS, "Cyclist Shorts"), (O.FOOTWEAR, "Cyclist Shoes")),
+    ((O.HEADGEAR, "PJ Cap"), (O.TOPS, "PJs Shirt"), (O.BOTTOMS, "PJ Pants"), (O.FOOTWEAR, "PJ Slippers")),
+    ((O.TOPS, "Super Hero Tights"), (O.BOTTOMS, "Superhero Tights"), (O.FOOTWEAR, "Superhero Boots"), (O.MISC, "Cape")),
+    ((O.TOPS, "Dancer Tights"), (O.BOTTOMS, "Dancer Tights"), (O.FOOTWEAR, "Ballet Shoes")),
+    ((O.HEADGEAR, "Snow Helmet"), (O.TOPS, "Ski Jacket"), (O.BOTTOMS, "Snow Pants"), (O.FOOTWEAR, "Snow Boots"), (O.PROPS, "Snowboard")),
+    ((O.HEADGEAR, "Cowboy Hat"), (O.TOPS, "Cowboy Vest"), (O.FOOTWEAR, "Cowboy Boots"), (O.PROPS, "Lasso"), (O.MISC, "Cowboy Buckle Belt")),
+    ((O.TOPS, "World Cup Jersey"), (O.BOTTOMS, "Soccer Shorts"), (O.FOOTWEAR, "Cleats"), (O.PROPS, "Soccer Ball")),
 )
 
 
@@ -178,6 +223,7 @@ class Rng:
 
 
 _pools = [None] * (O.MISC + 1)
+_themes = []
 
 
 def pool(cat):
@@ -185,9 +231,10 @@ def pool(cat):
     got = _pools[cat]
     if got is None:
         banned = []
-        for entry in NOT_RANDOM:
-            if entry[0] == cat:
-                banned.extend(entry[1])
+        for table in (NOT_RANDOM, THEME_ONLY):
+            for entry in table:
+                if entry[0] == cat:
+                    banned.extend(entry[1])
         got = []
         for index in range(O.count(cat)):
             if O.part_name(cat, index) not in banned:
@@ -195,6 +242,37 @@ def pool(cat):
         got = tuple(got)
         _pools[cat] = got
     return got
+
+
+def themes():
+    """THEMES as (category, part index) pairs, names looked up once."""
+    if not _themes:
+        for theme in THEMES:
+            items = []
+            for cat, name in theme:
+                index = O.find_part(cat, name)
+                if index >= 0:
+                    items.append((cat, index))
+            _themes.append(tuple(items))
+    return _themes
+
+
+def _group(index):
+    name = O.part_name(O.MISC, index)
+    for i in range(len(MISC_GROUPS)):
+        if name in MISC_GROUPS[i]:
+            return i
+    return -1
+
+
+def _set_part(dna, cat, index):
+    if cat == O.MISC:
+        other = dna[MISC_B] - 1
+        if other == index or (other >= 0 and _group(other) >= 0 and _group(other) == _group(index)):
+            dna[MISC_B] = 0
+        dna[MISC_A] = index + 1
+    else:
+        dna[PART0 + cat] = index + 1
 
 
 def random_dna(seed):
@@ -217,6 +295,17 @@ def random_dna(seed):
             same = O.find_part(O.MOUTHS, O.part_name(O.EYES, dna[PART0 + O.EYES] - 1))
             if same >= 0:
                 dna[PART0 + O.MOUTHS] = same + 1
+    for slot in (MISC_A, MISC_B):
+        if rng.below(100) < MISC_CHANCE:
+            choices = pool(O.MISC)
+            pick = choices[rng.below(len(choices))]
+            other = dna[MISC_A] - 1 if slot == MISC_B else -1
+            if other < 0 or (pick != other and (_group(pick) < 0 or _group(pick) != _group(other))):
+                dna[slot] = pick + 1
+    if rng.below(100) < THEME_CHANCE:
+        costumes = themes()
+        for cat, index in costumes[rng.below(len(costumes))]:
+            _set_part(dna, cat, index)
     dna[TITLE] = rng.below(LIMITS[TITLE])
     dna[BACKDROP] = rng.below(LIMITS[BACKDROP])
     return tuple(dna)

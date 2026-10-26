@@ -411,6 +411,37 @@ class TestDna(unittest.TestCase):
         self.assertEqual(D.dna_for("mona"), D.dna_for("mona"))
         self.assertNotEqual(D.dna_for("mona"), D.dna_for("monb"))
 
+    def test_random_dna_follows_the_generator_rules(self):
+        D = self.D
+        O = self.O
+        not_random = dict((cat, set(names)) for cat, names in D.NOT_RANDOM)
+        theme_only = dict((cat, set(names)) for cat, names in D.THEME_ONLY)
+        themes = D.themes()
+        seen_themes = 0
+        for number in range(300):
+            handle = "user%d" % number
+            dna = D.dna_for(handle)
+            self.assertTrue(D.valid_dna(dna), handle)
+            self.assertTrue(dna[D.PART0] >= 1 and dna[D.PART0 + 1] >= 1, "%s needs eyes and a mouth" % handle)
+            picks, misc = D.picks_of(dna)
+            present = set((cat, index) for cat, index in enumerate(picks) if index >= 0)
+            present.update((O.MISC, index) for index in misc)
+            for cat, index in present:
+                name = O.part_name(cat, index)
+                self.assertNotIn(name, not_random.get(cat, ()), "%s got %s" % (handle, name))
+                if name in theme_only.get(cat, ()):
+                    whole = [theme for theme in themes
+                             if (cat, index) in theme and all(pair in present for pair in theme)]
+                    self.assertTrue(whole, "%s has %s without its theme" % (handle, name))
+                    seen_themes += 1
+            if dna[D.MISC_A] and dna[D.MISC_B]:
+                self.assertNotEqual(dna[D.MISC_A], dna[D.MISC_B])
+                names = (O.part_name(O.MISC, dna[D.MISC_A] - 1), O.part_name(O.MISC, dna[D.MISC_B] - 1))
+                for group in D.MISC_GROUPS:
+                    self.assertFalse(names[0] in group and names[1] in group,
+                                     "%s has two extras from one group" % handle)
+        self.assertGreater(seen_themes, 0, "themes never came up in 300 handles")
+
     def test_valid_dna_rejects_malformed_values(self):
         D = self.D
         dna = D.dna_for("octocat")
