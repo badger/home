@@ -564,7 +564,9 @@ class Trail:
                 (3, self._broken_ci),
                 (2, self._dependabot),
                 (2, self._abandoned_wagon),
+                (2, self._rate_limited),
                 (2, self._typosquatter),
+                (1, self._stale_readme),
             ))
             event(lines)
 
@@ -600,6 +602,10 @@ class Trail:
             self.supplies["patches"] += 1
             lines.append("There was a Hotfix Patch inside, too.")
 
+    def _rate_limited(self, lines):
+        lines.append("Rate limited by the trail API. Lost 1 day.")
+        self.idle_days(1, lines)
+
     def _typosquatter(self, lines):
         kegs = min(self.rng.randint(5, 15), int(self.supplies["brew"]))
         if kegs <= 0:
@@ -607,3 +613,7 @@ class Trail:
             return
         self.supplies["brew"] -= kegs
         lines.append("An npm typosquatter made off with %s." % plural(kegs, "keg"))
+
+    def _stale_readme(self, lines):
+        lines.append("You followed a stale README. Lost 2 days.")
+        self.idle_days(2, lines)
