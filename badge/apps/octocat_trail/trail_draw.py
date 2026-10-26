@@ -100,6 +100,8 @@ class Renderer:
         self.failed = {}
         self.tokens = (ta.token_parts(0), ta.token_parts(1))
         self.stars = scatter(40, 11, 0, 2, W, 92)
+        self.tufts = scatter(36, 23, 6, 6, W - 12, tl.HUNT_H - 12)
+        self.flowers = scatter(14, 37, 8, 8, W - 16, tl.HUNT_H - 16)
 
     # ----- frame setup ------------------------------------------------------------
     def draw(self, game):
@@ -1038,6 +1040,69 @@ class Renderer:
         else:
             self.pen(GREY)
             self.centred("Shipping to production...", 160)
+        self.hint(view.hint)
+
+    # ----- Bug & AI Slop Hunt --------------------------------------------------------------------
+    def draw_hunt(self, view, game):
+        hunt = view.data
+        box = screen.rectangle
+        field = tl.HUNT_H
+        if hunt.meadow:
+            self.pen(DKGREEN)
+            for x, y, _i in self.tufts:
+                box(x, y, 1, 3)
+                box(x + 2, y - 1, 1, 4)
+                box(x + 4, y, 1, 3)
+            for x, y, i in self.flowers:
+                self.fill(PINK if i & 1 else YELLOW, x, y, 2, 2)
+        else:
+            self.pen(GREY)
+            for col in (40, 120, 200, 280):
+                box(col, 10, 1, field - 20)
+                for y in range(10, field - 10, 18):
+                    box(col - 14, y, 29, 1)
+            self.pen(DKGREEN)
+            for x, y, _i in self.tufts[:12]:
+                box(x, y, 1, 2)
+                box(x + 2, y, 1, 2)
+        for cx, cy, _r, kind in hunt.cover:
+            if kind == 0:
+                self.sprite(ta.TREE, cx - 8, cy - 10, 2)
+            elif kind == 1:
+                self.circle(DKGREEN, cx, cy, 7)
+                self.circle(GREEN, cx - 1, cy - 1, 5)
+            else:
+                self.circle(GREY, cx, cy, 5)
+                self.fill(WHITE, cx - 2, cy - 3, 2, 1)
+        tick = self.now // 150
+        for index in range(len(hunt.targets)):
+            target = hunt.targets[index]
+            frame = (tick + index) & 1
+            if target[0] == tl.SLOP:
+                self.sprite(ta.SLOP[frame], target[1] - 8, target[2] - 6, 1, target[3] < 0)
+            else:
+                self.sprite(ta.BUG[frame], target[1] - 4, target[2] - 3, 1, target[3] < 0)
+        mx = int(hunt.x)
+        my = int(hunt.y)
+        self.sprite(ta.MONA[(hunt.walk_ms // 150) & 1], mx - 6, my - 7, 1, hunt.aim_x < 0)
+        self.fill(WHITE, mx + hunt.aim_x * 11 - 1, my + hunt.aim_y * 11 - 1, 2, 2)
+        for stamp in hunt.flying:
+            self.sprite(ta.STAMP, stamp[0] - 2, stamp[1] - 2)
+        for x, y, age, kind in hunt.splats:
+            if kind < 0:
+                self.circle(GREY, x, y, 2 + age // 150)
+            else:
+                self.circle(WHITE, x, y, 4 + age // 50, 1)
+                self.pen(GREEN)
+                self.centred("LGTM", int(y) - 14 - age // 30, int(x))
+        self.fill(BLACK, 0, field, W, H - field)
+        self.fill(WHITE, 0, field, W, 1)
+        self.text("LGTMs %d" % hunt.stamps, MARGIN, field + 3)
+        self.centred("Bugs %d  Slop %d" % (hunt.kills[0], hunt.kills[1]), field + 3)
+        self.right("%s kegs" % tl.commas(hunt.bounty), W - MARGIN, field + 3)
+        progress = view.progress if view.progress is not None else 0.0
+        self.outline(MARGIN, field + 17, TEXT_W, 6)
+        self.fill(GREEN if progress > 0.25 else ORANGE, MARGIN + 1, field + 18, int((TEXT_W - 2) * progress), 4)
         self.hint(view.hint)
 
     # ----- Dark Mode Camp ------------------------------------------------------------------------
