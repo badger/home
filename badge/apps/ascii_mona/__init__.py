@@ -142,15 +142,19 @@ SMALL_SIZE = 12
 WHO_ROWS = 6
 WHEEL_SLOTS = 13
 SLOT_W = 21
+TWEAK_ROWS = 5
 PREVIEW = (208, 100, 96, 108)
 
 TOAST_MS = 2600
 HINT_SWAP_MS = 4000
 PAINT_DELAY_MS = 250
+REPEAT_DELAY_MS = 400
+REPEAT_MS = 110
 
 MAIN = 0
 WHO = 1
 WHEEL = 2
+TWEAK = 3
 
 STYLES = ("Vector", "Shapes", "Dither", "Edges")
 VECTOR = 0
@@ -162,6 +166,7 @@ VIAS = (
     ("contact", "From Contacts"),
     ("surprise", "Surprise Mona"),
     ("saved", "Saved Mona"),
+    ("tweaked", "Tweaked"),
 )
 
 WHITE = color.rgb(240, 246, 252)
@@ -174,6 +179,7 @@ PICKED = color.rgb(110, 64, 201, 170)
 ACCENT = color.rgb(191, 135, 255)
 GREEN = color.rgb(86, 211, 100)
 RED = color.rgb(255, 123, 114)
+BLUE = color.rgb(88, 166, 255)
 CLEAR = color.rgb(0, 0, 0, 0)
 
 NIGHT = (13, 17, 23)
@@ -342,7 +348,20 @@ def read_record(value):
     return (card[0], card[1], card[2], via)
 
 
-def load_owner():
+def read_mine(value):
+    """(handle, dna) of the badge owner's saved, tweaked Mona, or None."""
+    if not isinstance(value, dict):
+        return None
+    handle = value.get("github")
+    dna = mona_dna.parse_hex(value.get("dna"))
+    if dna is None or not isinstance(handle, str):
+        return None
+    if handle and not mona_dna.valid_handle(handle):
+        return None
+    return (handle, dna)
+
+
+def load_owner(mine=None):
     """(handle, dna, name, profile) for whoever wears this badge."""
     profile = mona_net.slim(read_json(BADGE_USER_FILE))
     handle = nice_handle(secret("GITHUB_USERNAME"))
@@ -357,6 +376,8 @@ def load_owner():
             dna = mona_dna.apply_profile(dna, profile)[0]
     else:
         dna = mona_dna.dna_for_uid(badge_uid())
+    if mine is not None and mine[0].lower() == handle.lower():
+        dna = mine[1]
     return (handle, dna, name, profile)
 
 
@@ -394,8 +415,9 @@ class MonaApp:
         self.palette = mona_ascii.PRIMER
         self.typed = ""
         self.current = None
+        self.mine = None
         self.load()
-        self.owner = load_owner()
+        self.owner = load_owner(self.mine)
         if self.current is None or self.current[3] == "you":
             self.current = self.me()
 
@@ -424,6 +446,10 @@ class MonaApp:
         self.wheel = None
         self.wheel_text = None
         self.wheel_dna = None
+        self.tweak = None
+        self.tweak_from = None
+        self.field = 0
+        self.repeat_at = 0
         self.toast = ""
         self.toast_pen = WHITE
         self.toast_until = 0
@@ -433,7 +459,7 @@ class MonaApp:
         return (self.owner[0], self.owner[1], self.owner[2], "you")
 
     def load(self):
-        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0, "typed": ""}
+        data = {"current": None, "recent": [], "style": VECTOR, "palette": 0, "typed": "", "mine": None}
         try:
             STORE.load(STATE_KEY, data)
         except Exception:
@@ -453,15 +479,20 @@ class MonaApp:
                 rec = read_record(item)
                 if rec is not None and len(self.recent) < MAX_RECENT:
                     self.recent.append(rec)
+        self.mine = read_mine(data.get("mine"))
         self.current = read_record(data.get("current"))
 
     def save(self):
+        mine = None
+        if self.mine is not None:
+            mine = {"github": self.mine[0], "dna": mona_dna.dna_hex(self.mine[1])}
         data = {
             "current": make_record(self.current[0], self.current[1], self.current[2], self.current[3]),
             "recent": [make_record(r[0], r[1], r[2], r[3]) for r in self.recent],
             "style": self.style,
             "palette": self.palette,
             "typed": self.typed,
+            "mine": mine,
         }
         try:
             STORE.save(STATE_KEY, data)
@@ -516,7 +547,10 @@ class MonaApp:
                 self.palette = (self.palette + 1) % len(mona_ascii.PALETTE_NAMES)
                 self.save()
         elif badge.pressed(BUTTON_DOWN):
-            self.open_who()
+            if self.info:
+                self.open_tweak()
+            else:
+                self.open_who()
         elif badge.pressed(BUTTON_BACK):
             if self.info:
                 self.info = False
@@ -613,12 +647,77 @@ class MonaApp:
             self.wheel_text = text
             self.wheel_dna = self.tuned(text) if mona_dna.valid_handle(text) else None
 
+    def open_tweak(self):
+        self.tweak = self.current[1]
+        self.tweak_from = self.current[1]
+        self.field = 0
+        self.info = False
+        self.view = TWEAK
+
+    def reset_dna(self):
+        """What MENU puts back in Tweak: the handle's own Mona."""
+        handle, via = self.current[0], self.current[3]
+        if handle:
+            return self.tuned(handle)
+        if via == "you":
+            return mona_dna.dna_for_uid(badge_uid())
+        return self.tweak_from
+
+    def tweak_input(self, now):
+        step = 0
+        if badge.pressed(BUTTON_LEFT):
+            step = -1
+            self.repeat_at = now + REPEAT_DELAY_MS
+        elif badge.pressed(BUTTON_RIGHT):
+            step = 1
+            self.repeat_at = now + REPEAT_DELAY_MS
+        elif badge.held(BUTTON_LEFT) or badge.held(BUTTON_RIGHT):
+            if now - self.repeat_at >= 0:
+                step = -1 if badge.held(BUTTON_LEFT) else 1
+                self.repeat_at = now + REPEAT_MS
+        if step:
+            self.tweak = mona_dna.nudge(self.tweak, mona_dna.EDIT[self.field][1], step)
+            return
+        count = len(mona_dna.EDIT)
+        if badge.pressed(BUTTON_UP):
+            self.field = (self.field - 1) % count
+        elif badge.pressed(BUTTON_DOWN):
+            self.field = (self.field + 1) % count
+        elif badge.pressed(BUTTON_SELECT):
+            self.save_tweak()
+        elif MENU_BUTTON is not None and badge.pressed(MENU_BUTTON):
+            self.tweak = self.reset_dna()
+            self.say("Back to the original Mona", BLUE)
+        elif badge.pressed(BUTTON_BACK):
+            self.view = MAIN
+            self.info = True
+
+    def save_tweak(self):
+        dna = self.tweak
+        handle, old, name, via = self.current
+        self.view = MAIN
+        self.info = False
+        if dna == old:
+            self.say("No changes")
+            return
+        if via == "you":
+            self.mine = (self.owner[0], dna)
+            self.owner = (self.owner[0], dna, self.owner[2], self.owner[3])
+            self.show(self.me())
+            self.save()
+            self.say("Saved as your Mona", GREEN)
+        else:
+            self.adopt(handle, dna, name, "tweaked")
+            self.say("Tweaked Mona saved", GREEN)
+
     # -- painting ---------------------------------------------------------------
 
     def wanted(self):
         """The DNA the art should show right now, or None to keep it."""
         if self.view == WHEEL:
             return self.wheel_dna
+        if self.view == TWEAK:
+            return self.tweak
         return self.current[1]
 
     def start_paint(self, dna):
@@ -642,7 +741,7 @@ class MonaApp:
         else:
             if want != self.pending:
                 self.pending = want
-                slow = self.view == WHEEL
+                slow = self.view == WHEEL or self.view == TWEAK
                 self.pending_at = now + (PAINT_DELAY_MS if slow else 0)
             if now - self.pending_at >= 0:
                 self.pending = None
@@ -728,6 +827,8 @@ class MonaApp:
             self.wheel_input(now)
         elif self.view == WHO:
             self.who_input(now)
+        elif self.view == TWEAK:
+            self.tweak_input(now)
         else:
             self.main_input(now)
         if self.closed:
@@ -760,7 +861,9 @@ class MonaApp:
             self.draw_who()
         else:
             self.draw_stage(now)
-            if self.info:
+            if self.view == TWEAK:
+                self.draw_tweak()
+            elif self.info:
                 self.draw_info()
             else:
                 self.draw_panel(now)
@@ -859,6 +962,27 @@ class MonaApp:
         write(text, left, y + 186, SMALL_SIZE, pen, room)
         if percent is not None:
             bar(left, y + 204, room, 4, percent, pen)
+
+    def draw_tweak(self):
+        x, y, w, h = PANEL_X, 2, PANEL_W, FOOT_Y - 4
+        box(x, y, w, h, PANEL, 8)
+        count = len(mona_dna.EDIT)
+        write("Tweak", x + 8, y + 6, TITLE_SIZE, WHITE)
+        write("%d/%d" % (self.field + 1, count), x + w - 8, y + 8, SMALL_SIZE, DIM, 0, "r")
+        first = max(0, min(self.field - TWEAK_ROWS // 2, count - TWEAK_ROWS))
+        for i in range(first, min(count, first + TWEAK_ROWS)):
+            label, field = mona_dna.EDIT[i]
+            ry = y + 30 + (i - first) * 37
+            value = mona_dna.value_name(self.tweak, field)
+            if i == self.field:
+                box(x + 3, ry - 3, w - 6, 35, PICKED, 6)
+                write(label, x + 8, ry, SMALL_SIZE, WHITE, w - 16)
+                write("<", x + 8, ry + 16, SMALL_SIZE, ACCENT)
+                write(value, x + 18, ry + 16, SMALL_SIZE, WHITE, w - 36)
+                write(">", x + w - 8, ry + 16, SMALL_SIZE, ACCENT, 0, "r")
+            else:
+                write(label, x + 8, ry, SMALL_SIZE, DIM, w - 16)
+                write(value, x + 8, ry + 16, SMALL_SIZE, WHITE, w - 16)
 
     def draw_info(self):
         x, y, w, h = 6, 4, 308, 212
@@ -961,8 +1085,10 @@ class MonaApp:
             return (first, "SELECT done  BACK cancel")
         if self.view == WHO:
             return ("UP/DOWN choose  SELECT pick  BACK close",)
+        if self.view == TWEAK:
+            return ("UP/DOWN pick  LEFT/RIGHT change", "SELECT save  MENU reset  BACK cancel" if menu else "SELECT save  BACK cancel")
         if self.info:
-            return ("UP/BACK close",)
+            return ("DOWN tweak  UP/BACK close",)
         first = "LEFT/RIGHT style  UP " + ("info" if self.style == VECTOR else "colours")
         second = "DOWN pick a handle  BACK exit"
         return (first, second)
