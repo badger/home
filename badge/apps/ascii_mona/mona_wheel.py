@@ -1,9 +1,9 @@
 """Arcade character wheel for typing a GitHub handle with the badge buttons.
 
-UP and DOWN spin the letter under the cursor, LEFT and RIGHT move the
-cursor, and RIGHT past the last letter adds a slot. MENU deletes the slot
-under the cursor, and blank slots are dropped when the handle is entered.
-SELECT accepts a valid handle; BACK cancels.
+UP and DOWN spin the letter under the cursor (hold to spin fast), LEFT and
+RIGHT move the cursor, and RIGHT past the last letter adds a slot. MENU
+deletes the slot under the cursor, and blank slots are dropped when the
+handle is entered. SELECT accepts a valid handle; BACK cancels.
 
 The wheel only sees button names ("up", "down", "left", "right", "select",
 "back", "menu"), so the app maps logical badge buttons onto it and the tests
@@ -14,6 +14,8 @@ import mona_dna
 
 CHARS = " abcdefghijklmnopqrstuvwxyz0123456789-"
 BLANK = 0
+REPEAT_DELAY_MS = 350
+REPEAT_MS = 80
 MOVES = ("up", "down", "left", "right")
 
 
@@ -21,6 +23,8 @@ class Wheel:
     def __init__(self, text=""):
         self.slots = [BLANK]
         self.cursor = 0
+        self.repeat = None
+        self.repeat_at = 0
         self.nudge = ""
         self.load(text)
 
@@ -33,6 +37,7 @@ class Wheel:
                     slots.append(index)
         self.slots = slots[:mona_dna.MAX_HANDLE] or [BLANK]
         self.cursor = len(self.slots) - 1
+        self.repeat = None
         self.nudge = ""
 
     @property
@@ -94,6 +99,14 @@ class Wheel:
         for name in MOVES:
             if name in pressed:
                 self._move(name)
+                self.repeat = name
+                self.repeat_at = now + REPEAT_DELAY_MS
+        if self.repeat is not None:
+            if self.repeat not in held:
+                self.repeat = None
+            elif now >= self.repeat_at:
+                self._move(self.repeat)
+                self.repeat_at = now + REPEAT_MS
         if "menu" in pressed:
             self.delete()
         if "back" in pressed:

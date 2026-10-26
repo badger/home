@@ -1193,6 +1193,28 @@ class TestWheel(unittest.TestCase):
         self.assertEqual(wheel.update(now, ("back",), ("back",)), "cancel")
         self.assertEqual(wheel.update(now, ("back", "select"), ("back", "select")), "cancel")
 
+    def test_holding_a_direction_repeats(self):
+        W = self.W
+        wheel = W.Wheel()
+        wheel.update(0, ("up",), ("up",))
+        self.assertEqual(wheel.text, "a")
+        wheel.update(W.REPEAT_DELAY_MS - 1, (), ("up",))
+        self.assertEqual(wheel.text, "a")
+        now = W.REPEAT_DELAY_MS
+        for expected in "bcd":
+            wheel.update(now, (), ("up",))
+            self.assertEqual(wheel.text, expected)
+            wheel.update(now + W.REPEAT_MS - 1, (), ("up",))
+            self.assertEqual(wheel.text, expected)
+            now += W.REPEAT_MS
+        wheel.update(now, (), ())
+        self.assertIsNone(wheel.repeat)
+        wheel.update(now + 1000, (), ("up",))
+        self.assertEqual(wheel.text, "d")
+        wheel.update(now + 2000, ("down",), ("down",))
+        wheel.update(now + 2000 + W.REPEAT_DELAY_MS, (), ("down",))
+        self.assertEqual(wheel.text, "b")
+
     def test_select_refuses_invalid_handles(self):
         W, D = self.W, self.D
         for text in ("", "a-", "a--b"):
