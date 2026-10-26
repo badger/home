@@ -144,6 +144,9 @@ GLOW_MS = 400
 TOAST_MS = 1800
 STAMP_HINT = "STAMP SOMETHING FIRST"
 SPIN_HINT = "SHAKE TO SPIN FIRST"
+RING_COUNT = 3
+RING_GAP_MS = 140
+RING_MS = 560
 
 STAMP_MODE = 0
 BALL_MODE = 1
@@ -401,6 +404,8 @@ class App:
         self.last_motion = None
         self.toast_text = None
         self.toast_until = 0
+        self.fx_start = None
+        self.fx_incoming = False
         self.glow_start = None
         self.lights = None
         self.link = beam.Beam(len(verdicts.VERDICTS), len(verdicts.PROMPTS), beam.make_sender())
@@ -434,6 +439,7 @@ class App:
             self.draw_stamp_mode(now)
         else:
             self.draw_ball_mode(now)
+        self.draw_beam_fx(now)
         self.draw_toast(now)
         self.update_lights(now)
         if self.slam is None:
@@ -507,6 +513,8 @@ class App:
             self.switch_mode(BALL_MODE)
             self.kick(16, now, index + 1)
             self.toast("INCOMING PROMPT", now)
+        self.fx_start = now
+        self.fx_incoming = True
 
     # Modes and choices.
 
@@ -569,6 +577,8 @@ class App:
             self.toast("BEAMING TO NEARBY BADGES", now)
         else:
             self.toast("NO IR HERE: BEAM SIMULATED", now)
+        self.fx_start = now
+        self.fx_incoming = False
 
     # Stamp slams.
 
@@ -837,6 +847,25 @@ class App:
             screen.pen = WHITE_C
             screen.text(base + "." * (1 + (now // 300) % 3), x, CARD_Y + 21)
 
+    def draw_beam_fx(self, now):
+        if self.fx_start is None:
+            return
+        t = now - self.fx_start
+        if t >= RING_GAP_MS * (RING_COUNT - 1) + RING_MS:
+            self.fx_start = None
+            return
+        for i in range(RING_COUNT):
+            u = t - i * RING_GAP_MS
+            if u < 0 or u >= RING_MS:
+                continue
+            p = u / RING_MS
+            if self.fx_incoming:
+                r = 160.0 - 150.0 * p
+            else:
+                r = 10.0 + 150.0 * p
+            screen.pen = rgb(BLUE, int(200 * (1.0 - p)))
+            screen.shape(shape.circle(W // 2, -6, r).stroke(2))
+
     def draw_toast(self, now):
         if self.toast_text is None:
             return
@@ -856,6 +885,10 @@ class App:
         levels = None
         if self.slam is not None:
             levels = stamp.strobe_levels(now - self.slam.start - stamp.DROP_MS)
+        if self.fx_start is not None:
+            chase = beam.lights(now - self.fx_start)
+            if chase is not None:
+                levels = chase
         if levels is None and self.glow_start is not None:
             t = now - self.glow_start
             if t < GLOW_MS:
