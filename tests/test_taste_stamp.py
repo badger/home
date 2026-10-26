@@ -382,6 +382,15 @@ class MotionTests(unittest.TestCase):
         self.assertLess(abs(c.gravity - before), 0.02 * before)
 
 
+def rotate(q, v):
+    r = E.q_matrix(q)
+    return tuple(r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2] for i in range(3))
+
+
+def random_quaternion(rng):
+    return E.q_normalise(tuple(rng.uniform(-1.0, 1.0) for _ in range(4)))
+
+
 class EightBallTests(unittest.TestCase):
     def setUp(self):
         self.verts, self.faces, self.numbers = E.icosahedron()
@@ -415,6 +424,24 @@ class EightBallTests(unittest.TestCase):
         self.assertEqual(len(edges), 60)
         for a, b in edges:
             self.assertIn((b, a), edges)
+
+    def test_quaternion_helpers(self):
+        q = E.q_axis_angle((0.0, 0.0, 1.0), math.pi / 2)
+        for a, b in zip(rotate(q, (1.0, 0.0, 0.0)), (0.0, 1.0, 0.0)):
+            self.assertAlmostEqual(a, b, places=9)
+        for seed in range(1, 20):
+            a = random_quaternion(V.Rng(seed))
+            self.assertLess(E.q_angle(a, E.q_from_rows(E.q_matrix(a))), 1e-5)
+        ident = (1.0, 0.0, 0.0, 0.0)
+        turn = E.q_axis_angle((0.0, 1.0, 0.0), 1.0)
+        self.assertAlmostEqual(E.q_angle(ident, turn), 1.0, places=6)
+        self.assertAlmostEqual(E.q_angle(ident, E.q_mul(turn, turn)), 2.0, places=6)
+        self.assertAlmostEqual(E.q_angle(ident, E.q_slerp(ident, turn, 0.5)), 0.5, places=6)
+        self.assertLess(E.q_angle(E.q_slerp(ident, turn, 0.0), ident), 1e-5)
+        self.assertLess(E.q_angle(E.q_slerp(ident, turn, 1.0), turn), 1e-5)
+        self.assertEqual((E.smoothstep(-1), E.smoothstep(0.5), E.smoothstep(2)), (0.0, 0.5, 1.0))
+        axis = E.random_axis(V.Rng(3).random)
+        self.assertAlmostEqual(math.sqrt(sum(v * v for v in axis)), 1.0, places=9)
 
     def test_face_edges_lists_each_edge_once(self):
         edges = E.face_edges(self.faces)
