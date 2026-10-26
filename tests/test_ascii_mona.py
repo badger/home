@@ -645,6 +645,14 @@ class TestDna(unittest.TestCase):
             self.assertTrue(D.valid_dna(dna))
         self.assertEqual(dna[D.PART0], value)
 
+    def test_compact_counts(self):
+        D = self.D
+        self.assertEqual([D.compact(n) for n in (0, 7, 999, 1000, 1500, 12345, 999999, 1000000, 1234567, -5)],
+                         ["0", "7", "999", "1k", "1.5k", "12k", "999k", "1M", "1.2M", "-5"])
+        self.assertEqual(D.counted(1, "repo"), "1 repo")
+        self.assertEqual(D.counted(2, "repo"), "2 repos")
+        self.assertEqual(D.counted(15300, "follower"), "15k followers")
+
 
 def art_blocks(parts):
     """Every (offset, length) block the art index points at."""

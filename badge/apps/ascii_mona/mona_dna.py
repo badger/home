@@ -495,3 +495,32 @@ def parse_hex(text):
 def short_id(dna):
     """Four hex digits that tell mystery Monas apart."""
     return "%04x" % (fnv1a(bytes(dna)) & 0xFFFF)
+
+
+def compact(n):
+    """1234 -> "1.2k", 12345 -> "12k", 1200000 -> "1.2M"."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "0"
+    if n < 1000:
+        return str(n)
+    for div, suffix in ((1000000000, "B"), (1000000, "M"), (1000, "k")):
+        if n >= div:
+            tenths = n * 10 // div
+            if tenths >= 100 or tenths % 10 == 0:
+                return "%d%s" % (tenths // 10, suffix)
+            return "%d.%d%s" % (tenths // 10, tenths % 10, suffix)
+    return str(n)
+
+
+def counted(n, word):
+    """(1, "repo") -> "1 repo", (1234, "follower") -> "1.2k followers"."""
+    return compact(n) + " " + word + ("" if _count(n) == 1 else "s")
+
+
+def _count(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
