@@ -1405,10 +1405,15 @@ class DarkDetector:
             self.dark = True
             return "dark"
         return None
+
+
+# ----- IR packets -------------------------------------------------------------
+IR_ADDRESS = 0x54
 KIND_TOMBSTONE = 1
 KIND_VICTORY = 2
 PACKET_LEN = 9
 MAX_VALUE = (1 << 21) - 1
+BEAM_REPEATS = 3
 
 
 def encode_packet(kind, nonce, value, a, b, c):

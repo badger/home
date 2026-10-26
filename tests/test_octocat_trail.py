@@ -92,6 +92,13 @@ class LoaderTests(unittest.TestCase):
             self.assertIsNot(sys.modules.get(name), _APP[name])
             self.assertIsNot(sys.modules.get("octocat_trail_" + name), _APP[name])
 
+    def test_descriptor_falls_back_without_aye_arr(self):
+        self.assertIs(hw._Descriptor, object)
+        beam = hw.make_descriptor()
+        self.assertEqual(beam.ADDRESS, 0x54)
+        self.assertIsNone(beam.on_any)
+        self.assertIsNone(beam.on_known)
+
 
 class MapTests(unittest.TestCase):
 
@@ -1307,6 +1314,50 @@ def module(name, **attrs):
     return made
 
 
+def fake_ir(fail_slots=(), bind=None, bind_error=False, send_error=False, close_error=False):
+    """Fake aye_arr.nec and badgeware.ir modules plus a log of what they saw."""
+    log = {"made": [], "started": [], "sent": [], "stopped": 0, "bound": [], "closed": 0}
+
+    class NECSender:
+        def __init__(self, pin, pio, sm):
+            log["made"].append((pin, pio, sm))
+            if (pio, sm) in fail_slots:
+                raise OSError("state machine busy")
+            self.slot = (pio, sm)
+
+        def start(self):
+            log["started"].append(self.slot)
+
+        def send_addr_cmd(self, address, command):
+            if send_error:
+                raise OSError("tx")
+            log["sent"].append((address, command))
+
+        def stop(self):
+            log["stopped"] += 1
+            if close_error:
+                raise OSError("stop")
+
+    class Ir:
+        def bind(self, descriptor):
+            if bind_error:
+                raise RuntimeError("bind")
+            log["bound"].append(descriptor)
+            return bind if bind is not None else descriptor
+
+        def close(self):
+            log["closed"] += 1
+            if close_error:
+                raise OSError("close")
+
+    modules = {"aye_arr": module("aye_arr"), "aye_arr.nec": module("aye_arr.nec", NECSender=NECSender),
+               "badgeware": module("badgeware"), "badgeware.ir": module("badgeware.ir", ir=Ir())}
+    return modules, log
+
+
+NO_IR = {"aye_arr": None, "aye_arr.nec": None, "badgeware.ir": None}
+
+
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
 
@@ -1412,6 +1463,139 @@ class CaseLightTests(unittest.TestCase):
         self.assertEqual(device.lights, [])
         device.lights_error = OSError("still none")
         lights.off()
+
+
+class IrLinkTests(unittest.TestCase):
+    def test_sender_slots_skip_the_receivers_state_machine(self):
+        self.assertNotIn((0, 0), hw.SENDER_SLOTS)
+        modules, log = fake_ir(fail_slots=hw.SENDER_SLOTS)
+        with patched_modules(modules):
+            self.assertIsNone(hw.open_sender())
+        self.assertEqual(log["made"], [(hw.IR_TX_PIN, pio, sm) for pio, sm in hw.SENDER_SLOTS])
+        with patched_modules(NO_IR):
+            self.assertIsNone(hw.open_sender())
+
+    def test_transmitter_sends_one_frame_per_update(self):
+        modules, log = fake_ir(fail_slots=((0, 1),))
+        with patched_modules(modules):
+            link = hw.IrLink(0x2A).open()
+        self.assertEqual(log["made"], [(16, 0, 1), (16, 1, 0)])
+        self.assertEqual((log["started"], link.status()), ([(1, 0)], "IR ready"))
+        packet = tl.encode_packet(tl.KIND_TOMBSTONE, 0x2A, 300, 1, 2, 0)
+        link.beam(packet)
+        self.assertEqual(link.total, tl.PACKET_LEN * tl.BEAM_REPEATS)
+        link.update(500)
+        link.update(500)
+        self.assertEqual(log["sent"], [(0x54, packet[0]), (0x54, packet[1])])
+        self.assertEqual((link.frames_sent, link.mute_until), (2, 500 + hw.FRAME_MS + hw.MUTE_MS))
+        for tick in range(40):
+            link.update(600 + tick)
+        self.assertEqual([command for _address, command in log["sent"]], packet * tl.BEAM_REPEATS)
+        self.assertEqual({address for address, _command in log["sent"]}, {0x54})
+
+    def test_send_failure_falls_back_to_pacing(self):
+        modules, log = fake_ir(send_error=True)
+        with patched_modules(modules):
+            link = hw.IrLink(1).open()
+        self.assertEqual(log["started"], [(0, 1)])
+        link.beam([1, 2, 3], repeats=1)
+        link.update(0)
+        self.assertIsNone(link.tx)
+        self.assertEqual((link.frames_sent, len(link.queue), link.status()), (0, 2, "IR listening"))
+        link.update(10)
+        self.assertEqual(len(link.queue), 2)
+        link.update(hw.FRAME_MS)
+        self.assertEqual(len(link.queue), 1)
+
+    def test_listen_binds_handlers_and_close_releases(self):
+        modules, log = fake_ir()
+        with patched_modules(modules):
+            link = hw.IrLink(0x2A).open()
+            descriptor = log["bound"][0]
+            self.assertIs(link.binding, descriptor)
+            self.assertEqual((descriptor.NAME, descriptor.ADDRESS, descriptor.BUTTON_CODES), ("OctocatTrail", 0x54, {}))
+            descriptor.on_any(0x1A5)
+            descriptor.on_known("ANY")
+            self.assertEqual(link.pending, [0xA5])
+            link.beam([1], repeats=1)
+            link.close()
+        self.assertEqual((log["stopped"], log["closed"]), (1, 1))
+        self.assertEqual((link.tx, link.binding, link.listening, link.queue), (None, None, False, []))
+        other = types.SimpleNamespace()
+        modules, log = fake_ir(bind=other)
+        with patched_modules(modules):
+            link = hw.IrLink(3).open()
+        self.assertIs(link.binding, other)
+        self.assertEqual((other.on_any, other.on_known), (link.on_byte, link.on_known))
+
+    def test_bind_and_close_failures_are_harmless(self):
+        modules, log = fake_ir(bind_error=True)
+        with patched_modules(modules):
+            link = hw.IrLink(3).open()
+        self.assertEqual((link.listening, link.status()), (False, "IR send only"))
+        modules, log = fake_ir(close_error=True)
+        with patched_modules(modules):
+            link = hw.IrLink(3).open()
+            link.close()
+        self.assertEqual((log["stopped"], log["closed"], link.listening, link.tx), (1, 1, False, None))
+
+    def test_process_ignores_echoes_and_mutes_while_sending(self):
+        with patched_modules(NO_IR):
+            link = hw.IrLink(0x2A).open()
+        other = tl.encode_packet(tl.KIND_VICTORY, 0x11, 4321, 3, 40, 1)
+        own = tl.encode_packet(tl.KIND_VICTORY, 0x2A, 4321, 3, 40, 1)
+        self.assertEqual(link.process(0), [])
+        link.beam(own, repeats=1)
+        link.update(1000)
+        for byte in other:
+            link.on_byte(byte)
+        self.assertEqual((link.process(1000), link.pending), ([], []))
+        now = 1000
+        while link.sending():
+            now += hw.FRAME_MS
+            link.update(now)
+        for byte in other:
+            link.on_byte(byte)
+        self.assertEqual(link.process(now + hw.FRAME_MS), [])
+        for byte in own + other + other:
+            link.on_byte(byte)
+        packets = link.process(link.mute_until)
+        self.assertEqual([(p["nonce"], p["value"], p["b"]) for p in packets], [(0x11, 4321, 40)])
+
+    def test_pending_bytes_are_bounded(self):
+        link = hw.IrLink(1)
+        for value in range(hw.MAX_PENDING + 20):
+            link.on_byte(value)
+        self.assertEqual(len(link.pending), hw.MAX_PENDING)
+        self.assertEqual(link.pending[-1], hw.MAX_PENDING - 1)
+
+
+class DescriptorSubclassTests(unittest.TestCase):
+    def test_trail_beam_extends_the_firmware_descriptor(self):
+        class RemoteDescriptor:
+            def __init__(self):
+                self.init_called = True
+                self.on_known = 1
+                self.on_any = 1
+
+        fakes = {
+            "aye_arr": module("aye_arr"),
+            "aye_arr.nec": module("aye_arr.nec"),
+            "aye_arr.nec.remotes": module("aye_arr.nec.remotes"),
+            "aye_arr.nec.remotes.descriptor": module("aye_arr.nec.remotes.descriptor", RemoteDescriptor=RemoteDescriptor),
+        }
+        loaded = load_modules(prefix="octocat_trail_desc_", extra=fakes, names=("trail_map", "trail_logic", "trail_hw"))
+        real = loaded["trail_hw"]
+        self.assertIs(real._Descriptor, RemoteDescriptor)
+        beam = real.make_descriptor()
+        self.assertIsInstance(beam, RemoteDescriptor)
+        self.assertTrue(beam.init_called)
+        self.assertEqual((beam.on_any, beam.on_known, beam.ADDRESS), (None, None, 0x54))
+        for name, fake in fakes.items():
+            self.assertIsNot(sys.modules.get(name), fake)
+        for name in ("trail_map", "trail_logic", "trail_hw", "octocat_trail_desc_trail_hw"):
+            self.assertNotIn(name, sys.modules)
+        self.assertIs(hw._Descriptor, object)
 
 
 # ----- the renderer, through strict fakes of the badge drawing globals --------------------------
@@ -2074,6 +2258,15 @@ class SourceScanTests(unittest.TestCase):
         for snippet in CLEAN_SNIPPETS:
             with self.subTest(snippet=snippet):
                 self.assertEqual(scan_source(snippet), [])
+
+    def test_beams_only_use_the_trail_address(self):
+        self.assertEqual((tl.IR_ADDRESS, hw.TrailBeam.ADDRESS), (0x54, 0x54))
+        calls = []
+        for path in sorted(APP.glob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "send_addr_cmd":
+                    calls.append(path.name)
+        self.assertEqual(calls, ["trail_hw.py"])
 
 
 class PackagingTests(unittest.TestCase):
