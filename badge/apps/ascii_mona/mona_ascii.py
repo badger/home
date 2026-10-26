@@ -2,9 +2,9 @@
 
 The technique ideas come from Cameron Foxly's Ascii-Motion
 (https://github.com/CameronFoxly/Ascii-Motion): 6D shape-vector glyph
-matching, Bayer 4x4 ordered dithering and ANSI/Phosphor/Amber/Primer
-character and colour palettes. This module is written from scratch for the
-badge and shares no code with it.
+matching, Bayer 4x4 ordered dithering, Sobel edge line-art and
+ANSI/Phosphor/Amber/Primer character and colour palettes. This module is
+written from scratch for the badge and shares no code with it.
 
 Each 8x12 teatime cell covers a 2x3 block of samples, which gives the
 six-number "shape vector" for that cell. Covered samples get a minimum
@@ -123,6 +123,46 @@ def dither_index(level, x, y, steps):
     if base >= steps:
         base = steps - 1
     return base
+
+
+def edge_char(means, x, y, ramp, cols=COLS, rows=ROWS):
+    """Sobel line-art for cell (x, y) from a grid of cell levels."""
+
+    def at(cx, cy):
+        if cx < 0:
+            cx = 0
+        elif cx >= cols:
+            cx = cols - 1
+        if cy < 0:
+            cy = 0
+        elif cy >= rows:
+            cy = rows - 1
+        return means[cy * cols + cx]
+
+    tl = at(x - 1, y - 1)
+    tc = at(x, y - 1)
+    tr = at(x + 1, y - 1)
+    ml = at(x - 1, y)
+    mr = at(x + 1, y)
+    bl = at(x - 1, y + 1)
+    bc = at(x, y + 1)
+    br = at(x + 1, y + 1)
+    gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl)
+    gy = (bl + 2 * bc + br) - (tl + 2 * tc + tr)
+    ax = gx if gx >= 0 else -gx
+    ay = gy if gy >= 0 else -gy
+    if ax + ay > 220:
+        if ax > 2 * ay:
+            return "|"
+        if ay > 2 * ax:
+            return "-"
+        return "/" if gx * gy > 0 else "\\"
+    level = means[y * cols + x]
+    if level > 200:
+        return ramp[2]
+    if level > 110:
+        return ramp[1]
+    return " "
 
 
 def hue(r, g, b, mx, mn):

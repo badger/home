@@ -957,6 +957,7 @@ class TestAscii(unittest.TestCase):
         means = A.cell_means(levels)
         self.assertEqual(len(means), A.COLS * A.ROWS)
         self.assertEqual((means[0], max(means)), (0, 255))
+        self.assertEqual(A.edge_char(bytearray(A.COLS * A.ROWS), 5, 5, A.RAMPS[0]), " ")
         self.assertEqual(max(A.levels_from_raw(bytearray(count * 4), count)), 0)
 
 
