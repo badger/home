@@ -8,6 +8,7 @@ STEPS_PER_TILE = 8
 
 WATER, LOT, GRASS, DECK, PATH, ROOF, FENCE, TREE, GANG1, GANG2, DOOR, DOCK, FLAG = range(13)
 WALK = bytes((0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1))
+END = 12
 
 # (first column, first land row) from west to east.
 SHORE = ((0, 116), (4, 66), (66, 64), (82, 52), (96, 56))

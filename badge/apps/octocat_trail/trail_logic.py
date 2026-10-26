@@ -215,6 +215,7 @@ class Trail:
         self.pace = 0
         self.rations = 1
         self.at = 0
+        self.visited = 1
         self.deployed = 0
         self.basket = {}
 
@@ -273,6 +274,19 @@ class Trail:
     def weather(self):
         return WEATHER[fnv1a("wx%d" % self.day) % len(WEATHER)]
 
+    # ----- the venue ----------------------------------------------------------
+    def current_stop(self):
+        return tm.STOPS[self.at] if self.at >= 0 else None
+
+    def at_kind(self, kind):
+        return self.at >= 0 and tm.STOPS[self.at][2] == kind
+
+    def finished(self):
+        return self.at == tm.END
+
+    def has_visited(self, stop):
+        return bool(self.visited & (1 << stop))
+
     # ----- walking ------------------------------------------------------------
     def steps_per_day(self):
         steps = PACES[self.pace][1]
@@ -314,6 +328,29 @@ class Trail:
         ms = self.tile_ms()
         self.pending_ms += ms
         return ms
+
+    def after_step(self):
+        """Finish a step: pass time, roll events and check for a stop.
+
+        Returns (lines, outcome); outcome is None, "stop", "river",
+        "victory" or "game_over"."""
+        lines = []
+        if self.all_dead():
+            return lines, "game_over"
+        stop = tm.stop_at(self.x, self.y)
+        if stop < 0 or stop == self.at:
+            return lines, None
+        return lines, self.arrive(stop, lines)
+
+    def arrive(self, stop, lines):
+        """Reach a stop. Returns "stop", "river" or "victory"."""
+        self.at = stop
+        self.basket = {}
+        kind = tm.STOPS[stop][2]
+        self.visited |= 1 << stop
+        if kind == "end":
+            return "victory"
+        return "stop"
 
     # ----- shop -------------------------------------------------------------
     def markup(self):

@@ -227,6 +227,22 @@ class TrailShopRiverTests(unittest.TestCase):
         trail.at = 2
         self.assertEqual((trail.at_store(), trail.markup(), trail.price("brew")), (False, 0, 4))
 
+    def test_buy_and_sell_back(self):
+        trail = tl.Trail(0, QuietRng())
+        self.assertEqual(trail.buy("patches", 20), 9)
+        self.assertEqual(trail.supplies["credits"], 1375)
+        self.assertEqual(trail.buy("patches", 1), 0)
+        self.assertEqual(trail.buy("brew", 1000), 343)
+        self.assertEqual(trail.supplies["credits"], 3)
+        self.assertEqual(trail.buy("lgtm", 10), 3)
+        self.assertEqual(trail.buy("lgtm", 10), 0)
+        self.assertEqual(trail.sell_back("brew", 50), 50)
+        self.assertEqual(trail.supplies["credits"], 200)
+        self.assertEqual(trail.basket, {"patches": 9, "brew": 293, "lgtm": 3})
+        trail.arrive(1, [])
+        self.assertEqual(trail.basket, {})
+        self.assertEqual(trail.sell_back("brew", 10), 0)
+
 
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
