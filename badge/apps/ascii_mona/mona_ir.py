@@ -7,7 +7,10 @@ frames on address 0x4C:
 
 The payload is a version byte (2), the 19 DNA bytes (each below 0x80), then
 the GitHub handle as ASCII (empty for a mystery Mona). CRC8 uses polynomial 0x07
-over LEN and the payload.
+over LEN and the payload. The receiver keeps a rolling window of bytes and
+accepts a packet only when its sync, length, CRC, version and handle all
+check out, so a dropped frame just means the second copy, or the next press,
+gets through. An 8 character handle takes about six seconds to beam.
 
 Sending blocks for about 77 ms a frame, so the app sends at most one frame
 per update.
@@ -26,6 +29,9 @@ MAX_LEN = MIN_LEN + mona_dna.MAX_HANDLE
 FRAME_MS = 80
 COPIES = 2
 COPY_GAP_MS = 250
+GAP_MS = 1200
+DEDUPE_MS = 15000
+WINDOW = 64
 
 
 def crc8(data):
@@ -83,6 +89,56 @@ def beam_frames(handle, dna):
             wait = COPY_GAP_MS if copy and index == 0 else 0
             frames.append((DNA_ADDRESS, packet[index], wait))
     return frames
+
+
+class Decoder:
+    """Finds packets in the byte stream from the DNA address."""
+
+    def __init__(self):
+        self.window = []
+        self.last = None
+        self.seen = None
+        self.seen_at = 0
+
+    def reset(self):
+        self.window = []
+        self.last = None
+
+    def push(self, byte, now):
+        """Add one received byte; returns (handle, dna) for a new Mona."""
+        if self.last is not None and now - self.last > GAP_MS:
+            self.window = []
+        self.last = now
+        window = self.window
+        window.append(byte & 0xFF)
+        if len(window) > WINDOW:
+            del window[0]
+        found = self._scan()
+        if found is None:
+            return None
+        self.window = []
+        key = (found[0].lower(), found[1])
+        if self.seen == key and now - self.seen_at < DEDUPE_MS:
+            return None
+        self.seen = key
+        self.seen_at = now
+        return found
+
+    def _scan(self):
+        window = self.window
+        n = len(window)
+        for start in range(n - 3):
+            if window[start] != SYNC_A or window[start + 1] != SYNC_B:
+                continue
+            length = window[start + 2]
+            if length < MIN_LEN or length > MAX_LEN or start + 4 + length != n:
+                continue
+            if crc8(window[start + 2:n - 1]) != window[n - 1]:
+                continue
+            found = parse_payload(window[start + 3:n - 1])
+            if found is not None:
+                return found
+        return None
 
 
 class Beam:

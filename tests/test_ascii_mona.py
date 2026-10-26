@@ -1096,6 +1096,15 @@ class TestIr(unittest.TestCase):
         self.I = M["mona_ir"]
         self.D = M["mona_dna"]
 
+    def feed(self, decoder, data, now=0, spacing=80):
+        found = []
+        for byte in data:
+            hit = decoder.push(byte, now)
+            if hit is not None:
+                found.append((now, hit))
+            now += spacing
+        return found, now
+
     def test_crc8_and_packet_layout(self):
         I, D = self.I, self.D
         self.assertEqual(I.crc8(b"123456789"), 0xF4)
@@ -1160,6 +1169,54 @@ class TestIr(unittest.TestCase):
                 self.assertEqual(address, 0x4C)
                 self.assertTrue(0 <= command <= 255)
                 self.assertGreaterEqual(wait, 0)
+
+    def test_decoder_accepts_once_then_dedupes(self):
+        I, D = self.I, self.D
+        dna = D.dna_for("octocat")
+        packet = I.encode_packet("octocat", dna)
+        decoder = I.Decoder()
+        found, now = self.feed(decoder, packet)
+        self.assertEqual(found, [((len(packet) - 1) * 80, ("octocat", dna))])
+        again, now = self.feed(decoder, packet, now + I.COPY_GAP_MS)
+        self.assertEqual(again, [])
+        later, _ = self.feed(decoder, packet, now + I.DEDUPE_MS)
+        self.assertEqual([hit for _at, hit in later], [("octocat", dna)])
+        other = I.encode_packet("ada", D.dna_for("ada"))
+        fresh = I.Decoder()
+        self.feed(fresh, packet)
+        hits, _ = self.feed(fresh, other, 3000)
+        self.assertEqual([hit[0] for _at, hit in hits], ["ada"])
+
+    def test_decoder_survives_noise_drops_and_gaps(self):
+        I, D = self.I, self.D
+        dna = D.dna_for("mona")
+        packet = I.encode_packet("mona", dna)
+        decoder = I.Decoder()
+        noise = [0xA5, 0x5A, 0x40, 0xA5, 7, 0x5A, 0xFF, 0x00]
+        found, _ = self.feed(decoder, noise + packet)
+        self.assertEqual([hit for _at, hit in found], [("mona", dna)])
+        decoder = I.Decoder()
+        corrupt = list(packet)
+        corrupt[10] ^= 0x01
+        found, now = self.feed(decoder, corrupt)
+        self.assertEqual(found, [])
+        found, _ = self.feed(decoder, packet, now + I.COPY_GAP_MS)
+        self.assertEqual([hit for _at, hit in found], [("mona", dna)])
+        decoder = I.Decoder()
+        dropped = packet[:12] + packet[13:]
+        found, now = self.feed(decoder, dropped)
+        self.assertEqual(found, [])
+        found, _ = self.feed(decoder, packet, now + I.COPY_GAP_MS)
+        self.assertEqual([hit for _at, hit in found], [("mona", dna)])
+        decoder = I.Decoder()
+        _, now = self.feed(decoder, packet[:15])
+        found, _ = self.feed(decoder, packet[15:], now + I.GAP_MS + 100)
+        self.assertEqual(found, [])
+        long_handle = "a" * 39
+        long_dna = D.dna_for(long_handle)
+        decoder = I.Decoder()
+        found, _ = self.feed(decoder, noise + I.encode_packet(long_handle, long_dna))
+        self.assertEqual([hit for _at, hit in found], [(long_handle, long_dna)])
 
 
 class TestWheel(unittest.TestCase):
