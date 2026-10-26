@@ -80,6 +80,27 @@ class VerdictsTests(unittest.TestCase):
             for b in V.INKS[i + 1:]:
                 self.assertGreaterEqual(math.dist(a, b), 40, (a, b))
 
+    def test_rng_reference_values(self):
+        self.assertEqual(V.Rng(1).next_u32(), 270369)
+        for seed in (0, 1 << 32):
+            self.assertEqual(V.Rng(seed).state, 0x2545F491)
+        self.assertEqual(V.Rng().state, 0x2545F491)
+        a, b = V.Rng(42), V.Rng(42)
+        self.assertEqual([a.next_u32() for _ in range(50)], [b.next_u32() for _ in range(50)])
+
+    def test_rng_ranges(self):
+        rng = V.Rng(7)
+        seen = set()
+        for _ in range(3000):
+            r = rng.random()
+            self.assertTrue(0.0 <= r < 1.0)
+            u = rng.uniform(-2.0, 3.0)
+            self.assertTrue(-2.0 <= u < 3.0)
+            n = rng.randint(2, 8)
+            self.assertTrue(2 <= n <= 8)
+            seen.add(n)
+        self.assertEqual(seen, set(range(2, 9)))
+
 
 def read_png(path):
     data = Path(path).read_bytes()
