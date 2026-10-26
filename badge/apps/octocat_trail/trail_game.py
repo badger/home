@@ -91,6 +91,7 @@ class View:
         self.options = options
         self.cursor = cursor
         self.hint = hint
+        self.progress = progress
         self.note = ""
         self.foot = ()
         self.rows = ()

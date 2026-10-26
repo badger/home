@@ -1984,6 +1984,16 @@ class RenderHelperTests(unittest.TestCase):
         self.assertEqual(td.dim((255, 200, 0)), (140, 110, 0))
         self.assertEqual(td.dim((0, 0, 0)), (0, 0, 0))
 
+    def test_scatter_is_deterministic_and_in_bounds(self):
+        points = td.scatter(40, 11, 6, 2, 300, 92)
+        self.assertIsInstance(points, tuple)
+        self.assertEqual(points, td.scatter(40, 11, 6, 2, 300, 92))
+        self.assertEqual([point[2] for point in points], list(range(40)))
+        for x, y, _index in points:
+            self.assertTrue(6 <= x < 306 and 2 <= y < 94, (x, y))
+        self.assertNotEqual(points, td.scatter(40, 12, 6, 2, 300, 92))
+        self.assertGreater(len({x // 30 for x, _y, _index in points}), 5)
+
 
 MAP_LABELS = frozenset(label[0] for label in tm.LABELS if not label[3])
 

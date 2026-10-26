@@ -42,6 +42,22 @@ def dim(rgb):
     return (rgb[0] * 11 // 20, rgb[1] * 11 // 20, rgb[2] * 11 // 20)
 
 
+def lcg(seed):
+    return (seed * 1103515245 + 12345) & 0x7FFFFFFF
+
+
+def scatter(count, seed, x0, y0, w, h):
+    """Deterministic (x, y, index) points, so scenery never flickers."""
+    points = []
+    for index in range(count):
+        seed = lcg(seed)
+        x = x0 + seed % w
+        seed = lcg(seed)
+        y = y0 + seed % h
+        points.append((x, y, index))
+    return tuple(points)
+
+
 class Renderer:
     def __init__(self):
         self.now = 0
@@ -60,6 +76,7 @@ class Renderer:
         self.chart_key = None
         self.failed = {}
         self.tokens = (ta.token_parts(0), ta.token_parts(1))
+        self.stars = scatter(40, 11, 0, 2, W, 92)
 
     # ----- frame setup ------------------------------------------------------------
     def draw(self, game):
@@ -674,3 +691,47 @@ class Renderer:
         for row in note:
             self.centred(row, y)
             y += ROW
+
+    # ----- Dark Mode Camp ------------------------------------------------------------------------
+    def camp_scene(self):
+        """The party beds down by the bay under the stars, above VIEW_H."""
+        box = screen.rectangle
+        twinkle = self.now // 350
+        self.pen(WHITE)
+        for x, y, i in self.stars:
+            if 16 <= y <= 78 and (i + twinkle) % 9:
+                box(x, y, 1, 1)
+        self.circle(WHITE, 264, 36, 10)
+        self.circle(BLACK, 269, 32, 9)
+        for hx, hr in ((196, 9), (228, 14), (266, 10), (300, 13)):
+            self.circle(DKGREEN, hx, 84, hr)
+        self.fill(NAVY, 0, 82, W, 14)
+        self.waves(0, 84, W, 10, 8)
+        self.fill(DKGREEN, 0, 96, W, VIEW_H - 96)
+        wx = 28
+        wy = 100
+        self.sprite(ta.WAGON, wx, wy, 2)
+        self.fill(DKGREEN, wx + 26, wy, 10, 12)
+        self.sprite(ta.WHEEL[0], wx + 4, wy + 14, 2)
+        self.sprite(ta.WHEEL[0], wx + 24, wy + 14, 2)
+        self.sprite(ta.DUCK[0], 92, 102, 2)
+        self.pen(WHITE)
+        if (self.now // 600) & 1:
+            self.text("z", 114, 90)
+        else:
+            self.text("Z", 122, 80)
+        self.sprite(ta.FIRE[(self.now // 200) & 1], 146, 97, 3)
+        self.sprite(ta.MONA[0], 196, 98, 2, True)
+        self.bar("Dark Mode Camp")
+
+    def draw_camp(self, view, game):
+        self.camp_scene()
+        self.hint(view.hint, VIEW_H + 1)
+        self.pen(WHITE)
+        self.outline(2, BOX_Y, W - 4, H - BOX_Y)
+        self.outline(4, BOX_Y + 2, W - 8, H - BOX_Y - 4)
+        self.lines(view.lines, BOX_Y + 6, 14, W - 28, WHITE, 214)
+        progress = view.progress if view.progress is not None else 0.0
+        self.pen(WHITE)
+        self.outline(14, 220, W - 28, 8)
+        self.fill(GREEN, 16, 222, int((W - 32) * progress), 4)
