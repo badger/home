@@ -71,6 +71,21 @@ def setUpModule():
     load_app_modules()
 
 
+def _restore_module(name, old):
+    if old is _MISSING:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = old
+
+
+def install_modules(test, modules):
+    """Put fake runtime modules (or None, to make an import fail) in sys.modules."""
+    for name, module in modules.items():
+        old = sys.modules.get(name, _MISSING)
+        sys.modules[name] = module
+        test.addCleanup(_restore_module, name, old)
+
+
 def _restore_attr(module, name, old):
     if old is _MISSING:
         if name in module.__dict__:
@@ -182,6 +197,37 @@ def fake_rect(x, y, w, h):
 
 
 FAKE_FONT = types.SimpleNamespace(teatime="teatime", sins="sins")
+
+
+class FakeIr:
+    """badgeware.ir.ir: one descriptor per 8-bit address."""
+
+    def __init__(self, busy=()):
+        self.bound = {}
+        self.busy = busy
+        self.closed = False
+
+    def bind(self, remote, force=False):
+        if remote.ADDRESS in self.busy and not force:
+            raise ValueError("address 0x%02X already bound" % remote.ADDRESS)
+        self.bound[remote.ADDRESS] = remote
+        return remote
+
+    def close(self):
+        self.closed = True
+
+    def deliver(self, address, command):
+        self.bound[address].on_any(command)
+
+
+def install_ir(test, busy=()):
+    ir = FakeIr(busy)
+    package = types.ModuleType("badgeware")
+    sub = types.ModuleType("badgeware.ir")
+    sub.ir = ir
+    package.ir = sub
+    install_modules(test, {"badgeware": package, "badgeware.ir": sub})
+    return ir
 
 
 def circle_raw(width=48, height=54, rgb=(110, 84, 240)):
@@ -1217,6 +1263,21 @@ class TestIr(unittest.TestCase):
         decoder = I.Decoder()
         found, _ = self.feed(decoder, noise + I.encode_packet(long_handle, long_dna))
         self.assertEqual([hit for _at, hit in found], [(long_handle, long_dna)])
+
+    def test_port_listen_degrades(self):
+        I = self.I
+        install_ir(self, busy=(0x4C, 0x45))
+        port = I.IrPort()
+        self.assertFalse(port.listen())
+        self.assertEqual(port.note, "IR receive busy")
+        install_ir(self, busy=(0x45,))
+        self.assertTrue(I.IrPort().listen())
+        install_modules(self, {"badgeware": None, "badgeware.ir": None})
+        port = I.IrPort()
+        self.assertFalse(port.listen())
+        self.assertEqual(port.note, "IR receive unavailable")
+        self.assertEqual(port.update(0), [])
+        port.close()
 
 
 class TestWheel(unittest.TestCase):

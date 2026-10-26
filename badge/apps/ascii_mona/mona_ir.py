@@ -26,12 +26,32 @@ SYNC_B = 0x5A
 MIN_LEN = 1 + mona_dna.SIZE
 MAX_LEN = MIN_LEN + mona_dna.MAX_HANDLE
 
+RX_PIN = 17
+
 FRAME_MS = 80
 COPIES = 2
 COPY_GAP_MS = 250
 GAP_MS = 1200
 DEDUPE_MS = 15000
 WINDOW = 64
+INBOX_MAX = 160
+
+try:
+    from aye_arr.nec.remotes.descriptor import RemoteDescriptor as _Remote
+except Exception:
+    _Remote = object
+
+
+class DnaRemote(_Remote):
+    NAME = "AsciiMonaDNA"
+    ADDRESS = DNA_ADDRESS
+    BUTTON_CODES = {}
+
+    def __init__(self):
+        # the base sets up the button map the receiver looks codes up in
+        super().__init__()
+        self.on_any = None
+        self.on_known = None
 
 
 def crc8(data):
@@ -177,3 +197,62 @@ class Beam:
         wait = self.frames[self.index][2] if self.index < len(self.frames) else 0
         self.next_at = now + FRAME_MS + wait
         return True
+
+
+class IrPort:
+    """Owns the badgeware.ir binds for the app's lifetime."""
+
+    def __init__(self):
+        self.ir = None
+        self.listening = False
+        self.inbox = []
+        self.decoder = Decoder()
+        self.note = ""
+
+    # Receiver callbacks only record what arrived; update() does the work.
+    def on_dna(self, command):
+        if len(self.inbox) < INBOX_MAX:
+            self.inbox.append(command)
+
+    def listen(self):
+        try:
+            from badgeware.ir import ir
+        except Exception:
+            self.note = "IR receive unavailable"
+            return False
+        bound = 0
+        remote = DnaRemote()
+        try:
+            remote.on_any = self.on_dna
+            bound_remote = ir.bind(remote)
+            if bound_remote is not None and bound_remote is not remote:
+                bound_remote.on_any = self.on_dna
+            bound = 1
+        except Exception:
+            pass
+        self.ir = ir
+        self.listening = bound > 0
+        if not self.listening:
+            self.note = "IR receive busy"
+        return self.listening
+
+    def update(self, now):
+        """Decode what arrived; returns a list of ("mona", handle, dna) events."""
+        events = []
+        if self.inbox:
+            inbox = self.inbox
+            self.inbox = []
+            for byte in inbox:
+                found = self.decoder.push(byte, now)
+                if found is not None:
+                    events.append(("mona", found[0], found[1]))
+        return events
+
+    def close(self):
+        if self.ir is not None:
+            try:
+                self.ir.close()
+            except Exception:
+                pass
+            self.ir = None
+        self.listening = False
