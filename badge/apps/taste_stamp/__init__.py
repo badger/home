@@ -28,6 +28,19 @@ except OSError:
     pass
 sys.path.insert(0, APP_DIR)
 
+# The helpers have generic names, so drop copies another app may have left
+# in sys.modules before importing this app's own.
+HELPERS = ("motion", "stamp", "verdicts")
+
+
+def forget_helpers():
+    for name in HELPERS:
+        if name in sys.modules:
+            del sys.modules[name]
+
+
+forget_helpers()
+
 import motion  # noqa: E402
 import stamp  # noqa: E402
 import verdicts  # noqa: E402
@@ -533,6 +546,7 @@ def update():
 
 def on_exit():
     set_lights(None)
+    forget_helpers()
 
 
 run(update)
