@@ -767,6 +767,71 @@ class EightBallTests(unittest.TestCase):
         self.assertLess(abs(starts[0] - starts[1]), 50)
         self.assertAlmostEqual(starts[0], E.FRICTION_TAU * math.log(18 / E.LAND_SPEED), delta=60)
 
+    def test_symmetries_map_the_d20_onto_itself(self):
+        ball = E.Ball(V.Rng(13).random)
+        poses = []
+        for index in range(20):
+            for corner in range(3):
+                g = ball.symmetry(index, corner)
+                for v in ball.verts:
+                    moved = rotate(g, v)
+                    self.assertLess(min(math.dist(moved, w) for w in ball.verts), 1e-9)
+                self.assertLess(math.dist(rotate(g, ball.normals[0]), ball.normals[index]), 1e-9)
+                for other in poses:
+                    self.assertGreater(E.q_angle(g, other), 1.0)
+                poses.append(g)
+        self.assertLess(E.q_angle(ball.symmetry(0, 0), (1.0, 0.0, 0.0, 0.0)), 1e-6)
+
+    def test_spins_reroll_only_while_the_numbers_are_hidden(self):
+        # A reroll shows up as a jump bigger than one frame of spin. A kick
+        # just past BLUR_SPEED drops below it within a frame, so it shows its
+        # numbers and must never reroll.
+        step = E.MAX_SPIN * 16 / 1000 + 0.01
+        for strength, rerolls in ((18, 1), (E.BLUR_SPEED + 0.1, 0), (5, 0)):
+            ball = E.Ball(V.Rng(14).random)
+            q = ball.q
+            ball.kick(strength, 0)
+            jumps = []
+            t = 0
+            while ball.state != E.LANDED:
+                t += 16
+                ball.update(16, t)
+                if E.q_angle(q, ball.q) > step:
+                    jumps.append(ball.speed())
+                q = ball.q
+            self.assertEqual(len(jumps), rerolls, strength)
+            for speed in jumps:
+                self.assertGreaterEqual(speed, E.BLUR_SPEED)
+
+    def test_repeat_spins_land_fairly(self):
+        # Friction turns the d20 through nearly the same angle on every spin,
+        # so without the reroll back-to-back DOWN presses landed on the same
+        # face or a neighbour about 70% of the time. A fair d20 does that 20%
+        # of the time, and each landing is uncorrelated with the last.
+        faces = self.faces
+        near = [[j for j in range(20) if len(set(faces[i]) & set(faces[j])) >= 2] for i in range(20)]
+        for strength in (18, 16, 14):
+            ball = E.Ball(V.Rng(strength).random)
+            counts = [0] * 20
+            close = 0
+            dots = 0.0
+            t = 0
+            for trial in range(401):
+                last = ball.face
+                ball.kick(strength, t)
+                while ball.state != E.LANDED:
+                    t += 16
+                    ball.update(16, t)
+                if trial == 0:
+                    continue
+                counts[ball.face] += 1
+                if ball.face in near[last]:
+                    close += 1
+                dots += sum(a * b for a, b in zip(ball.normals[ball.face], ball.normals[last]))
+            self.assertNotIn(0, counts, strength)
+            self.assertTrue(0.12 < close / 400 < 0.28, (strength, close))
+            self.assertLess(abs(dots / 400), 0.12, (strength, dots))
+
     def test_projection_stays_inside_the_liquid(self):
         rng = V.Rng(12)
         ball = E.Ball(rng.random)
@@ -2318,6 +2383,29 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(set(levels)), 1)
             self.assertEqual(len(levels), 4)
         self.assertTrue(all(a > b > 0 for a, b in zip(glow, glow[1:])), glow)
+
+    def test_d20_never_shows_renumbered_faces(self):
+        A = self.launch()
+        app = self.app
+        E8 = A.eightball
+        self.step("RIGHT")
+        step = E8.MAX_SPIN * 16 / 1000 + 0.01
+        rerolls = 0
+        for _ in range(6):
+            q = app.ball.q
+            self.step("DOWN")
+            while True:
+                numbers = self.check_d20()
+                if E8.q_angle(q, app.ball.q) > step:
+                    rerolls += 1
+                    self.assertEqual(numbers, [])
+                if numbers and app.ball.state == E8.SPINNING:
+                    self.assertLess(app.ball.speed(), E8.BLUR_SPEED)
+                if self.landed():
+                    break
+                q = app.ball.q
+                self.step()
+        self.assertGreaterEqual(rerolls, 5)
 
     def test_place_number_maps_face_corners_through_the_firmware_transform(self):
         A = self.launch()

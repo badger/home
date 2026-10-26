@@ -21,6 +21,8 @@ MIN_SPIN_MS = 600
 SETTLE_BASE_MS = 200
 SETTLE_MS_PER_DEG = 2.2
 IDLE_SPIN = 0.7
+# The app hides the numbers while the d20 spins at least this fast.
+BLUR_SPEED = 6.0
 
 
 def _sub(a, b):
@@ -206,6 +208,10 @@ def q_normalise(q):
     return (q[0] / d, q[1] / d, q[2] / d, q[3] / d)
 
 
+def q_conj(q):
+    return (q[0], -q[1], -q[2], -q[3])
+
+
 def q_axis_angle(axis, angle):
     s = math.sin(angle * 0.5)
     return (math.cos(angle * 0.5), axis[0] * s, axis[1] * s, axis[2] * s)
@@ -288,6 +294,7 @@ class Ball:
         self.state = IDLE
         self.face = None
         self.forced = None
+        self.reroll = False
         self.hold_until = 0
         self.settle_from = None
         self.settle_to = None
@@ -314,6 +321,7 @@ class Ball:
             k = MAX_SPIN / speed
             w = (w[0] * k, w[1] * k, w[2] * k)
         self.omega = w
+        self.reroll = True
         if forced is not None:
             self.forced = forced
         if self.state != SPINNING:
@@ -348,11 +356,17 @@ class Ball:
                 best = i
         return best
 
-    def target_for(self, index):
-        # Orientation that shows face index head-on with its number upright.
+    def target_for(self, index, corner=0):
+        # Orientation that shows face index head-on with the given corner
+        # pointing up. Corner 0 is the top of the face's number.
         n = self.normals[index]
-        up = _unit(_sub(self.verts[self.faces[index][0]], self.centres[index]))
+        up = _unit(_sub(self.verts[self.faces[index][corner]], self.centres[index]))
         return q_from_rows((_cross(up, n), up, n))
+
+    def symmetry(self, index, corner):
+        # Rotation that maps the d20 onto itself, taking face 0 to face index
+        # and the top of its number to the given corner.
+        return q_mul(q_conj(self.target_for(index, corner)), self.target_for(0))
 
     def update(self, dt, now, agitated=False):
         # Returns True on the frame the d20 lands.
@@ -368,6 +382,15 @@ class Ball:
                 w = self.omega
                 self.omega = (w[0] * k, w[1] * k, w[2] * k)
             self._rotate(dt)
+            if self.reroll and self.speed() >= BLUR_SPEED:
+                # Friction turns the d20 through nearly the same angle on
+                # every spin, so the landing face would follow the face shown
+                # at the kick. While the numbers are hidden, swap in one of
+                # its 60 identical-looking symmetric poses at random, which
+                # makes every face equally likely.
+                self.reroll = False
+                pose = min(59, int(self.rand() * 60))
+                self.q = q_normalise(q_mul(self.q, self.symmetry(pose // 3, pose % 3)))
             if not agitated and now >= self.hold_until and self.speed() < LAND_SPEED:
                 index = self.facing_face()
                 if self.forced is not None:

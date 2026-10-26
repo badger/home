@@ -814,7 +814,7 @@ class App:
                 p = points[i]
                 q = points[j]
                 screen.shape(shape.line(p[0], p[1], q[0], q[1], 1.3))
-        if ball.speed() < 6.0 or ball.state == eightball.SETTLING or ball.state == eightball.LANDED:
+        if ball.speed() < eightball.BLUR_SPEED or ball.state == eightball.SETTLING or ball.state == eightball.LANDED:
             screen.fill_rule = image.NON_ZERO
             for f, level, nz in visible:
                 if nz <= 0.3:
