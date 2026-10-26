@@ -12,6 +12,7 @@ CAP = 6.0
 STROKE = 1.42
 TRACKING = 2.45
 SPACE = 1.8
+MAX_SINGLE_LINE = 9
 MITER_LIMIT = 2.0
 
 # Glyphs: character -> (width, strokes). A stroke is a tuple of points,
@@ -202,3 +203,33 @@ def text_groups(text, cx, top, scale, hw, groups):
         if contours:
             groups.append(contours)
     return width * scale
+
+
+def _break_line(line):
+    # The line break already separates the clauses, so a trailing comma would
+    # only dangle down beside the next line's capitals.
+    if line.endswith(","):
+        bare = line[:-1].rstrip()
+        if bare:
+            return bare
+    return line
+
+
+def wrap(text, limit=MAX_SINGLE_LINE):
+    # One line when short, otherwise the two-line break whose longer line is
+    # shortest, preferring the longer first line on ties.
+    text = text.strip()
+    words = []
+    for word in text.split(" "):
+        if word:
+            words.append(word)
+    if len(text) <= limit or len(words) < 2:
+        return (" ".join(words),)
+    best = None
+    for i in range(1, len(words)):
+        first = _break_line(" ".join(words[:i]))
+        second = " ".join(words[i:])
+        key = (max(len(first), len(second)), -len(first))
+        if best is None or key < best[0]:
+            best = (key, first, second)
+    return (best[1], best[2])

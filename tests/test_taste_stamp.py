@@ -129,6 +129,29 @@ class StampTests(unittest.TestCase):
         self.assertAlmostEqual(S.line_width("ship it"), S.line_width("SHIP IT"), places=9)
         self.assertEqual(S.layout_line("")[1], 0.0)
 
+    def test_wrap(self):
+        cases = {
+            "SHIP IT": ("SHIP IT",),
+            "TOO SAFE": ("TOO SAFE",),
+            "CERTIFIED BANGER": ("CERTIFIED", "BANGER"),
+            "NEEDS MORE TEETH": ("NEEDS MORE", "TEETH"),
+            "KILL THE FLUFF": ("KILL THE", "FLUFF"),
+            "WHERE IS THE TENSION?": ("WHERE IS THE", "TENSION?"),
+            "MAKE THE DEV THE HERO": ("MAKE THE DEV", "THE HERO"),
+            "SUPERCALIFRAGILISTIC": ("SUPERCALIFRAGILISTIC",),
+            "  SHIP   IT  ": ("SHIP IT",),
+        }
+        for text, expected in cases.items():
+            self.assertEqual(S.wrap(text), expected, text)
+
+    def test_wrap_drops_the_comma_at_a_line_break(self):
+        self.assertEqual(S.wrap("MORE CONTRAST, LESS GRADIENT", 14), ("MORE CONTRAST", "LESS GRADIENT"))
+        self.assertEqual(S.wrap("GO BOLDER, THEN EDIT", 14), ("GO BOLDER", "THEN EDIT"))
+        self.assertEqual(S.wrap("FEWER WORDS, SHARPER VERBS", 14), ("FEWER WORDS", "SHARPER VERBS"))
+        self.assertEqual(S.wrap("YES, AND", 14), ("YES, AND",))
+        self.assertEqual(S.wrap("SHIP IT, NOW", 9), ("SHIP IT", "NOW"))
+        self.assertEqual(S.wrap(", WORD", 5), (",", "WORD"))
+
 
 def read_png(path):
     data = Path(path).read_bytes()
