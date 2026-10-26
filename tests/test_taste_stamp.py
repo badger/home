@@ -1258,6 +1258,22 @@ class ReadmeTests(unittest.TestCase):
             "badges over IR."
         ))
 
+    def test_sections_cover_usage_hardware_and_simulator(self):
+        headings = [line for line in self.text.splitlines() if line.startswith("#")]
+        for heading in ("## Usage", "### Stamp mode", "### Creative 8-Ball mode", "### Beaming",
+                        "## Hardware", "## Badge Simulator", "## Files"):
+            self.assertIn(heading, headings)
+        self.assertLess(headings.index("## Usage"), headings.index("## Hardware"))
+
+    def test_readme_documents_the_hardware_contract(self):
+        for phrase in ("running Taste Stamp", "badge.upside_down()", "badge.imu()", "GPIO16",
+                       "GPIO17", "badgeware.ir", "0x53", "never transmits on `0x45`"):
+            self.assertIn(phrase, self.text)
+        for verdict in V.VERDICTS:
+            self.assertIn(verdict, self.text)
+        for name in APP_FILES:
+            self.assertIn("`" + name + "`", self.text)
+
 
 STR_METHODS = {"isalnum", "ljust", "rjust", "title", "zfill", "capitalize", "removeprefix",
                "removesuffix", "casefold", "swapcase", "isnumeric", "isprintable", "format_map"}

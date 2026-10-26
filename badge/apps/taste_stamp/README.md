@@ -32,3 +32,23 @@ Shake the badge, flip it, or press DOWN or UP to tumble a dithered 3D d20. It se
 ### Beaming
 
 SELECT sends the current verdict or prompt as a short NEC infrared burst. A badge that receives it slams the same verdict, or spins its d20 onto the same prompt. Beams only arrive while the other badge is also running Taste Stamp, so open the app on both badges and point them at each other.
+
+## Hardware
+
+- **Motion:** flips use `badge.upside_down()`. Chops and shakes come from `badge.imu()` as relative changes in the size and direction of the acceleration, so they work in any orientation and at any frame rate. The thresholds are at the top of each detector in `motion.py`.
+- **Case lights:** the four rear LEDs strobe on every slam and chase while a beam goes out or comes in. They switch off when you leave the app.
+- **Infrared:** transmits on GPIO16 (IR TX, PIO0 state machine 1) and receives on GPIO17 through the firmware's `badgeware.ir` receiver, on NEC address `0x53`. It never transmits on `0x45`, the address of the menu's achievement beacons.
+- No network access or extra hardware is required.
+
+## Badge Simulator
+
+The simulator has no IR hardware and its IMU never moves, so use the buttons instead of motion: DOWN slams a verdict or spins the d20, and the canvas rotate control flips the badge. SELECT shows a simulated beam.
+
+## Files
+
+- `__init__.py`: app loop, drawing and input.
+- `verdicts.py`: verdicts, inks and 8-Ball prompts, plus a seeded xorshift random number generator and a shuffle bag.
+- `stamp.py`: stroked block font, stamp artwork, and slam, shake, strobe and splatter timing.
+- `eightball.py`: d20 geometry, tumbling and landing, projection and Bayer dithering.
+- `motion.py`: flip, chop and shake detectors.
+- `beam.py`: IR message format, send queue and receiver.
