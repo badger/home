@@ -2369,6 +2369,13 @@ class TestAppFiles(unittest.TestCase):
             sys.dont_write_bytecode = saved_flag
         self.assertIsNone(validator.check_app(APP_DIR))
 
+    def test_readme_documents_the_beams_and_credits(self):
+        readme = (APP_DIR / "README.md").read_text(encoding="utf-8")
+        for needed in ("0x4C", "0x45", "0x88", "Octocat Generator", "Level Up Lounge",
+                       "Ascii-Motion", "myoctocat.com", "GITHUB_TOKEN", "badgeware.link"):
+            self.assertIn(needed, readme)
+        self.assertNotIn("0XF0", readme.upper())
+
     def test_app_folder_ships_only_app_files(self):
         allowed = (".py", ".png", ".md", ".bin")
         for path in APP_DIR.iterdir():

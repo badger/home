@@ -121,3 +121,8 @@ The app saves your style, palette, recent Monas, profiles, your tweaked Mona and
 ## Simulator
 
 The Badge Simulator has no IR or badge link. There, a beam runs with the same timing, the badge shows "Simulated beam: no IR sender here", and no Mona arrives from another badge. Everything else works, including the letter wheel, Tweak, every style and the DNA card. The GitHub lookup uses your computer's network.
+
+## Credits
+
+- The ASCII styles are an independent MicroPython implementation of techniques from Cameron Foxly's [Ascii-Motion](https://github.com/CameronFoxly/Ascii-Motion): 6D shape-vector character matching, Bayer 4 x 4 ordered dithering, Sobel edge line art and terminal-style palettes. No Ascii-Motion code is copied.
+- The Octocat art is © GitHub, from the [MyOctocat builder](https://myoctocat.com/build-your-octocat/). It's baked into `octocat.bin`, and `mona_parts.py` is generated from the same parts.
