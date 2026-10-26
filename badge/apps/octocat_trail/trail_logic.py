@@ -59,6 +59,8 @@ SIGHTS = (
     (5, "brew", 15, "A recruiter slipped you 15 Cold Brew Kegs."),
     (10, "health", 10, "A standing ovation lifts every spirit. Health +10."),
 )
+HEAL_DAYS = 5
+HEAL_AMOUNT = 15
 
 MONTHS = (
     ("September", 30), ("October", 31), ("November", 30), ("December", 31),
@@ -251,6 +253,7 @@ class Trail:
         self.at = 0
         self.visited = 1
         self.deployed = 0
+        self.healed_day = -HEAL_DAYS
         self.basket = {}
         self.last_cause = CAUSE_EXHAUSTION
         self.ticker = "Outfit the wagon at the Gatehouse store."
@@ -434,6 +437,8 @@ class Trail:
             for entry in SIGHTS:
                 if entry[0] == stop:
                     self._gift(entry, lines)
+        if kind == "heal":
+            self._firehouse(lines)
         return "stop"
 
     def _gift(self, entry, lines):
@@ -444,6 +449,19 @@ class Trail:
         else:
             self.supplies[key] = min(carry_limit(key), self.supplies[key] + amount)
         lines.append(line)
+
+    def heal_ready(self):
+        return self.day - self.healed_day >= HEAL_DAYS
+
+    def _firehouse(self, lines):
+        if not self.heal_ready():
+            wait = HEAL_DAYS - (self.day - self.healed_day)
+            lines.append("The crew is out on a call. Come back in %s." % plural(wait, "day"))
+            return
+        self.healed_day = self.day
+        for member in self.living():
+            member.health = clamp(member.health + HEAL_AMOUNT, 0, 100)
+        lines.append("The Hotfix HQ crew patched up the party. Health +%d." % HEAL_AMOUNT)
 
     # ----- shop -------------------------------------------------------------
     def markup(self):
