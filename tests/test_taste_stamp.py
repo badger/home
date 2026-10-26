@@ -2,12 +2,20 @@
 
 The app's modules are loaded under unique taste_stamp_* names and are never
 registered in sys.modules, so these tests can share a process with other
-apps' tests that vendor helpers with generic names.
+apps' tests that vendor helpers with generic names. AppTests runs the whole
+app against a fake badge runtime; it imports the helpers under their real
+names inside a patched sys.modules, sys.path and importer cache, all of
+which are restored after every test.
 """
 
+import array
 import ast
+import collections
+import contextlib
 import copy
 import math
+import os
+import random
 import re
 import struct
 import sys
@@ -1554,6 +1562,533 @@ class MicroPythonCompatibilityTests(unittest.TestCase):
         for name, source in self.sources.items():
             self.assertNotIn("import badge", source, name)
             self.assertNotIn("secrets", source, name)
+
+
+# A fake badge runtime for AppTests. The fakes check their arguments the way
+# the firmware needs them and record every problem on the runtime, because
+# the app deliberately swallows some exceptions.
+
+Vec2 = collections.namedtuple("Vec2", "x y")
+BUTTONS = {"UP": 1, "DOWN": 2, "LEFT": 4, "RIGHT": 8, "SELECT": 16, "BACK": 32}
+HIRES = 0x100
+VSYNC = 0x200
+FONT_METRICS = {"font:nope": (6, 12), "font:sins": (5, 8)}
+
+
+def finite_number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def is_rgb(v):
+    return isinstance(v, tuple) and len(v) == 5 and v[0] == "rgb"
+
+
+def is_pen(v):
+    return is_rgb(v) or (isinstance(v, tuple) and len(v) == 4 and v[0] == "pattern")
+
+
+class FakeMat3:
+    # An immutable affine transform (a, b, c, d, e, f) mapping (x, y) to
+    # (ax + by + c, dx + ey + f). Calls post-multiply like the firmware's
+    # mat3, so mat3().translate(x, y).rotate(r) rotates about (x, y).
+
+    def __init__(self, rt, m=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0)):
+        self.rt = rt
+        self.m = m
+
+    def _then(self, a, b, c, d, e, f):
+        m = self.m
+        return FakeMat3(self.rt, (
+            m[0] * a + m[1] * d, m[0] * b + m[1] * e, m[0] * c + m[1] * f + m[2],
+            m[3] * a + m[4] * d, m[3] * b + m[4] * e, m[3] * c + m[4] * f + m[5],
+        ))
+
+    def translate(self, x, y):
+        self.rt.check(finite_number(x) and finite_number(y), "mat3.translate", (x, y))
+        return self._then(1.0, 0.0, x, 0.0, 1.0, y)
+
+    def rotate(self, degrees):
+        self.rt.check(finite_number(degrees), "mat3.rotate", degrees)
+        a = math.radians(degrees)
+        return self._then(math.cos(a), -math.sin(a), 0.0, math.sin(a), math.cos(a), 0.0)
+
+    def scale(self, sx, sy=None):
+        if sy is None:
+            sy = sx
+        self.rt.check(finite_number(sx) and finite_number(sy), "mat3.scale", (sx, sy))
+        return self._then(sx, 0.0, 0.0, 0.0, sy, 0.0)
+
+    def apply(self, x, y):
+        m = self.m
+        return (m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5])
+
+
+class FakeShape:
+    def __init__(self, rt, kind, args, arrays=(), width=None):
+        self.rt = rt
+        self.kind = kind
+        self.args = args
+        self.arrays = arrays
+        self.copies = [list(a) for a in arrays]
+        self.width = width
+        self.transform = None
+
+    def stroke(self, width):
+        self.rt.check(finite_number(width) and width > 0, "shape.stroke", width)
+        return FakeShape(self.rt, self.kind, self.args, self.arrays, width)
+
+
+class FakeShapeModule:
+    def __init__(self, rt):
+        self.rt = rt
+
+    def numbers(self, what, values):
+        self.rt.check(all(finite_number(v) for v in values), what, values)
+
+    def circle(self, x, y, r):
+        self.numbers("shape.circle", (x, y, r))
+        self.rt.check(r > 0, "shape.circle radius", r)
+        return FakeShape(self.rt, "circle", (x, y, r))
+
+    def rounded_rectangle(self, x, y, w, h, r):
+        self.numbers("shape.rounded_rectangle", (x, y, w, h, r))
+        self.rt.check(w > 0 and h > 0 and r >= 0, "shape.rounded_rectangle size", (w, h, r))
+        return FakeShape(self.rt, "rounded_rectangle", (x, y, w, h, r))
+
+    def line(self, x1, y1, x2, y2, width):
+        self.numbers("shape.line", (x1, y1, x2, y2, width))
+        self.rt.check(width > 0, "shape.line width", width)
+        return FakeShape(self.rt, "line", (x1, y1, x2, y2, width))
+
+    def custom(self, *arrays):
+        ok = len(arrays) > 0
+        for a in arrays:
+            ok = ok and isinstance(a, array.array) and a.typecode == "f"
+            ok = ok and len(a) >= 6 and len(a) % 2 == 0 and all(math.isfinite(v) for v in a)
+        self.rt.check(ok, "shape.custom", arrays)
+        return FakeShape(self.rt, "custom", (), arrays)
+
+
+class FakeColor:
+    def __init__(self, rt):
+        self.rt = rt
+
+    def rgb(self, r, g, b, a=255):
+        values = (r, g, b, a)
+        ok = all(isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 255 for v in values)
+        self.rt.check(ok, "color.rgb", values)
+        return ("rgb", r, g, b, a)
+
+
+class FakeBrush:
+    def __init__(self, rt):
+        self.rt = rt
+
+    def pattern(self, first, second, rows):
+        ok = is_rgb(first) and is_rgb(second) and isinstance(rows, (tuple, list)) and len(rows) == 8
+        ok = ok and all(isinstance(v, int) and 0 <= v <= 255 for v in rows)
+        self.rt.check(ok, "brush.pattern", (first, second, rows))
+        return ("pattern", first, second, tuple(rows))
+
+
+class FakeImageModule:
+    OFF = "OFF"
+    X2 = "X2"
+    X4 = "X4"
+    EVEN_ODD = "EVEN_ODD"
+    NON_ZERO = "NON_ZERO"
+    RGB565 = "RGB565"
+
+    def __init__(self, rt):
+        self.rt = rt
+
+    def __call__(self, width, height, data=None, fmt=None):
+        rt = self.rt
+        ok = isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0
+        rt.check(ok, "image size", (width, height))
+        if data is None:
+            rt.check(fmt is None, "image format without data", fmt)
+            return FakeImage(rt, width, height)
+        ok = isinstance(data, bytearray) and len(data) == width * height * 2 and fmt == self.RGB565
+        rt.check(ok, "image data", (type(data), len(data), fmt))
+        return FakeImage(rt, width, height, data, fmt)
+
+
+class FakeImage:
+    # Records draw calls in ops, as tuples that hold the pen and fill rule
+    # in force when each call was made.
+    INTERNAL = ("rt", "width", "height", "raw", "fmt", "ops")
+
+    def __init__(self, rt, width, height, raw=None, fmt=None):
+        object.__setattr__(self, "rt", None)
+        self.width = width
+        self.height = height
+        if raw is not None:
+            self.raw = raw
+        self.fmt = fmt
+        self.ops = []
+        self.pen = ("rgb", 255, 255, 255, 255)
+        self.fill_rule = "EVEN_ODD"
+        self.font = None
+        self.antialias = "OFF"
+        self.rt = rt
+
+    def __setattr__(self, name, value):
+        rt = self.rt
+        if rt is not None:
+            if name == "pen":
+                rt.check(is_pen(value), "image.pen", value)
+            elif name == "fill_rule":
+                rt.check(value in ("EVEN_ODD", "NON_ZERO"), "image.fill_rule", value)
+            elif name == "font":
+                rt.check(value in FONT_METRICS, "image.font", value)
+            elif name == "antialias":
+                rt.check(value in ("OFF", "X2", "X4"), "image.antialias", value)
+            else:
+                rt.check(name in self.INTERNAL, "unknown image attribute", name)
+        object.__setattr__(self, name, value)
+
+    def clear(self):
+        self.rt.check(is_pen(self.pen), "image.clear pen", self.pen)
+        self.ops = [("clear", self.pen)]
+
+    def shape(self, s):
+        rt = self.rt
+        rt.check(isinstance(s, FakeShape), "image.shape", s)
+        rt.check([list(a) for a in s.arrays] == s.copies, "points changed after shape.custom", s.kind)
+        rt.check(s.transform is None or isinstance(s.transform, FakeMat3), "shape.transform", s.transform)
+        self.ops.append(("shape", self.pen, s, self.fill_rule, s.transform))
+
+    def blit(self, source, pos):
+        rt = self.rt
+        rt.check(isinstance(source, FakeImage) and source is not self, "image.blit source", source)
+        ok = isinstance(pos, Vec2) and finite_number(pos.x) and finite_number(pos.y)
+        rt.check(ok, "image.blit position", pos)
+        self.ops.append(("blit", source, pos))
+
+    def text(self, s, x, y):
+        rt = self.rt
+        rt.check(isinstance(s, str) and len(s) > 0 and all(32 <= ord(ch) < 127 for ch in s), "image.text", s)
+        rt.check(finite_number(x) and finite_number(y), "image.text position", (x, y))
+        rt.check(self.fill_rule == "EVEN_ODD", "vector text needs EVEN_ODD", self.fill_rule)
+        rt.check(is_rgb(self.pen), "image.text pen", self.pen)
+        rt.check(self.font in FONT_METRICS, "image.text font", self.font)
+        self.ops.append(("text", self.pen, s, (x, y), self.font))
+
+    def measure_text(self, s):
+        self.rt.check(isinstance(s, str) and self.font in FONT_METRICS, "image.measure_text", (s, self.font))
+        w, h = FONT_METRICS[self.font]
+        return (w * len(s), h)
+
+    def rectangle(self, x, y, w, h):
+        ok = all(finite_number(v) for v in (x, y, w, h)) and w > 0 and h > 0
+        self.rt.check(ok, "image.rectangle", (x, y, w, h))
+        self.ops.append(("rectangle", self.pen, (x, y, w, h)))
+
+    def resize(self, width, height):
+        self.width = width
+        self.height = height
+        if hasattr(self, "raw"):
+            self.raw = bytearray(width * height * 2)
+
+
+class FakeBadge:
+    def __init__(self, rt, imu_value=REST_UP, flipped=False, imu_error=None, flip_error=None, light_error=None):
+        self.rt = rt
+        self.ticks = 1000
+        self.ticks_delta = 0
+        self.default_clear = "firmware-clear"
+        self.buttons = 0
+        self.imu_value = imu_value
+        self.flipped = flipped
+        self.imu_error = imu_error
+        self.flip_error = flip_error
+        self.light_error = light_error
+        self.modes = []
+        self.lights = []
+        self.light_ticks = []
+
+    def mode(self, value):
+        self.modes.append(value)
+        if value & HIRES:
+            self.rt.screen.resize(320, 240)
+        else:
+            self.rt.screen.resize(160, 120)
+
+    def pressed(self, button):
+        self.rt.check(button in BUTTONS.values(), "badge.pressed", button)
+        return bool(self.buttons & button)
+
+    def upside_down(self):
+        if self.flip_error is not None:
+            raise self.flip_error
+        return self.flipped
+
+    def imu(self):
+        if self.imu_error is not None:
+            raise self.imu_error
+        return self.imu_value
+
+    def caselights(self, *levels):
+        if not levels:
+            return [0.0] * 4
+        ok = len(levels) in (1, 4) and all(finite_number(v) and 0 <= v <= 1 for v in levels)
+        self.rt.check(ok, "badge.caselights", levels)
+        self.lights.append(tuple(levels))
+        self.light_ticks.append(self.ticks)
+        if self.light_error is not None:
+            raise self.light_error
+        return list(levels) * (4 // len(levels))
+
+
+class FakeRuntime:
+    # The globals the badge launcher gives an app.
+
+    def __init__(self, screen_raw=True, dirs=(), is_dir_error=None, has_is_dir=True, **badge_options):
+        self.problems = []
+        self.runs = []
+        self.dir_calls = []
+        self.dirs = dirs
+        self.is_dir_error = is_dir_error
+        self.has_is_dir = has_is_dir
+        self.image = FakeImageModule(self)
+        if screen_raw:
+            self.screen = self.image(160, 120, bytearray(160 * 120 * 2), FakeImageModule.RGB565)
+        else:
+            self.screen = self.image(160, 120)
+        self.badge = FakeBadge(self, **badge_options)
+        self.shape = FakeShapeModule(self)
+        self.color = FakeColor(self)
+        self.brush = FakeBrush(self)
+        self.font = SimpleNamespace(nope="font:nope", sins="font:sins")
+
+    def fail(self, message):
+        self.problems.append(message)
+        raise AssertionError(message)
+
+    def check(self, ok, what, detail=None):
+        if not ok:
+            self.fail("%s: %r" % (what, detail))
+
+    def is_dir(self, path):
+        self.dir_calls.append(path)
+        if self.is_dir_error is not None:
+            raise self.is_dir_error
+        return path in self.dirs
+
+    def run(self, update):
+        self.runs.append(update)
+
+    def vec2(self, x, y):
+        self.check(finite_number(x) and finite_number(y), "vec2", (x, y))
+        return Vec2(x, y)
+
+    def mat3(self):
+        return FakeMat3(self)
+
+    def names(self):
+        names = {
+            "badge": self.badge,
+            "screen": self.screen,
+            "image": self.image,
+            "font": self.font,
+            "color": self.color,
+            "shape": self.shape,
+            "brush": self.brush,
+            "vec2": self.vec2,
+            "mat3": self.mat3,
+            "run": self.run,
+            "HIRES": HIRES,
+            "VSYNC": VSYNC,
+        }
+        for name, value in BUTTONS.items():
+            names["BUTTON_" + name] = value
+        if self.has_is_dir:
+            names["is_dir"] = self.is_dir
+        return names
+
+
+class AppTests(unittest.TestCase):
+    # Runs the whole app frame by frame against FakeRuntime and FakeIR.
+    # Every step checks the runtime saw no bad calls and the frame is sane.
+
+    @classmethod
+    def setUpClass(cls):
+        path = APP / "__init__.py"
+        cls.code = compile(path.read_text(encoding="utf-8"), str(path), "exec")
+
+    def setUp(self):
+        saved_path = list(sys.path)
+        self.addCleanup(sys.path.__setitem__, slice(None), saved_path)
+        for patcher in (
+            mock.patch.dict(sys.modules),
+            mock.patch.dict(sys.path_importer_cache),
+            mock.patch.object(sys, "dont_write_bytecode", True),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(os, "chdir")
+        self.chdir = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def launch(self, ir=None, rt=None, seed=0x5EED, **options):
+        ir = ir or FakeIR()
+        rt = rt or FakeRuntime(**options)
+        ir.clock = lambda: rt.badge.ticks
+        sys.modules.update(ir.modules())
+        sys.path.insert(0, str(APP))
+        module = types.ModuleType("taste_stamp_app")
+        module.__file__ = str(APP / "__init__.py")
+        module.__dict__.update(rt.names())
+        with mock.patch.object(random, "getrandbits", return_value=seed):
+            exec(self.code, module.__dict__)
+        self.assertEqual(rt.problems, [])
+        self.rt = rt
+        self.ir = ir
+        self.A = module
+        self.app = module.app
+        self.badge = rt.badge
+        self.screen = rt.screen
+        return module
+
+    def step(self, *buttons, ms=16, **badge_state):
+        badge = self.badge
+        for name, value in badge_state.items():
+            self.assertTrue(hasattr(badge, name), name)
+            setattr(badge, name, value)
+        badge.ticks += ms
+        badge.ticks_delta = ms
+        mask = 0
+        for name in buttons:
+            mask |= BUTTONS[name]
+        badge.buttons = mask
+        self.screen.ops = []
+        sent = len(self.ir.frames)
+        result = self.A.update()
+        badge.buttons = 0
+        self.assertEqual(self.rt.problems, [])
+        self.assertLessEqual(len(self.ir.frames) - sent, 1)
+        if result is None:
+            self.check_frame()
+        else:
+            self.assertIs(result, False)
+        return result
+
+    def check_frame(self):
+        A = self.A
+        app = self.app
+        ops = self.screen.ops
+        self.assertTrue(ops)
+        if app.mode == A.STAMP_MODE:
+            if ops[0][0] == "clear":
+                self.assertEqual(ops[0], ("clear", A.DESK_C))
+                self.assertEqual(ops[1][:2], ("blit", app.desk))
+                offset = ops[1][2]
+                self.assertTrue(offset.x or offset.y)
+                for v in offset:
+                    self.assertIsInstance(v, int)
+                    self.assertLessEqual(abs(v), 9)
+            else:
+                self.assertEqual(ops[0], ("blit", app.desk, Vec2(0, 0)))
+        else:
+            self.assertEqual(ops[0], ("blit", app.ball_bg, Vec2(0, 0)))
+        self.assertEqual(self.screen.fill_rule, "EVEN_ODD")
+        self.assertEqual(self.screen.font, "font:nope")
+        self.assertLessEqual(len(app.marks), 4)
+
+    def run_for(self, ms, **badge_state):
+        end = self.badge.ticks + ms
+        while self.badge.ticks < end:
+            self.step(**badge_state)
+
+    def shapes(self, target=None, kind=None):
+        ops = (target or self.screen).ops
+        return [op for op in ops if op[0] == "shape" and (kind is None or op[2].kind == kind)]
+
+    def texts(self, target=None):
+        return [op[2] for op in (target or self.screen).ops if op[0] == "text"]
+
+    def text_at(self, x, y):
+        for op in self.screen.ops:
+            if op[0] == "text" and op[3] == (x, y):
+                return op
+        return None
+
+    def test_launch_sets_up_the_screen_ir_and_desk(self):
+        A = self.launch()
+        rt, ir, app, badge, screen = self.rt, self.ir, self.app, self.badge, self.screen
+        self.assertEqual(badge.modes, [HIRES | VSYNC])
+        self.assertEqual((screen.width, screen.height), (320, 240))
+        self.assertEqual((screen.antialias, screen.fill_rule, screen.font), ("X2", "EVEN_ODD", "font:nope"))
+        self.assertEqual(rt.runs, [A.update])
+        self.assertIsNone(badge.default_clear)
+        self.assertEqual(A.previous_clear, "firmware-clear")
+        self.chdir.assert_called_once_with("/system/apps/taste_stamp")
+        self.assertEqual(sys.path[0], "/system/apps/taste_stamp")
+        self.assertEqual(len(rt.dir_calls), 4)
+        self.assertEqual(len(ir.senders), 1)
+        sender = ir.senders[0]
+        self.assertEqual(sender.args, (16, 0, 1))
+        self.assertTrue(sender.started)
+        self.assertIs(app.link.tx, sender)
+        self.assertEqual(len(ir.bound), 1)
+        bound = ir.bound[0]
+        self.assertEqual((bound.NAME, bound.ADDRESS), ("TasteStamp", 0x53))
+        self.assertIsInstance(bound, ir.RemoteDescriptor)
+        self.assertEqual(bound.on_any, app.link.heard)
+        self.assertTrue(app.link.receiving)
+        self.assertEqual(ir.descriptor_inits, 1)
+        for name in HELPERS:
+            module = sys.modules[name]
+            self.assertEqual(Path(module.__file__).parent, APP)
+            self.assertIs(getattr(A, name), module)
+        desk = app.desk
+        self.assertEqual((desk.width, desk.height, desk.fmt, len(desk.raw)), (320, 240, "RGB565", 320 * 240 * 2))
+        self.assertEqual(self.texts(desk), ["creative-brief.md"])
+        self.assertEqual(badge.lights, [])
+        self.assertEqual(A.STAMPS, [None] * 7)
+        self.assertEqual(ir.frames, [])
+        self.assertIsNone(app.ball_bg)
+
+    def test_app_dir_is_the_first_that_exists(self):
+        cases = (
+            (dict(dirs=("/remote/apps/taste_stamp", "/system/apps/taste_stamp")), "/remote/apps/taste_stamp", 1),
+            (dict(dirs=()), "/system/apps/taste_stamp", 4),
+            (dict(is_dir_error=OSError(2, "no such directory")), "/system/apps/taste_stamp", 4),
+            (dict(has_is_dir=False), "/system/apps/taste_stamp", 0),
+        )
+        for options, expected, probes in cases:
+            with self.subTest(options=options):
+                self.chdir.reset_mock()
+                A = self.launch(**options)
+                self.assertEqual(A.APP_DIR, expected)
+                self.chdir.assert_called_once_with(expected)
+                self.assertEqual(sys.path[0], expected)
+                self.assertEqual(len(self.rt.dir_calls), probes)
+                self.step("DOWN")
+                self.assertIsNotNone(self.app.slam)
+                A.on_exit()
+        self.chdir.reset_mock()
+        self.chdir.side_effect = OSError(2, "no such directory")
+        self.launch()
+        self.chdir.assert_called_once_with("/system/apps/taste_stamp")
+        self.step("DOWN")
+        self.assertIsNotNone(self.app.slam)
+
+    def test_idle_desk_warms_one_stamp_per_frame_and_shows_controls(self):
+        A = self.launch()
+        for i in range(7):
+            self.step()
+            self.assertEqual(sum(s is not None for s in A.STAMPS), i + 1)
+        texts = self.texts()
+        for text in ("TASTE STAMP", "< 8-BALL >", "FLIP OR CHOP TO STAMP", "OR PRESS DOWN", "NEXT: RANDOM"):
+            self.assertIn(text, texts)
+        self.assertNotIn("SELECT: BEAM", texts)
+        self.assertEqual(self.text_at(14, 222), ("text", A.DIM_C, "NEXT: RANDOM", (14, 222), "font:sins"))
+        boxes = [(op[1], op[2].width) for op in self.shapes(kind="rounded_rectangle")]
+        self.assertEqual(boxes, [(A.PAPER_C, None), (A.HEADING_C, 1.5)])
+        self.run_for(500)
+        self.assertEqual(self.badge.lights, [])
 
 
 if __name__ == "__main__":
