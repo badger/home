@@ -1102,6 +1102,49 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual([event for event, _ms in feed_light(detector, ((0, 3000),), 9000)], ["dark"])
 
 
+class PacketTests(unittest.TestCase):
+    def test_round_trip(self):
+        packet = tl.encode_packet(tl.KIND_VICTORY, 0x15, 123456, 4, 77, 2)
+        self.assertEqual((len(packet), packet[0]), (tl.PACKET_LEN, 0xA2))
+        self.assertTrue(all(byte < 0x80 for byte in packet[1:]))
+        self.assertEqual(tl.decode_packet(packet), {"kind": 2, "nonce": 0x15, "value": 123456, "a": 4, "b": 77, "c": 2})
+        self.assertEqual(tl.decode_packet(tl.encode_packet(1, 0xFF, -5, 200, 0, 0))["value"], 0)
+        self.assertEqual(tl.decode_packet(tl.encode_packet(1, 1, 10 ** 9, 0, 0, 0))["value"], tl.MAX_VALUE)
+
+    def test_rejects_corruption(self):
+        good = tl.encode_packet(tl.KIND_TOMBSTONE, 3, 500, 1, 2, 0)
+        self.assertIsNotNone(tl.decode_packet(good))
+        self.assertIsNone(tl.decode_packet(good[:-1]))
+        for index, change in ((8, lambda b: b ^ 1), (0, lambda b: 0xA3), (0, lambda b: 0xB1), (3, lambda b: b | 0x80)):
+            bad = list(good)
+            bad[index] = change(bad[index])
+            self.assertIsNone(tl.decode_packet(bad), index)
+
+    def test_reader_resyncs_and_times_out(self):
+        packet = tl.encode_packet(tl.KIND_TOMBSTONE, 9, 1234, 2, 3, 1)
+        reader = tl.PacketReader()
+        out = [reader.feed(byte, 0) for byte in [5, 6] + packet]
+        self.assertEqual(out[:-1], [None] * 10)
+        self.assertEqual(out[-1]["value"], 1234)
+        self.assertEqual([reader.feed(byte) for byte in packet[:4] + packet][-1]["nonce"], 9)
+        for byte in packet[:5]:
+            reader.feed(byte, 1000)
+        self.assertEqual([reader.feed(byte, 2000) for byte in packet[5:]], [None] * 4)
+        for byte in packet[:5]:
+            reader.feed(byte, 3000)
+        reader.feed(0xFF, 3000)
+        self.assertEqual([reader.feed(byte, 3000) for byte in packet[5:]], [None] * 4)
+
+    def test_inbox_ignores_echoes_and_repeats(self):
+        inbox = tl.IrInbox(0xD5)
+        own = tl.encode_packet(tl.KIND_VICTORY, 0x55, 10, 1, 2, 0)
+        self.assertEqual([inbox.feed(byte, 0) for byte in own], [None] * 9)
+        other = tl.encode_packet(tl.KIND_VICTORY, 0x21, 10, 1, 2, 0)
+        self.assertEqual([inbox.feed(byte, 100) for byte in other][-1]["nonce"], 0x21)
+        self.assertEqual([inbox.feed(byte, 200) for byte in other], [None] * 9)
+        self.assertEqual([inbox.feed(byte, 20100) for byte in other][-1]["nonce"], 0x21)
+
+
 class FakeDevice:
     """Stands in for the runtime `badge` object's sensor and light calls."""
 

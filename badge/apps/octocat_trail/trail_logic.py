@@ -1405,6 +1405,102 @@ class DarkDetector:
             self.dark = True
             return "dark"
         return None
+KIND_TOMBSTONE = 1
+KIND_VICTORY = 2
+PACKET_LEN = 9
+MAX_VALUE = (1 << 21) - 1
+
+
+def encode_packet(kind, nonce, value, a, b, c):
+    """[0xA0|kind, nonce, value as 3 x 7 bits, a, b, c, checksum]. Only the
+    marker sets the high bit, so a reader can resynchronise mid-stream."""
+    value = clamp_int(value, 0, MAX_VALUE)
+    data = [nonce & 0x7F, (value >> 14) & 0x7F, (value >> 7) & 0x7F, value & 0x7F, a & 0x7F, b & 0x7F, c & 0x7F]
+    total = kind
+    for byte in data:
+        total += byte
+    return [0xA0 | kind] + data + [total & 0x7F]
+
+
+def decode_packet(packet):
+    if len(packet) != PACKET_LEN:
+        return None
+    marker = packet[0]
+    kind = marker & 0x0F
+    if (marker & 0xF0) != 0xA0 or kind not in (KIND_TOMBSTONE, KIND_VICTORY):
+        return None
+    total = kind
+    for byte in packet[1:8]:
+        if byte & 0x80:
+            return None
+        total += byte
+    if (total & 0x7F) != packet[8]:
+        return None
+    return {
+        "kind": kind,
+        "nonce": packet[1],
+        "value": (packet[2] << 14) | (packet[3] << 7) | packet[4],
+        "a": packet[5],
+        "b": packet[6],
+        "c": packet[7],
+    }
+
+
+class PacketReader:
+    """Reassembles packets from NEC command bytes. A partial packet is
+    dropped when the next byte arrives more than gap_ms after the last."""
+
+    def __init__(self, gap_ms=900):
+        self.gap_ms = gap_ms
+        self.buffer = []
+        self.last_ms = None
+
+    def feed(self, byte, now_ms=None):
+        byte &= 0xFF
+        if now_ms is not None:
+            if self.buffer and self.last_ms is not None and now_ms - self.last_ms > self.gap_ms:
+                self.buffer = []
+            self.last_ms = now_ms
+        if byte & 0x80:
+            self.buffer = [byte] if (byte & 0xF0) == 0xA0 else []
+            return None
+        if not self.buffer:
+            return None
+        self.buffer.append(byte)
+        if len(self.buffer) < PACKET_LEN:
+            return None
+        packet = self.buffer
+        self.buffer = []
+        return decode_packet(packet)
+
+
+class IrInbox:
+    """Turns received NEC command bytes into new packets, ignoring our own
+    reflections (same nonce) and the repeats of a burst."""
+
+    def __init__(self, nonce, memory_ms=20000):
+        self.nonce = nonce & 0x7F
+        self.memory_ms = memory_ms
+        self.reader = PacketReader()
+        self.seen = []
+
+    def feed(self, byte, now_ms):
+        packet = self.reader.feed(byte, now_ms)
+        if packet is None or packet["nonce"] == self.nonce:
+            return None
+        key = (packet["kind"], packet["nonce"], packet["value"], packet["a"], packet["b"], packet["c"])
+        fresh = []
+        duplicate = False
+        for seen_key, stamp in self.seen:
+            if now_ms - stamp < self.memory_ms:
+                fresh.append((seen_key, stamp))
+                if seen_key == key:
+                    duplicate = True
+        self.seen = fresh
+        if duplicate:
+            return None
+        self.seen.append((key, now_ms))
+        return packet
 
 
 def tombstone_record(step, cause, epitaph, role, beamed):
