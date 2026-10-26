@@ -3621,6 +3621,213 @@ class LauncherBadge(FakeDevice):
         return button in self.holding
 
 
+class FakeState:
+    """badgeware.State: load() fills the given dict in place, save() keeps a JSON copy."""
+
+    def __init__(self, stored=None, fail_save=False):
+        self.stored = stored
+        self.fail_save = fail_save
+        self.loads = []
+        self.saves = []
+
+    def load(self, key, data):
+        self.loads.append(key)
+        if self.stored is not None:
+            data.update(json.loads(json.dumps(self.stored)))
+        return True
+
+    def save(self, key, data):
+        if self.fail_save:
+            raise OSError("flash full")
+        self.saves.append((key, json.loads(json.dumps(data))))
+
+
+LAUNCH_BUTTONS = (("up", 11), ("down", 12), ("left", 13), ("right", 14), ("select", 15), ("back", 16),
+                  ("menu", 17))
+
+
+class LauncherTests(unittest.TestCase):
+    """Runs the real __init__.py with fake runtime globals, State and IR."""
+
+    def setUp(self):
+        self.runs = []
+
+    def launch(self, ir=True, state=None, dirs=(), device=None, machine=None, rule=_MISSING):
+        app = load_modules(prefix="octocat_trail_launch_")
+        self.log = DrawLog()
+        fakes = badge_globals(self.log)
+        install_globals(self, app["trail_draw"], fakes)
+        self.screen = fakes["screen"]
+        if ir:
+            modules, self.ir_log = fake_ir()
+        else:
+            modules = dict(NO_IR)
+            modules["badgeware"] = module("badgeware")
+            self.ir_log = None
+        if state is not None:
+            modules["badgeware"].State = state
+        modules["machine"] = machine
+        for name in MODULES:
+            modules[name] = app[name]
+        patch = patched_modules(modules)
+        patch.__enter__()
+        self.addCleanup(patch.__exit__, None, None, None)
+        chdir = mock.patch("os.chdir")
+        self.chdir = chdir.start()
+        self.addCleanup(chdir.stop)
+        saved_path = sys.path[:]
+        self.addCleanup(sys.path.__setitem__, slice(None), saved_path)
+        self.screen.fill_rule = "non-zero" if rule is _MISSING else rule
+        self.device = device if device is not None else LauncherBadge()
+        env = dict(fakes)
+        env.update({"__name__": "octocat_trail_launcher", "badge": self.device, "run": self.runs.append,
+                    "is_dir": lambda path: path in dirs, "HIRES": 1, "VSYNC": 2})
+        for name, code in LAUNCH_BUTTONS:
+            env["BUTTON_" + name.upper()] = code
+        path = APP / "__init__.py"
+        exec(compile(path.read_text(), str(path), "exec"), env)
+        return env
+
+    def step(self, env, *names):
+        device = self.device
+        device.down = {code for name, code in LAUNCH_BUTTONS if name in names}
+        device.ticks += 40
+        env["update"]()
+        device.down = set()
+
+    def pick(self, env, prefix):
+        game = env["game"]
+        for _ in range(12):
+            view = game.view()
+            if view.options[view.cursor][0].startswith(prefix):
+                self.step(env, "select")
+                return
+            self.step(env, "down")
+        self.fail("no option %r" % prefix)
+
+    def test_a_full_launch_with_ir_state_and_sensors(self):
+        state = FakeState({"visual": 1, "best": 1234})
+        env = self.launch(state=state)
+        device = self.device
+        game = env["game"]
+        link = env["link"]
+        self.assertEqual(self.runs, [env["update"]])
+        self.assertEqual(device.modes, [3])
+        self.assertIsNone(device.default_clear)
+        self.assertEqual((self.screen.fill_rule, self.screen.antialias), ("even-odd", "off"))
+        self.assertEqual((game.save["visual"], game.save["best"]), (1, 1234))
+        self.assertEqual(state.loads, ["octocat_trail"])
+        self.assertEqual([descriptor.ADDRESS for descriptor in self.ir_log["bound"]], [0x54])
+        self.assertEqual(self.ir_log["made"], [(16, 0, 1)])
+        self.assertEqual(self.ir_log["started"], [(0, 1)])
+        self.assertEqual(link.status(), "IR ready")
+        self.chdir.assert_not_called()
+
+        self.step(env)
+        self.assertEqual(env["renderer"].failed, {})
+        self.assertEqual(self.log.problems, [])
+        self.assertTrue(any("Start a new run" in text for text in self.screen.texts))
+        self.assertEqual(device.lights[-1], (0.0, 0.0, 0.0, 0.0))
+
+        device.down = {code for _name, code in LAUNCH_BUTTONS}
+        device.holding = set(device.down)
+        keys = env["read_keys"]()
+        self.assertEqual(list(keys.pressed), [name for name, _code in LAUNCH_BUTTONS])
+        self.assertEqual(list(keys.held), ["up", "down", "left", "right"])
+        device.key_error = OSError("touch controller")
+        keys = env["read_keys"]()
+        self.assertEqual((list(keys.pressed), list(keys.held)), ([], []))
+        device.down = set()
+        device.holding = set()
+        device.key_error = None
+
+        # A tombstone beamed in from another badge running the app.
+        other = link.nonce % 126 + 1
+        for byte in tl.tombstone_packet(other, tl.tombstone_record(1234, 1, 2, 0, False)):
+            link.binding.on_any(byte)
+        self.step(env)
+        self.assertEqual(game.current_toast(), "Tombstone beamed in: step 1,234.")
+        self.assertEqual(game.save["tombstones"], [[1234, 1, 2, 0, 1]])
+        self.assertEqual(game.save["met"], 1)
+        self.assertEqual(state.saves[-1][0], "octocat_trail")
+        self.assertEqual(state.saves[-1][1]["tombstones"], [[1234, 1, 2, 0, 1]])
+
+        # Beaming it back: one 77 ms NEC frame per update, the packet three times.
+        self.pick(env, "Visit the graveyard")
+        self.assertEqual(game.screen, "graveyard")
+        sent = self.ir_log["sent"]
+        self.step(env, "select")
+        self.assertEqual(sent, [])
+        self.assertEqual(game.current_toast(), "Beaming your tombstone over IR.")
+        self.assertIn(0.5, device.lights[-1])
+        packet = tl.tombstone_packet(link.nonce, [1234, 1, 2, 0, 1])
+        total = len(packet) * tl.BEAM_REPEATS
+        self.assertEqual(total, 27)
+        for count in range(1, total + 1):
+            self.step(env)
+            self.assertEqual(len(sent), count)
+        self.assertEqual(sent, [(0x54, byte) for byte in packet] * tl.BEAM_REPEATS)
+        self.assertEqual(device.lights[-1], (0.0, 0.0, 0.0, 0.0))
+        self.step(env)
+        self.assertEqual(len(sent), total)
+        self.assertEqual(game.save["beamed"], 1)
+        self.assertEqual(self.log.problems, [])
+
+        saves = len(state.saves)
+        env["on_exit"]()
+        self.assertEqual((self.ir_log["stopped"], self.ir_log["closed"]), (1, 1))
+        self.assertEqual(device.lights[-1], (0,))
+        self.assertEqual(device.default_clear, "default-clear")
+        self.assertEqual(self.screen.fill_rule, "non-zero")
+        self.assertEqual(len(state.saves), saves + 1)
+
+    def test_a_simulator_launch_degrades_without_crashing(self):
+        error = RuntimeError("unsupported")
+        device = LauncherBadge(imu=error, light=error, lights_error=error)
+        env = self.launch(ir=False, device=device, rule=None)
+        link = env["link"]
+        self.assertEqual(link.status(), "IR off")
+        self.assertIsNone(link.tx)
+        self.assertIsNone(env["sensors"].light())
+        seen = []
+        for names in ((), ("menu",), ("select",), ("select",), ("select",), ("down",), ()):
+            self.step(env, *names)
+            seen.append(env["game"].screen)
+        self.assertEqual(seen[-1], "store")
+        self.assertIn("role", seen)
+        self.assertEqual(env["game"].save["visual"], 1)
+        self.assertEqual(env["renderer"].failed, {})
+        self.assertEqual(self.log.problems, [])
+        self.assertEqual(env["game"].saves, 0)
+        self.assertEqual(device.lights, [])
+        env["on_exit"]()
+        self.assertEqual(self.screen.fill_rule, "even-odd")
+        self.assertEqual(device.default_clear, "default-clear")
+
+    def test_a_failed_state_save_is_not_counted(self):
+        state = FakeState(fail_save=True)
+        env = self.launch(state=state)
+        self.step(env, "menu")
+        self.assertEqual(env["game"].save["visual"], 1)
+        self.assertEqual((state.saves, env["game"].saves), ([], 0))
+        env["on_exit"]()
+
+    def test_the_launcher_finds_its_folder_and_restores_sys_path(self):
+        before = sys.path[:]
+        env = self.launch(dirs=("/apps/octocat_trail", "/system/apps/octocat_trail"))
+        self.chdir.assert_called_once_with("/system/apps/octocat_trail")
+        self.assertEqual(sys.path[0], "/system/apps/octocat_trail")
+        env["on_exit"]()
+        self.doCleanups()
+        self.assertEqual(sys.path, before)
+        self.runs = []
+        env = self.launch()
+        self.chdir.assert_not_called()
+        self.assertEqual(sys.path, before)
+        self.assertEqual(self.runs, [env["update"]])
+        env["on_exit"]()
+
+
 # ---------------------------------------------------------------------------
 # Source scan: a CPython stand-in for the badge's MicroPython 1.29, so CI
 # catches APIs and syntax that pass unittest but crash on the badge.
@@ -4126,6 +4333,13 @@ class SourceScanTests(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertEqual(scan_source(snippet), [])
 
+    def test_every_app_module_passes_the_scan(self):
+        files = sorted(APP.glob("*.py"))
+        self.assertEqual([path.name for path in files], ["__init__.py"] + ["%s.py" % name for name in sorted(MODULES)])
+        for path in files:
+            with self.subTest(path.name):
+                self.assertEqual(scan_source(path.read_text(encoding="utf-8"), path.name), [])
+
     def test_ordered_tables_are_tuples_or_lists(self):
         tables = ((tl, ("ROLES", "SUPPLIES", "PACES", "RATIONS", "RIVER_OPTIONS", "PARTY", "CAUSES", "EPITAPHS")),
                   (tm, ("STOPS", "LABELS", "BUILDINGS", "PATHS", "TREES", "PARKING", "DOCKS", "FENCES")),
@@ -4159,6 +4373,12 @@ class SourceScanTests(unittest.TestCase):
 
 class PackagingTests(unittest.TestCase):
     """The folder, icon and README that the menu, CI and badgerfactory rely on."""
+
+    def test_the_folder_ships_only_the_app_files(self):
+        names = sorted(path.name for path in APP.iterdir()
+                       if not path.name.startswith(".") and path.name != "__pycache__")
+        expected = sorted(("README.md", "__init__.py", "icon.png") + tuple("%s.py" % name for name in MODULES))
+        self.assertEqual(names, expected)
 
     def test_the_icon_is_a_square_png_of_at_least_24_pixels(self):
         data = (APP / "icon.png").read_bytes()
