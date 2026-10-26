@@ -1,4 +1,4 @@
-# Motion detectors for Taste Stamp: flip and karate chop.
+# Motion detectors for Taste Stamp: flip, karate chop and shake.
 #
 # badge.imu() units are undocumented, and the Badge Simulator reports gravity
 # with the opposite y sign to the hardware, so nothing here trusts a fixed
@@ -8,6 +8,8 @@
 #   for its own display rotation.
 # - Chops compare the size of the acceleration with a running estimate of
 #   gravity, so any direction works.
+# - Shakes count direction reversals of the acceleration around its slow
+#   average, so turning the badge over once never counts as shaking.
 #
 # Times are integer milliseconds from badge.ticks, thresholds are integer
 # percentages of gravity, and smoothing uses exp(-dt / tau), so behaviour
@@ -111,3 +113,65 @@ class ChopDetector:
                 self.last_chop = now
                 return True
         return False
+
+
+class ShakeDetector:
+    # Shaking swings the acceleration back and forth around its slow
+    # average. A swing past STRONG_PCT of gravity that points away from the
+    # previous swing is a reversal. REVERSALS of them within WINDOW_MS start a
+    # shake, which ends once no reversal has come for HOLD_MS.
+
+    SLOW_TAU = 250.0
+    STRONG_PCT = 35
+    OPPOSITE = -0.3
+    REVERSALS = 2
+    WINDOW_MS = 800
+    HOLD_MS = 450
+
+    def __init__(self):
+        self.slow = None
+        self.direction = None
+        self.times = []
+        self.shaking = False
+        self.reversed = False
+
+    def update(self, imu, dt, now):
+        ax = imu[0]
+        ay = imu[1]
+        az = imu[2]
+        self.reversed = False
+        slow = self.slow
+        if slow is None:
+            if magnitude(ax, ay, az) > 0.0:
+                self.slow = [ax, ay, az]
+            return False
+        dx = ax - slow[0]
+        dy = ay - slow[1]
+        dz = az - slow[2]
+        ref = magnitude(slow[0], slow[1], slow[2])
+        k = blend(dt, self.SLOW_TAU)
+        slow[0] += dx * k
+        slow[1] += dy * k
+        slow[2] += dz * k
+        dev = magnitude(dx, dy, dz)
+        if ref > 0.0 and dev * 100.0 >= self.STRONG_PCT * ref:
+            ux = dx / dev
+            uy = dy / dev
+            uz = dz / dev
+            last = self.direction
+            if last is not None and ux * last[0] + uy * last[1] + uz * last[2] < self.OPPOSITE:
+                self.times.append(now)
+                self.reversed = True
+            self.direction = (ux, uy, uz)
+        times = self.times
+        while times and now - times[0] > self.WINDOW_MS:
+            times.pop(0)
+        if self.shaking:
+            if not times or now - times[-1] > self.HOLD_MS:
+                self.shaking = False
+                # Forget this shake's reversals, or the ones still inside
+                # WINDOW_MS would start it again on the next frame.
+                self.times = []
+        elif len(times) >= self.REVERSALS:
+            self.shaking = True
+        return self.shaking

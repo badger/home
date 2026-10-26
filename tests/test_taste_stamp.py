@@ -296,6 +296,24 @@ def run_chop(detector, reading, start, end, dt=16):
     return fired
 
 
+def shake_pattern(y, segments, rest_frames=10, per_segment=4, amplitude=13107):
+    samples = [(0, y, 0, 0, 0, 0)] * rest_frames
+    for k in range(segments):
+        x = amplitude if k % 2 == 0 else -amplitude
+        samples.extend([(x, y, 0, 0, 0, 0)] * per_segment)
+    return samples
+
+
+def run_shake(detector, samples, dt=16, start=0):
+    log = []
+    t = start
+    for sample in samples:
+        detector.update(sample, dt, t)
+        log.append((t, bool(detector.shaking), bool(detector.reversed)))
+        t += dt
+    return log
+
+
 class MotionTests(unittest.TestCase):
     def test_flip_fires_once_the_new_orientation_settles(self):
         f = M.FlipDetector(False)
@@ -394,6 +412,65 @@ class MotionTests(unittest.TestCase):
         c.update(SPIKE, 16, 144)
         c.update(SPIKE, 16, 160)
         self.assertLess(abs(c.gravity - before), 0.02 * before)
+
+    def check_shake(self, y):
+        d = M.ShakeDetector()
+        log = run_shake(d, shake_pattern(y, 6))
+
+        def seg(k):
+            return 10 + 4 * k
+
+        reversals = [i for i, entry in enumerate(log) if entry[2]]
+        self.assertEqual(reversals, [seg(k) for k in range(1, 6)])
+        self.assertFalse(any(entry[1] for entry in log[:seg(2)]))
+        self.assertTrue(all(entry[1] for entry in log[seg(2):]))
+
+    def test_shake_on_hardware_gravity(self):
+        self.check_shake(16384)
+
+    def test_shake_on_simulator_gravity(self):
+        self.check_shake(-16384)
+
+    def test_shaking_ends_after_the_hold(self):
+        d = M.ShakeDetector()
+        log = run_shake(d, shake_pattern(16384, 4) + [REST_UP] * 60)
+        last = max(t for t, _, reversed_ in log if reversed_)
+        ends = [t for t, shaking, _ in log if t > last and not shaking]
+        self.assertTrue(ends)
+        self.assertGreater(ends[0] - last, 450)
+        self.assertLessEqual(ends[0] - last, 450 + 16)
+        self.assertTrue(all(not shaking for t, shaking, _ in log if t >= ends[0]))
+        self.assertEqual(d.times, [])
+
+    def test_a_new_shake_after_one_ends_needs_fresh_reversals(self):
+        d = M.ShakeDetector()
+        first = run_shake(d, shake_pattern(16384, 4) + [REST_UP] * 30)
+        self.assertFalse(first[-1][1])
+        t = len(first) * 16
+        second = run_shake(d, shake_pattern(16384, 3, rest_frames=0), start=t)
+        reversals = [i for i, entry in enumerate(second) if entry[2]]
+        self.assertTrue(reversals)
+        self.assertFalse(any(entry[1] for entry in second[:reversals[0] + 1]))
+        self.assertTrue(second[-1][1])
+
+    def test_a_single_flip_is_not_a_shake(self):
+        d = M.ShakeDetector()
+        log = run_shake(d, [REST_UP] * 30 + [REST_SIM] * 63)
+        self.assertEqual(sum(1 for entry in log if entry[2]), 0)
+        self.assertFalse(any(entry[1] for entry in log))
+        log = run_shake(d, [REST_UP] * 63, start=93 * 16)
+        self.assertEqual(sum(1 for entry in log if entry[2]), 1)
+        self.assertFalse(any(entry[1] for entry in log))
+
+    def test_the_first_reading_only_seeds_the_average(self):
+        d = M.ShakeDetector()
+        self.assertIsNone(d.slow)
+        d.update((0, 0, 0, 0, 0, 0), 16, 0)
+        self.assertIsNone(d.slow)
+        d.update((13107, 16384, 0, 0, 0, 0), 16, 16)
+        self.assertIsNotNone(d.slow)
+        self.assertFalse(d.reversed)
+        self.assertFalse(d.shaking)
 
 
 def rotate(q, v):
