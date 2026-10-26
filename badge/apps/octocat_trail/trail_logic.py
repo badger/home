@@ -226,6 +226,8 @@ class Trail:
         self.visited = 1
         self.deployed = 0
         self.basket = {}
+        self._guide = None
+        self._guide_key = -1
 
     # ----- party -----------------------------------------------------------
     def living(self):
@@ -301,6 +303,32 @@ class Trail:
             if self.has_visited(entry[0]):
                 count += 1
         return count
+
+    def next_stop(self):
+        """The next stop on the direct trail past the furthest one reached.
+        A river only counts as reached once the party has crossed it."""
+        index = 0
+        for i in range(len(tm.ROUTE)):
+            if self.has_visited(tm.ROUTE[i]):
+                index = i
+        return tm.ROUTE[min(index + 1, len(tm.ROUTE) - 1)]
+
+    def guide(self):
+        """Distance field (in tiles) to next_stop(); rebuilt only on change."""
+        stop = self.next_stop()
+        key = stop * 4096 + self.deployed
+        if self._guide is None or self._guide_key != key:
+            entry = tm.STOPS[stop]
+            self._guide = tm.distances(entry[3], entry[4], self.deployed)
+            self._guide_key = key
+        return self._guide
+
+    def steps_to_next(self):
+        """Steps to the next landmark, or -1 if it cannot be reached yet."""
+        tiles = self.guide()[self.y * tm.W + self.x]
+        if tiles == tm.UNREACHED:
+            return -1
+        return tiles * tm.STEPS_PER_TILE
 
     # ----- walking ------------------------------------------------------------
     def steps_per_day(self):

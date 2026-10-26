@@ -67,6 +67,14 @@ class LoaderTests(unittest.TestCase):
             self.assertIsNot(sys.modules.get("octocat_trail_" + name), _APP[name])
 
 
+class MapTests(unittest.TestCase):
+
+    def test_distances_from_water_reach_nothing(self):
+        dist = tm.distances(0, 0)
+        self.assertEqual(tm.terrain(0, 0), tm.WATER)
+        self.assertEqual(set(dist), {tm.UNREACHED})
+
+
 class QuietRng(tl.Rng):
     """Deterministic test RNG. chance() follows a script, then answers False;
     randint() follows a script, then returns low; choice() takes the first

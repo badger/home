@@ -8,6 +8,10 @@ STEPS_PER_TILE = 8
 
 WATER, LOT, GRASS, DECK, PATH, ROOF, FENCE, TREE, GANG1, GANG2, DOOR, DOCK, FLAG = range(13)
 WALK = bytes((0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1))
+UNREACHED = 0xFFFF
+
+MERGE = 8
+DNS = 11
 END = 12
 
 # (first column, first land row) from west to east.
@@ -44,6 +48,8 @@ STOPS = (
     ("Festival Pavilion: GitHub Universe Mainstage", "Mainstage", "end", 73, 59),
 )
 START = (8, 135)
+# The direct trail, in order. Every other stop is an optional side trip.
+ROUTE = (0, 1, MERGE, 9, DNS, END)
 
 PATHS = (
     ((61, 105), (70, 110), (77, 102), (88, 85), (95, 78), (103, 71)),
@@ -168,3 +174,39 @@ def stop_at(x, y):
     if x < 0 or y < 0 or x >= W or y >= H:
         return -1
     return _stops.get(y * W + x, -1)
+
+
+def distances(gx, gy, deployed=0):
+    g = grid()
+    n = W * H
+    table = bytes([1 if passable(code, deployed) else 0 for code in range(len(WALK))])
+    ok = bytearray(n)
+    for i in range(n):
+        ok[i] = table[g[i]]
+    dist = [UNREACHED] * n
+    start = gy * W + gx
+    if not ok[start]:
+        return dist
+    dist[start] = 0
+    frontier = [start]
+    d = 0
+    last = W - 1
+    while frontier:
+        d += 1
+        nxt = []
+        for i in frontier:
+            x = i % W
+            if x > 0 and ok[i - 1] and dist[i - 1] == UNREACHED:
+                dist[i - 1] = d
+                nxt.append(i - 1)
+            if x < last and ok[i + 1] and dist[i + 1] == UNREACHED:
+                dist[i + 1] = d
+                nxt.append(i + 1)
+            if i >= W and ok[i - W] and dist[i - W] == UNREACHED:
+                dist[i - W] = d
+                nxt.append(i - W)
+            if i + W < n and ok[i + W] and dist[i + W] == UNREACHED:
+                dist[i + W] = d
+                nxt.append(i + W)
+        frontier = nxt
+    return dist
