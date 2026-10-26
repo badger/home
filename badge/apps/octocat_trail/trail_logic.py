@@ -17,6 +17,7 @@ ROLES = (
     ("Staff Rustacean", "@mona", 1000, 2, "Every Hotfix Patch also heals the party."),
     ("ATC Control Lead", "@kdaigle", 600, 3, "Calm air traffic: safer deploys at rivers."),
 )
+RUSTACEAN = 1
 
 SUPPLIES = (
     ("credits", "Copilot Credits"),
@@ -85,6 +86,8 @@ CAUSE_EXHAUSTION = 4
 CAUSE_WITHDRAWAL = 5
 
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
+
+EVENT_CHANCE = 0.09
 
 MASK32 = 0xFFFFFFFF
 
@@ -238,6 +241,7 @@ class Trail:
     """One journey on foot from the Gatehouse to the Mainstage."""
 
     def __init__(self, role, rng):
+        self.rng = rng
         self.role = clamp_int(role, 0, len(ROLES) - 1)
         self.supplies = {"credits": ROLES[self.role][2], "brew": 0.0, "lgtm": 0, "patches": 0}
         self.members = [Member(name) for name in PARTY]
@@ -417,6 +421,8 @@ class Trail:
             self.day_ms -= DAY_MS
             self._upkeep(lines)
             self._end_day()
+            if not self.all_dead():
+                self._roll_event(lines)
             if self.all_dead():
                 return lines, "game_over"
         stop = tm.stop_at(self.x, self.y)
@@ -550,3 +556,27 @@ class Trail:
         lines = []
         self.idle_days(1, lines, resting=True)
         return lines
+
+    def _roll_event(self, lines):
+        rng = self.rng
+        if rng.chance(EVENT_CHANCE):
+            event = rng.weighted((
+                (3, self._broken_ci),
+            ))
+            event(lines)
+
+    def _use_patch(self, lines):
+        self.supplies["patches"] -= 1
+        if self.role == RUSTACEAN:
+            for member in self.living():
+                member.health = clamp(member.health + 10, 0, 100)
+            lines.append("Rustacean hotfix: the party feels better.")
+
+    def _broken_ci(self, lines):
+        lines.append("A CI axle broke on the trail.")
+        if self.supplies["patches"] > 0:
+            lines.append("You swapped in a Hotfix Patch.")
+            self._use_patch(lines)
+        else:
+            lines.append("No Hotfix Patch. Rebuilt it from source: lost 2 days.")
+            self.idle_days(2, lines)
