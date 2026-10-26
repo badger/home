@@ -3,9 +3,10 @@
 A handle becomes 19 numbers of Mona DNA that pick parts and colours from
 GitHub's own MyOctocat library (myoctocat.com). The badge paints that outfit
 as vector art, or as ASCII art built with Ascii-Motion's techniques. Handles
-arrive from an IR beam, from saved Contacts cards or from the arcade letter
-wheel. SELECT beams the Mona over IR and finishes with the Universe quest
-code 0x88 on address 0x45.
+arrive from the badge you hold yours against (Bluetooth badge link), from an
+IR beam, from saved Contacts cards or from the arcade letter wheel. SELECT
+beams the Mona over IR and finishes with the Universe quest code 0x88 on
+address 0x45.
 """
 
 import gc
@@ -166,6 +167,8 @@ VIAS = (
     ("you", "Your Mona"),
     ("typed", "Typed in"),
     ("IR beam", "Caught by IR"),
+    ("badge link", "Swapped by link"),
+    ("shared", "Shared by link"),
     ("contact", "From Contacts"),
     ("surprise", "Surprise Mona"),
     ("saved", "Saved Mona"),
@@ -442,6 +445,7 @@ class MonaApp:
         self.ascii = mona_ascii.AsciiView()
         self.ascii_warned = False
         self.ir = mona_ir.IrPort()
+        self.link = mona_link.MonaLink(self.owner_card())
         self.rng = mona_dna.Rng(mona_dna.fmix32((mona_dna.seed_of(badge_uid()) ^ badge.ticks) & mona_dna.MASK))
 
         self.view = MAIN
@@ -455,6 +459,7 @@ class MonaApp:
         self.tweak_from = None
         self.field = 0
         self.repeat_at = 0
+        self.shared = False
         self.toast = ""
         self.toast_pen = WHITE
         self.toast_until = 0
@@ -463,6 +468,9 @@ class MonaApp:
 
     def me(self):
         return (self.owner[0], self.owner[1], self.owner[2], "you")
+
+    def owner_card(self):
+        return mona_link.make_card(self.owner[0], self.owner[1], self.owner[2])
 
     def load(self):
         data = {"current": None, "recent": [], "style": VECTOR, "palette": 0, "typed": "", "mine": None}
@@ -711,6 +719,7 @@ class MonaApp:
         if via == "you":
             self.mine = (self.owner[0], dna)
             self.owner = (self.owner[0], dna, self.owner[2], self.owner[3])
+            self.link.set_card(self.owner_card())
             self.show(self.me())
             self.save()
             self.say("Saved as your Mona", GREEN)
@@ -721,14 +730,21 @@ class MonaApp:
     # -- actions and events ---------------------------------------------------
 
     def start_beam(self, now):
-        self.ir.start_beam(self.current[0], self.current[1])
+        handle, dna, name = self.current[0], self.current[1], self.current[2]
+        if self.ir.start_beam(handle, dna):
+            self.shared = self.link.share_mona(handle, dna, name, now)
 
     def got_mona(self, handle, dna, name, via):
         self.adopt(handle, dna, name, via)
         if self.view == WHO or self.view == TWEAK:
             self.view = MAIN
         who = ("@" + handle) if handle else (name or "a mystery Mona")
-        self.say("Caught " + who + " by IR", GREEN)
+        if via == "IR beam":
+            self.say("Caught " + who + " by IR", GREEN)
+        elif via == "badge link":
+            self.say("Swapped Monas with " + who, GREEN)
+        else:
+            self.say(who + " shared a Mona", GREEN)
 
     def ir_events(self, now):
         for event in self.ir.update(now):
@@ -747,6 +763,12 @@ class MonaApp:
                     self.say("Quest 8 complete: Octocat Generator", GOLD)
                 else:
                     self.say("Quest code 0x88 received", GOLD)
+
+    def link_events(self, now, idle):
+        got = self.link.update(now, idle)
+        if got is not None:
+            via = "badge link" if got[0] == "card" else "shared"
+            self.got_mona(got[1], got[2], got[3], via)
 
     # -- painting ---------------------------------------------------------------
 
@@ -876,15 +898,17 @@ class MonaApp:
         if self.view == WHEEL:
             self.update_wheel_dna()
         self.ir_events(now)
+        idle = self.view == MAIN and not self.info and not self.ir.beaming
+        self.link_events(now, idle)
         self.paint(now)
         self.draw(now)
-        self.lights(now)
+        self.lights(now, idle)
 
-    def lights(self, now):
+    def lights(self, now, idle):
         if self.ir.beaming:
             level = (1.0,) if (now // 120) % 2 else (0.2,)
         else:
-            level = (0,)
+            level = self.link.lights(now, idle) or (0,)
         if level != self.lit:
             self.lit = level
             try:
@@ -904,6 +928,7 @@ class MonaApp:
             return
         self.closed = True
         self.ir.close()
+        self.link.close()
         self.painter.close()
         try:
             badge.caselights(0)
@@ -976,6 +1001,10 @@ class MonaApp:
 
     def status(self, now):
         """(text, pen, percent or None) for the bottom of the panel."""
+        hint = self.link.hint(now)
+        if hint is not None:
+            percent = None if hint[1] is None else int(hint[1] * 100)
+            return (hint[0], ACCENT, percent)
         problem = self.art_problem()
         if problem:
             return (problem, RED, None)
@@ -1148,6 +1177,8 @@ class MonaApp:
         write(title, x + w / 2, y + 8, BODY_SIZE, WHITE, w - 24, "c")
         bar(x + 14, y + 32, w - 28, 8, beam.progress(), pen)
         note = "IR on GPIO16, address 0x4C" if beam.live else (self.ir.note or "simulated beam")
+        if self.shared:
+            note = note + ", and by link"
         write(note, x + w / 2, y + 48, SMALL_SIZE, DIM, w - 24, "c")
 
     def hints(self):
@@ -1183,6 +1214,7 @@ class MonaApp:
 
 app = MonaApp()
 app.ir.listen()
+app.link.open()
 
 
 def update():
