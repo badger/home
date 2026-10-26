@@ -482,6 +482,13 @@ class TestOcto(unittest.TestCase):
                 self.assertTrue(name and isinstance(name, str))
                 self.assertLessEqual(O.find_part(cat, name), index)
 
+    def test_colours_index_the_myoctocat_swatches(self):
+        O, P = self.O, self.P
+        base = O.colours(0, 0, 0, 0, 0)
+        self.assertEqual(base, (2631720, 4802889, 10078153, 16762287, 10702654, 5258039, 0, 0))
+        self.assertEqual(len(base), len(P.ROLES))
+        self.assertEqual(O.colours(len(P.BODY), len(P.FACE), len(P.EYE), len(P.HAIR), len(P.FACEHAIR)), base)
+
 
 # App files -------------------------------------------------------------------
 

@@ -47,6 +47,18 @@ def find_part(cat, name):
     return -1
 
 
+def colours(body, face, eye, hair, facehair):
+    """0xRRGGBB for each paint role, in mona_parts.ROLES order."""
+    b = P.BODY[body % len(P.BODY)]
+    f = P.FACE[face % len(P.FACE)]
+    return (
+        b[0], b[1], b[2], f[0], f[1],
+        P.EYE[eye % len(P.EYE)],
+        P.HAIR[hair % len(P.HAIR)],
+        P.FACEHAIR[facehair % len(P.FACEHAIR)],
+    )
+
+
 def layers(data):
     """Yield (role, rgb, alpha, variant, contours) for one block.
 
