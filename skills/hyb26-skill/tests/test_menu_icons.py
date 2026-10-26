@@ -13,7 +13,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import patch_menu_icons  # noqa: E402
 
-REPOSITORY_MENU = SCRIPT_DIR.parents[3] / "badge" / "apps" / "menu" / "app.py"
+REPOSITORY_MENU = SCRIPT_DIR.parents[2] / "badge" / "apps" / "menu" / "app.py"
 
 UNPATCHED_MENU = '''ICON_SIZE = 48
 ICON_SHIFT = 3

@@ -3,7 +3,15 @@ Install HYB26-skill
 IN THIS REPOSITORY
 
 Nothing to install. Copilot discovers .github/skills/hyb26-skill when you work
-in a badger/home checkout. Tools run from .github/skills/hyb26-skill/scripts.
+in a badger/home checkout. That loader reads skills/hyb26-skill/SKILL.md.
+Tools run from skills/hyb26-skill/scripts.
+
+COMPLETE AGENT PLUGIN
+
+After publication, install the development skills and the 2026 canvas with:
+       copilot plugin install badger/home
+Canvas rendering requires the GitHub Copilot app. The personal install below
+copies only hyb26-skill, without the canvas.
 
 PERSONAL INSTALL (any project)
 

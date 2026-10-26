@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "universe-2026-badge",
+  "version": "1.0.0",
+  "description": "Build, simulate, debug, and deploy GitHub Universe 2026 badge apps with portable skills and a live Copilot canvas.",
+  "author": {
+    "name": "Badger Community",
+    "url": "https://github.com/badger"
+  },
+  "homepage": "https://github.com/badger/home",
+  "repository": "https://github.com/badger/home",
+  "license": "MIT",
+  "keywords": ["badge", "canvas", "github-universe", "micropython", "simulator"],
+  "extensions": {
+    "com.github.copilot": {
+      "logo": "assets/preview.png"
+    }
+  }
+}

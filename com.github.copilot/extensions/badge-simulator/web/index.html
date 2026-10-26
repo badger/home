@@ -14,6 +14,8 @@
         <span class="sr-only">App</span>
         <select data-app aria-label="App to run"><option value="">Loading…</option></select>
       </label>
+      <button type="button" class="btn" data-new-app>New app</button>
+      <button type="button" class="btn tool" data-toggle-editor aria-pressed="true" aria-controls="editor">Editor</button>
       <button type="button" class="btn icon" data-reload title="Reload the app from disk" aria-label="Reload app">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></svg>
       </button>
@@ -24,7 +26,30 @@
       </button>
     </header>
 
-    <section class="stage">
+    <div class="workspace">
+      <section class="editor" id="editor" aria-label="Workspace app editor">
+        <header class="editor-toolbar">
+          <strong>Files</strong>
+          <button type="button" class="btn" data-new-file disabled>New file</button>
+          <button type="button" class="btn" data-upload disabled>Add asset</button>
+          <input type="file" data-upload-input hidden>
+        </header>
+        <div class="editor-body">
+          <select class="file-list" data-files size="8" aria-label="App files"></select>
+          <div class="document">
+            <div class="document-toolbar">
+              <span data-file-name>No file selected</span>
+              <button type="button" class="btn" data-reload-file disabled>Reload file</button>
+              <button type="button" class="btn primary" data-save disabled>Save</button>
+            </div>
+            <textarea data-source aria-label="File contents" spellcheck="false" autocapitalize="off" autocomplete="off" disabled></textarea>
+            <div class="asset-preview" data-asset-preview hidden><div data-asset-image></div><p data-asset-info></p></div>
+          </div>
+        </div>
+        <p class="editor-message" data-editor-message role="status" aria-live="polite">Create an app or choose one to edit its workspace files.</p>
+      </section>
+      <div class="preview">
+      <section class="stage">
       <div class="view-tools" role="group" aria-label="Badge view">
         <button type="button" class="btn tool" data-model-screen aria-pressed="false" title="Zoom to the screen" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></svg>Screen
@@ -65,7 +90,30 @@
       <summary>Output <button type="button" class="link" data-clear-output>Clear</button></summary>
       <pre data-output tabindex="0" aria-label="Simulator output"></pre>
     </details>
+      </div>
+    </div>
+
+    <dialog data-app-dialog>
+      <form data-create-app>
+        <h2>Create an app</h2>
+        <p>Saved in your workspace under <code>badge/apps/</code>. Requires Python 3.10+.</p>
+        <label>App name <input name="app" required pattern="[a-z][a-z0-9_\-]{0,63}" placeholder="my_app" maxlength="64"></label>
+        <p class="dialog-error" data-app-error role="alert"></p>
+        <div class="dialog-actions"><button type="button" class="btn" data-cancel-dialog>Cancel</button><button type="submit" class="btn primary">Create app</button></div>
+      </form>
+    </dialog>
+    <dialog data-file-dialog>
+      <form data-create-file>
+        <h2 data-file-dialog-title>New file</h2>
+        <label>Path inside the app <input name="path" required placeholder="helpers.py" maxlength="240"></label>
+        <label data-replace-option hidden><input type="checkbox" name="replace"> Replace an existing asset (checked against its current file version)</label>
+        <p>Use paths like <code>helpers.py</code> or <code>assets/picture.png</code>. Files are limited to 4 MiB. Hidden files and secrets.py are excluded.</p>
+        <p class="dialog-error" data-file-error role="alert"></p>
+        <div class="dialog-actions"><button type="button" class="btn" data-cancel-dialog>Cancel</button><button type="submit" class="btn primary">Add file</button></div>
+      </form>
+    </dialog>
   </main>
   <script type="module" src="/simulator.js"></script>
+  <script type="module" src="/editor.js"></script>
 </body>
 </html>

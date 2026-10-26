@@ -1,0 +1,49 @@
+name: Test Agent Plugin
+
+on:
+  pull_request:
+    paths:
+      - "plugin.json"
+      - "assets/preview.png"
+      - "skills/**"
+      - "com.github.copilot/**"
+      - ".github/extensions/**"
+      - ".github/skills/**"
+      - "tests/plugin.test.mjs"
+      - "tests/helpers/plugin-harness.mjs"
+      - ".github/workflows/test-plugin.yml"
+      - ".github/scripts/lint_plugin.mjs"
+  push:
+    branches: [main]
+    paths:
+      - "plugin.json"
+      - "assets/preview.png"
+      - "skills/**"
+      - "com.github.copilot/**"
+      - ".github/extensions/**"
+      - ".github/skills/**"
+      - "tests/plugin.test.mjs"
+      - "tests/helpers/plugin-harness.mjs"
+      - ".github/workflows/test-plugin.yml"
+      - ".github/scripts/lint_plugin.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check package and installed canvas behavior
+        run: node --experimental-vm-modules --test tests/plugin.test.mjs
+      - name: Install marketplace skill validator
+        run: npm install --prefix "$RUNNER_TEMP/badge-plugin-validation" --no-save --ignore-scripts --no-audit --no-fund @microsoft/vally@0.20.0
+      - name: Run marketplace skill quality gate
+        run: node .github/scripts/lint_plugin.mjs "$RUNNER_TEMP/badge-plugin-validation/node_modules/@microsoft/vally/dist/index.js"

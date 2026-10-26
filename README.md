@@ -7,6 +7,52 @@ the badge's `/system` partition.
 The Universe 2025 sources remain available in [`badge25/`](./badge25/) for
 people using the previous badge.
 
+## Agent Plugin
+
+This repository is also the **universe-2026-badge** [Agent Plugin](https://agent-plugins.org/).
+It bundles portable badge-development skills and a Copilot-specific **2026**
+Badge Simulator canvas. The 2025 simulator is not registered by the plugin.
+
+Install from GitHub after the plugin files have been published:
+
+```sh
+copilot plugin install badger/home
+```
+
+To try a local checkout without installing it, start Copilot with
+`copilot --plugin-dir <absolute-path-to-this-checkout>` from your badge project.
+Canvas rendering requires a compatible GitHub Copilot app; other Agent Plugins
+clients can use the portable skills without the canvas.
+
+| Component | Purpose |
+| --- | --- |
+| [`hyb26-skill`](./skills/hyb26-skill/SKILL.md) | Scaffold, validate, debug, and safely deploy 2026 apps |
+| [`badge-simulator`](./skills/badge-simulator/SKILL.md) | Preview and test apps with scripted controls, screenshots, and live MicroPython |
+| [`Badge Simulator canvas`](./com.github.copilot/extensions/badge-simulator/README.md) | Live-reloading 3D simulator with an explicit Deploy button |
+
+Open your own project folder and ask "Create a 2026 badge app and try it in
+the Badge Simulator", or click **New app** in the canvas. Its workspace editor
+lets you edit Python and text files, create modules, and upload or preview
+image assets. **Save** (Ctrl/Cmd+S) writes to disk and reloads the simulator;
+unsaved drafts are preserved when another tool changes a file, and stale
+saves report a conflict instead of overwriting that change.
+Apps are created under **your project's**
+`badge/apps/<name>/`, never inside the installed plugin. Existing badge
+projects work too; the canvas can accept an explicit `project_root`.
+The first canvas launch downloads its pinned WASM runtime and 3D model from
+`badger/badger.github.io`; subsequent launches use the local cache. Previewing
+does not access a physical badge. **New app** uses Python 3.10+ and the bundled
+scaffolder. Deployment additionally needs `mpremote` and a USB-connected 2026 badge.
+
+![Workspace editor and live 2026 badge simulator](./assets/preview.png)
+
+The root [`plugin.json`](./plugin.json) uses Agent Plugins v1.0.0. Standard
+skills live in `skills/`; client-specific code lives in
+`com.github.copilot/extensions/`. The `.github/skills/` and
+`.github/extensions/` loaders reuse these sources when working in this repo.
+See [contribution and marketplace guidance](./CONTRIBUTING.md#agent-plugin-and-canvas)
+for validation and Awesome Copilot external-plugin submission.
+
 ## Repository layout
 
 | Path | Purpose |
@@ -75,13 +121,13 @@ connected badge and copy files or apps.
 
 ## Skills for building 2026 apps
 
-The [`hyb26-skill`](./.github/skills/hyb26-skill/SKILL.md) Copilot skill helps
+The [`hyb26-skill`](./skills/hyb26-skill/SKILL.md) Copilot skill helps
 you create, check, debug, and install apps on your badge from macOS, Linux, or
 Windows. Copilot picks it up automatically in this repository. It covers
 `mpremote` and the REPL, switching the badge into USB Disk Mode from your
 computer, enabling custom `icon.png` menu icons on stock badges, and the
 [badger.github.io simulator](https://badger.github.io/editor). See its
-[README](./.github/skills/hyb26-skill/README.md) to install it for other
+[README](./skills/hyb26-skill/README.md) to install it for other
 projects.
 
 ## Creating a 2026 app

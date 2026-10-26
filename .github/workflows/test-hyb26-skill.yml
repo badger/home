@@ -3,7 +3,8 @@ name: Test hyb26-skill
 on:
   pull_request:
     paths:
-      - ".github/skills/hyb26-skill/**"
+      - "skills/hyb26-skill/**"
+      - ".github/workflows/test-hyb26-skill.yml"
       - "badge/apps/menu/app.py"
       - ".github/scripts/validate_app_readmes.py"
 
@@ -19,5 +20,5 @@ jobs:
         with:
           python-version: "3.12"
       - name: Run skill tool tests
-        working-directory: .github/skills/hyb26-skill
+        working-directory: skills/hyb26-skill
         run: python -m unittest discover -s tests -v
