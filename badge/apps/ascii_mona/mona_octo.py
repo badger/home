@@ -26,6 +26,10 @@ FACEHAIR = 9
 MISC = 10
 PICKS = 10  # categories with one pick each; MISC takes a tuple
 
+# Art frame in SVG units (left, top, width, height): the base Octocat with
+# room for every hat, prop and pair of shoes in the library.
+FRAME = (P.BOX[0], P.BOX[1], P.BOX[2] - P.BOX[0], P.BOX[3] - P.BOX[1])
+
 CUSTOM = 0xFF
 ORIGINAL = 1
 MASKED = 2
@@ -160,6 +164,16 @@ def layers(data):
             out.append(data[pos:pos + n])
             pos += n
         yield role, rgb, alpha, variant, out
+
+
+def fit(width, height, margin=0):
+    """(scale, x, y) that centre FRAME in a width x height box."""
+    sx = (width - 2 * margin) / FRAME[2]
+    sy = (height - 2 * margin) / FRAME[3]
+    s = sx if sx < sy else sy
+    x = (width - FRAME[2] * s) / 2 - FRAME[0] * s
+    y = (height - FRAME[3] * s) / 2 - FRAME[1] * s
+    return s, x, y
 
 
 def check_header(head):

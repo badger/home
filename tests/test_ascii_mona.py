@@ -514,6 +514,22 @@ class TestOcto(unittest.TestCase):
         self.assertEqual(O.skip_variant(0), O.MASKED)
         self.assertEqual(O.skip_variant(P.F_NO_BIG_HAIR), O.ORIGINAL)
 
+    def test_fit_keeps_the_art_box_inside_the_target(self):
+        O, P = self.O, self.P
+        s, x, y = O.fit(240, 240)
+        self.assertAlmostEqual(s, 0.12454592631, places=9)
+        self.assertAlmostEqual(x, -16.440062273, places=6)
+        self.assertAlmostEqual(y, -0.12454592631, places=9)
+        for width, height, margin in ((240, 240, 0), (240, 240, 10), (192, 216, 0), (320, 100, 4)):
+            s, x, y = O.fit(width, height, margin)
+            left, right = x + P.BOX[0] * s, x + P.BOX[2] * s
+            top, bottom = y + P.BOX[1] * s, y + P.BOX[3] * s
+            self.assertGreaterEqual(left, margin - 1e-6)
+            self.assertLessEqual(right, width - margin + 1e-6)
+            self.assertGreaterEqual(top, margin - 1e-6)
+            self.assertLessEqual(bottom, height - margin + 1e-6)
+            self.assertAlmostEqual(left - margin, width - margin - right, places=6)
+
 
 # App files -------------------------------------------------------------------
 
