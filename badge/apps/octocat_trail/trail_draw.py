@@ -455,6 +455,27 @@ class Renderer:
         self.menu_block(view, y + ROW + 2, rule=True)
         self.hint(view.hint)
 
+    def draw_supplies(self, view, game):
+        y = self.bar(view.title)
+        self.pen(WHITE)
+        for label, value in view.rows:
+            self.text(label, 32, y)
+            self.right(value, W - 32, y)
+            y += ROW
+        self.dashes(y + 2)
+        y += ROW + 4
+        self.pen(WHITE)
+        self.centred("The Studio party", y)
+        y += ROW + 2
+        for name, status, alive in (view.data or ()):
+            self.pen(WHITE if alive else GREY)
+            self.text(name, 16, y)
+            self.right(self.fit(status, 208), W - 16, y)
+            y += ROW
+        self.dashes(y + 2)
+        self.lines(view.foot, y + ROW + 6)
+        self.hint(view.hint)
+
     def draw_help(self, view, game):
         y = self.bar(view.title) + 4
         for line in view.lines:
