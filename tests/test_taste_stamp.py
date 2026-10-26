@@ -2469,6 +2469,219 @@ class AppTests(unittest.TestCase):
         self.assertEqual(start_slam.call_args.args[0], index)
         self.assertEqual(app.toast_text, "FROM A NEARBY BADGE")
 
+    def test_back_clears_the_sheet_then_exits_and_releases_ir(self):
+        A = self.launch()
+        rt, app, badge, ir = self.rt, self.app, self.badge, self.ir
+        self.step("DOWN")
+        self.run_for(200)
+        self.step("DOWN")
+        self.assertIsNone(self.step("BACK"))
+        self.assertEqual((app.slam, app.marks, app.last_verdict), (None, [], None))
+        self.assertEqual(app.toast_text, "FRESH PAPER")
+        self.assertEqual(self.shapes(app.desk, "custom"), [])
+        self.assertEqual(self.shapes(app.desk, "circle"), [])
+        self.assertEqual(self.texts(app.desk), ["creative-brief.md"])
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, A.STAMP_HINT)
+        self.assertIs(self.step("BACK"), False)
+        sender = ir.senders[0]
+        self.assertEqual((ir.closed, sender.stopped), (1, 1))
+        self.assertIsNone(app.link.tx)
+        self.assertFalse(app.link.receiving)
+        self.assertEqual(badge.lights[-1], (0,))
+        self.assertEqual(badge.default_clear, "firmware-clear")
+        for name in HELPERS:
+            self.assertNotIn(name, sys.modules)
+        A.on_exit()
+        self.assertEqual((ir.closed, sender.stopped), (1, 1))
+        self.assertEqual(ir.frames, [])
+        # Relaunching claims the transmitter and the receiver again.
+        A = self.launch(ir=ir, rt=rt)
+        self.assertEqual(len(ir.senders), 2)
+        self.assertTrue(ir.senders[1].started)
+        self.assertEqual(len(ir.bound), 2)
+        self.assertIsNone(badge.default_clear)
+        self.assertEqual(A.previous_clear, "firmware-clear")
+        self.assertIs(self.step("BACK"), False)
+        self.assertEqual((ir.closed, ir.senders[1].stopped), (2, 1))
+        self.assertEqual(badge.default_clear, "firmware-clear")
+
+    def test_back_in_the_8_ball_resets_it_then_exits(self):
+        A = self.launch()
+        app, ir = self.app, self.ir
+        idle = A.eightball.IDLE
+        self.step("RIGHT")
+        self.step("DOWN")
+        self.assertEqual(app.ball.state, A.eightball.SPINNING)
+        self.assertIsNone(self.step("BACK"))
+        self.assertEqual(app.ball.state, idle)
+        self.step("UP")
+        self.run_until(self.landed, 5000)
+        self.assertIsNotNone(app.prompt)
+        self.assertIsNone(self.step("BACK"))
+        self.assertEqual((app.mode, app.ball.state, app.prompt), (A.BALL_MODE, idle, None))
+        self.assertIn("SHAKE FOR A CREATIVE DIRECTION", self.texts())
+        self.assertTrue(self.check_d20())
+        self.assertIs(self.step("BACK"), False)
+        self.assertEqual((ir.closed, ir.senders[0].stopped), (1, 1))
+        self.assertEqual(self.badge.lights[-1], (0,))
+
+    def test_runs_in_the_badge_simulator_without_ir_hardware(self):
+        # The simulator's aye_arr is empty and its ir.bind returns a stub.
+        ir = FakeIR(sender=False, descriptor=False, bind_returns="stub")
+        self.launch(ir=ir, imu_value=REST_SIM)
+        app = self.app
+        self.assertEqual(ir.senders, [])
+        self.assertIsNone(app.link.tx)
+        self.assertTrue(app.link.receiving)
+        self.assertEqual(ir.descriptor_inits, 0)
+        self.assertEqual((ir.stubs[0].on_any, ir.bound[0].on_any), (app.link.heard, app.link.heard))
+        start_slam = self.spy("start_slam")
+        # The canvas rotate control turns the simulator's gravity over.
+        self.run_for(300, flipped=True, imu_value=(0, 16384, 0, 0, 0, 0))
+        self.assertEqual(start_slam.call_count, 1)
+        self.run_until(lambda: app.slam is None, 1300)
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, "NO IR HERE: BEAM SIMULATED")
+        self.assertEqual(len(self.rings()), 1)
+        self.run_for(900)
+        self.assertIsNone(app.fx_start)
+        self.assertEqual(ir.frames, [])
+        ir.deliver(2)
+        self.step()
+        self.assertEqual(start_slam.call_args.args[0], 2)
+        self.assertEqual(app.toast_text, "FROM A NEARBY BADGE")
+        self.assertIsNone(self.step("BACK"))
+        self.assertIs(self.step("BACK"), False)
+        self.assertEqual(ir.closed, 1)
+
+    def tour(self, ir=None, **options):
+        # Visits every screen and control once, then exits. Returns the
+        # toasts that the verdict beam and the prompt beam showed.
+        self.launch(ir=ir, **options)
+        app = self.app
+        toasts = []
+        self.step("SELECT")
+        self.step("UP")
+        self.step("DOWN")
+        self.run_until(lambda: app.slam is None, 1300)
+        self.step("SELECT")
+        toasts.append(app.toast_text)
+        self.run_for(900)
+        self.step("RIGHT")
+        self.step("SELECT")
+        self.step("DOWN")
+        self.run_until(self.landed, 5000)
+        self.step("SELECT")
+        toasts.append(app.toast_text)
+        self.run_for(900)
+        self.assertIsNone(self.step("BACK"))
+        self.step("LEFT")
+        self.assertIsNone(self.step("BACK"))
+        self.assertIs(self.step("BACK"), False)
+        self.assertEqual(self.badge.lights[-1], (0,))
+        self.assertEqual(self.badge.default_clear, "firmware-clear")
+        for name in HELPERS:
+            self.assertNotIn(name, sys.modules)
+        return toasts
+
+    def test_every_screen_survives_missing_or_failing_hardware(self):
+        beaming = ["BEAMING TO NEARBY BADGES"] * 2
+        simulated = ["NO IR HERE: BEAM SIMULATED"] * 2
+        cases = (
+            ("full hardware", dict(), beaming),
+            ("no IR modules", dict(ir=FakeIR(present=False)), simulated),
+            ("transmitter fails to start", dict(ir=FakeIR(start_error=OSError(16))), simulated),
+            ("receiver fails to bind", dict(ir=FakeIR(bind_error=OSError(5))), beaming),
+            ("IR fails to release", dict(ir=FakeIR(stop_error=OSError(5), close_error=OSError(5))), beaming),
+            ("IMU raises", dict(imu_error=OSError(5)), beaming),
+            ("orientation raises", dict(flip_error=OSError(5)), beaming),
+            ("case lights raise", dict(light_error=OSError(5)), beaming),
+            ("short IMU reading", dict(imu_value=(0, 16384, 0)), beaming),
+            ("screen without raw pixels", dict(screen_raw=False), beaming),
+        )
+        for name, options, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.tour(**options), expected)
+
+    def test_a_transmitter_that_fails_mid_beam_is_released(self):
+        ir = FakeIR(send_error=OSError(110))
+        self.launch(ir=ir)
+        app = self.app
+        sender = ir.senders[0]
+        self.step("DOWN")
+        self.run_until(lambda: app.slam is None, 1300)
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, "IR SEND FAILED")
+        self.assertEqual(ir.frames, [])
+        self.assertEqual(sender.stopped, 1)
+        self.assertIsNone(app.link.tx)
+        self.assertFalse(app.link.busy())
+        self.run_for(900)
+        self.step("SELECT")
+        self.assertEqual(app.toast_text, "NO IR HERE: BEAM SIMULATED")
+        # Receiving still works without the transmitter.
+        ir.deliver(6)
+        self.step()
+        self.assertEqual((app.slam.index, app.toast_text), (6, "FROM A NEARBY BADGE"))
+        self.assertIsNone(self.step("BACK"))
+        self.assertIs(self.step("BACK"), False)
+        self.assertEqual((ir.closed, sender.stopped), (1, 1))
+
+    def test_a_long_random_session_keeps_every_frame_sane(self):
+        A = self.launch()
+        app, badge, ir = self.app, self.badge, self.ir
+        start_slam = self.spy("start_slam")
+        landed = self.spy("landed")
+        r = V.Rng(2026)
+        buttons = ("UP", "DOWN", "LEFT", "RIGHT", "SELECT")
+        modes = []
+        beams = [0, 0]
+        flipped = False
+        # Calm and wild stretches, so the ball sometimes gets to land.
+        for _ in range(30):
+            wild = r.randint(0, 2)
+            for _ in range(50):
+                pressed = ()
+                if r.randint(0, 99) < 2 + 5 * wild:
+                    pressed = (buttons[r.randint(0, 4)],)
+                if r.randint(0, 99) < wild:
+                    flipped = not flipped
+                if r.randint(0, 99) < 4 * wild:
+                    reading = tuple(r.randint(-32768, 32767) for _ in range(6))
+                else:
+                    reading = (0, -16384 if flipped else 16384, 0, 0, 0, 0)
+                if r.randint(0, 99) < 2 + 2 * wild:
+                    pick = r.randint(0, 2)
+                    if pick == 0:
+                        ir.deliver(r.randint(0, len(V.VERDICTS) - 1))
+                    elif pick == 1:
+                        ir.deliver(0x40 + r.randint(0, len(V.PROMPTS) - 1))
+                    else:
+                        ir.deliver(r.randint(0, 255))
+                self.step(*pressed, ms=r.randint(0, 120), imu_value=reading, flipped=flipped)
+                if app.mode not in modes:
+                    modes.append(app.mode)
+                if app.fx_start == badge.ticks:
+                    beams[1 if app.fx_incoming else 0] += 1
+        self.assertEqual(sorted(modes), [A.STAMP_MODE, A.BALL_MODE])
+        self.assertGreater(start_slam.call_count, 3)
+        self.assertGreater(landed.call_count, 0)
+        self.assertGreater(beams[0], 0)
+        self.assertGreater(beams[1], 0)
+        times = [f[2] for f in ir.frames]
+        self.assertTrue(times)
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        self.assertTrue(all(gap >= B.FRAME_MS + B.GAP_MS for gap in gaps), gaps)
+        for address, cmd, _ in ir.frames:
+            self.assertEqual(address, 0x53)
+            self.assertIsNotNone(B.decode(cmd, len(V.VERDICTS), len(V.PROMPTS)))
+        lights = badge.lights
+        self.assertTrue(all(a != b for a, b in zip(lights, lights[1:])))
+        A.on_exit()
+        self.assertEqual(badge.lights[-1], (0,))
+        self.assertEqual((ir.closed, ir.senders[0].stopped), (1, 1))
+
 
 if __name__ == "__main__":
     unittest.main()
