@@ -847,7 +847,17 @@ class MonaApp:
         if event[0] == "failed":
             self.say(event[1], RED)
             return
-        profile = event[1]
+        current, me = self.current, self.me()
+        self.use_profile(event[1])
+        # As in got_mona: close Tweak or WHO if the profile changed a Mona it
+        # shows. Tweak edits the current Mona, and WHO also lists yours.
+        if self.view == TWEAK and self.current != current:
+            self.view = MAIN
+        elif self.view == WHO and (self.current != current or self.me() != me):
+            self.view = MAIN
+
+    def use_profile(self, profile):
+        """Tune the Monas a landed GitHub profile belongs to."""
         login = profile["login"]
         before = self.tuned(login)
         self.remember_profile(profile)

@@ -2437,15 +2437,46 @@ class TestNet(unittest.TestCase):
 
 
 class FakeBadge:
-    """The runtime's badge object, as far as the app needs it to start."""
+    """The runtime's badge object, as far as the app needs it to start and take presses."""
 
     def __init__(self):
         self.ticks = 0
         self.uid = "bad9e0051e000001"
         self.modes = []
+        self.down = ()
 
     def mode(self, value):
         self.modes.append(value)
+
+    def pressed(self, button):
+        return button in self.down
+
+    def held(self, button):
+        return button in self.down
+
+
+class LandingLookup:
+    """mona_net.Lookup, except the profile lands only once the test sets landing."""
+
+    def __init__(self, profile):
+        self.profile = profile
+        self.started = []
+        self.busy = False
+        self.landing = False
+        self.status = "fetching"
+
+    def start(self, handle, now):
+        self.started.append(handle)
+        self.busy = True
+
+    def cancel(self):
+        self.busy = False
+
+    def update(self, now):
+        if not (self.busy and self.landing):
+            return None
+        self.busy = self.landing = False
+        return ("profile", self.profile)
 
 
 MAIN = {}
@@ -2506,7 +2537,7 @@ def load_app_main():
 
 
 class TestOwner(unittest.TestCase):
-    """Your own Mona, as the app rebuilds it each time it opens."""
+    """Your own Mona, as the app rebuilds it when it opens or a lookup lands."""
 
     PROFILE = {
         "login": "octocat", "name": "The Octocat", "bio": "I maintain open source and play guitar",
@@ -2548,6 +2579,20 @@ class TestOwner(unittest.TestCase):
         self.assertEqual(app.owner[:3], ("octocat", dna, name))
         self.assertEqual(app.current, ("octocat", dna, name, "you"))
         self.assertEqual(app.link.card, self.L.make_card("octocat", dna, name))
+
+    def run_app(self):
+        """The app as run() drives it, minus drawing, with a lookup the test lands."""
+        app = self.A.MonaApp()
+        app.paint = app.draw = lambda now: None
+        app.lights = lambda now, idle: None
+        app.lookup = LandingLookup(M["mona_net"].slim(self.PROFILE))
+        return app
+
+    def frame(self, app, *buttons):
+        self.A.badge.down = buttons
+        self.A.badge.ticks += 40
+        app.update()
+        self.A.badge.down = ()
 
     def test_reopen_keeps_your_looked_up_profile_without_badge_user(self):
         first = self.look_up_own_profile()
@@ -2591,6 +2636,56 @@ class TestOwner(unittest.TestCase):
         self.settings("")
         app = self.A.MonaApp()
         self.assertEqual(app.owner, ("", self.D.dna_for_uid(self.A.badge.uid), "", None))
+
+    def test_a_lookup_landing_in_tweak_closes_it_so_select_saves_nothing(self):
+        app = self.run_app()
+        self.frame(app, "up")
+        self.frame(app, "select")
+        self.frame(app, "down")
+        self.assertEqual((app.view, app.lookup.started), (self.A.TWEAK, ["octocat"]))
+        app.lookup.landing = True
+        self.frame(app)
+        dna, notes = self.D.apply_profile(self.D.dna_for("octocat"), self.PROFILE)
+        self.assertEqual((app.view, app.toast), (self.A.MAIN, notes[0]))
+        self.frame(app, "select")
+        self.assertIsNone(app.mine)
+        self.assert_owner(app, dna, "The Octocat")
+        self.assertIsNone(self.store.stored[self.A.STATE_KEY]["mine"])
+        again = self.A.MonaApp()
+        self.assertFalse(again.has_mine())
+        self.assert_owner(again, dna, "The Octocat")
+
+    def test_a_lookup_landing_in_who_closes_it_so_you_stay_tuned(self):
+        inject(self, self.A, MENU_BUTTON="menu")
+        app = self.run_app()
+        self.frame(app, "menu")
+        self.frame(app, "down")
+        self.assertEqual((app.view, app.rows[app.row][2]), (self.A.WHO, "you"))
+        app.lookup.landing = True
+        self.frame(app)
+        self.assertEqual(app.view, self.A.MAIN)
+        self.frame(app, "select")
+        self.assert_owner(app, self.tuned(self.PROFILE), "The Octocat")
+
+    def test_your_lookup_landing_leaves_a_tweak_of_another_mona_open(self):
+        inject(self, self.A, MENU_BUTTON="menu")
+        app = self.run_app()
+        self.frame(app, "menu")
+        app.adopt("hubot", self.D.dna_for("hubot"), "Hubot", "typed")
+        self.frame(app, "up")
+        self.frame(app, "down")
+        self.frame(app, "right")
+        tweak = app.tweak
+        self.assertNotEqual(tweak, self.D.dna_for("hubot"))
+        app.lookup.landing = True
+        self.frame(app)
+        self.assertEqual((app.view, app.tweak), (self.A.TWEAK, tweak))
+        self.assertEqual(app.toast, "Profile saved for @octocat")
+        self.frame(app, "select")
+        self.assertEqual(app.current, ("hubot", tweak, "Hubot", "tweaked"))
+        dna = self.tuned(self.PROFILE)
+        self.assertEqual(app.owner[:3], ("octocat", dna, "The Octocat"))
+        self.assertEqual(app.link.card, self.L.make_card("octocat", dna, "The Octocat"))
 
 
 # App files -------------------------------------------------------------------
