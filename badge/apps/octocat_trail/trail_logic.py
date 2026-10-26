@@ -52,6 +52,8 @@ RATIONS = (
 TRAIL_WEAR = 1
 REST_HEAL = 5
 DRY_STRAIN = 7
+SICK_DANGER = 35
+SICK_DEATH = 0.12
 # (stop, supply or "health", amount, line) granted on the first visit.
 SIGHTS = (
     (2, "lgtm", 20, "The maintainers stamped 20 LGTMs for the road."),
@@ -86,9 +88,18 @@ CAUSE_EXHAUSTION = 4
 CAUSE_WITHDRAWAL = 5
 CAUSE_PYTHON2 = 8
 
+# (cause index, fewest sick days, most sick days, daily health drain)
+ILLNESSES = (
+    (0, 3, 6, 9),
+    (1, 3, 6, 10),
+    (2, 2, 5, 7),
+    (3, 2, 5, 8),
+)
+
 HEALTH_LABELS = ((70, "Good"), (40, "Fair"), (20, "Poor"), (0, "Very poor"))
 
 EVENT_CHANCE = 0.09
+ILLNESS_CHANCE = 0.06
 
 MASK32 = 0xFFFFFFFF
 
@@ -229,12 +240,16 @@ class Member:
     def __init__(self, name):
         self.name = name
         self.health = 100
+        self.illness = -1
+        self.sick_days = 0
         self.alive = True
         self.cause = -1
 
     def status(self):
         if not self.alive:
             return "Died of " + CAUSES[self.cause]
+        if self.illness >= 0:
+            return "Has " + CAUSES[ILLNESSES[self.illness][0]]
         return health_label(self.health)
 
 
@@ -469,9 +484,16 @@ class Trail:
             lines.append("The crew is out on a call. Come back in %s." % plural(wait, "day"))
             return
         self.healed_day = self.day
+        cured = 0
         for member in self.living():
             member.health = clamp(member.health + HEAL_AMOUNT, 0, 100)
+            if member.illness >= 0:
+                member.illness = -1
+                member.sick_days = 0
+                cured += 1
         lines.append("The Hotfix HQ crew patched up the party. Health +%d." % HEAL_AMOUNT)
+        if cured:
+            lines.append("They cured %s, too." % plural(cured, "illness", "es"))
 
     # ----- shop -------------------------------------------------------------
     def markup(self):
@@ -520,6 +542,8 @@ class Trail:
         member.alive = False
         member.health = 0
         member.cause = cause
+        member.illness = -1
+        member.sick_days = 0
         self.last_cause = cause
         lines.append("%s has died of %s." % (member.name, CAUSES[cause]))
 
@@ -536,13 +560,25 @@ class Trail:
                 delta += REST_HEAL
             else:
                 delta += PACES[self.pace][2] - TRAIL_WEAR
+            sick = member.illness >= 0
+            if sick:
+                delta -= ILLNESSES[member.illness][3]
+                member.sick_days -= 2 if resting else 1
             member.health = clamp(member.health + delta, 0, 100)
+            if sick and 0 < member.health < SICK_DANGER and self.rng.chance(SICK_DEATH):
+                member.health = 0
             if member.health <= 0:
-                if dry:
+                if member.illness >= 0:
+                    cause = ILLNESSES[member.illness][0]
+                elif dry:
                     cause = CAUSE_WITHDRAWAL
                 else:
                     cause = CAUSE_EXHAUSTION
                 self._kill(member, cause, lines)
+            elif member.illness >= 0 and member.sick_days <= 0:
+                lines.append("%s recovered from %s." % (member.name, CAUSES[ILLNESSES[member.illness][0]]))
+                member.illness = -1
+                member.sick_days = 0
         if dry:
             self.ticker = "Out of Cold Brew Kegs! The party is fading."
 
@@ -563,9 +599,22 @@ class Trail:
         self.idle_days(1, lines, resting=True)
         return lines
 
+    # ----- events -------------------------------------------------------------
+    def _illness_chance(self):
+        chance = ILLNESS_CHANCE + (0.0, 0.015, 0.035)[self.pace]
+        if self.rations == 2:
+            chance += 0.02
+        if self.supplies["brew"] <= 0:
+            chance += 0.03
+        if self.average_health() < 50:
+            chance += 0.02
+        return chance
+
     def _roll_event(self, lines):
         rng = self.rng
-        if rng.chance(EVENT_CHANCE):
+        if rng.chance(self._illness_chance()):
+            self._fall_ill(lines)
+        elif rng.chance(EVENT_CHANCE):
             event = rng.weighted((
                 (3, self._broken_ci),
                 (2, self._dependabot),
@@ -585,6 +634,16 @@ class Trail:
             for member in self.living():
                 member.health = clamp(member.health + 10, 0, 100)
             lines.append("Rustacean hotfix: the party feels better.")
+
+    def _fall_ill(self, lines):
+        healthy = [member for member in self.living() if member.illness < 0]
+        if not healthy:
+            return
+        member = self.rng.choice(healthy)
+        member.illness = self.rng.randint(0, len(ILLNESSES) - 1)
+        cause, low, high, _drain = ILLNESSES[member.illness]
+        member.sick_days = self.rng.randint(low, high)
+        lines.append("%s has %s." % (member.name, CAUSES[cause]))
 
     def _broken_ci(self, lines):
         lines.append("A CI axle broke on the trail.")

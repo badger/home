@@ -215,6 +215,20 @@ class RngTests(unittest.TestCase):
         self.assertEqual(set(rng.weighted(((1, "a"), (1, "b"))) for _ in range(200)), {"a", "b"})
 
 
+class MemberTests(unittest.TestCase):
+    def test_status(self):
+        member = tl.Member("Mona")
+        self.assertEqual((member.health, member.illness, member.alive), (100, -1, True))
+        self.assertEqual(member.status(), "Good")
+        member.health = 30
+        self.assertEqual(member.status(), "Poor")
+        member.illness = 1
+        self.assertEqual(member.status(), "Has AI Slop Fever")
+        member.alive = False
+        member.cause = 0
+        self.assertEqual(member.status(), "Died of node_modules dysentery")
+
+
 class TrailTests(unittest.TestCase):
     def test_new_trail(self):
         trail = tl.Trail(0, QuietRng())
@@ -295,6 +309,55 @@ class TrailTests(unittest.TestCase):
 
 
 class TrailEventTests(unittest.TestCase):
+    def test_illness_and_recovery(self):
+        trail = stocked(rng=QuietRng(randints=(0, 3, 1, 4)))
+        lines = []
+        trail._fall_ill(lines)
+        trail._fall_ill(lines)
+        self.assertEqual(lines, ["Markus has node_modules dysentery.", "Mona has AI Slop Fever."])
+        self.assertEqual(trail.members[0].status(), "Has node_modules dysentery")
+        self.assertEqual((trail.members[0].sick_days, trail.members[1].sick_days), (3, 4))
+        trail.idle_days(4, lines)
+        self.assertIn("Markus recovered from node_modules dysentery.", lines)
+        self.assertIn("Mona recovered from AI Slop Fever.", lines)
+        self.assertEqual([member.health for member in trail.members[:3]], [73, 60, 100])
+        self.assertEqual(trail.members[0].status(), "Good")
+
+    def test_illness_can_kill(self):
+        trail = stocked(rng=QuietRng(chances=(True,)))
+        member = trail.members[2]
+        member.illness, member.sick_days, member.health = 1, 5, 20
+        lines = []
+        trail.idle_days(1, lines)
+        self.assertFalse(member.alive)
+        self.assertEqual(member.cause, 1)
+        self.assertIn("Cameron has died of AI Slop Fever.", lines)
+        self.assertEqual(trail.rng.asked, [tl.SICK_DEATH])
+
+    def test_illness_chance_rises_with_strain(self):
+        trail = stocked()
+        self.assertAlmostEqual(trail._illness_chance(), 0.06)
+        trail.pace, trail.rations, trail.supplies["brew"] = 2, 2, 0.0
+        for member in trail.members:
+            member.health = 45
+        self.assertAlmostEqual(trail._illness_chance(), 0.165)
+
+    def test_weekday_skips_force_push(self):
+        trail = stocked(rng=QuietRng(chances=(True,), randints=(1, 3)))
+        lines = []
+        trail._roll_event(lines)
+        self.assertEqual(lines, ["Markus has AI Slop Fever."])
+        self.assertEqual(trail.rng.asked, [tl.ILLNESS_CHANCE])
+
+    def test_random_event_or_nothing(self):
+        trail = stocked(rng=QuietRng(chances=(False, True)))
+        lines = []
+        trail._roll_event(lines)
+        self.assertTrue(lines)
+        quiet = stocked()
+        lines = []
+        quiet._roll_event(lines)
+        self.assertEqual(lines, [])
 
     def test_each_trail_event(self):
         trail = stocked(brew=100.0, lgtm=0)
@@ -344,6 +407,24 @@ class TrailEventTests(unittest.TestCase):
         trail.arrive(3, lines)
         self.assertEqual([member.health for member in trail.members], [100] * 5)
         self.assertEqual(trail.sights_seen(), 2)
+
+    def test_firehouse_heals_every_few_days(self):
+        trail = stocked()
+        trail.members[0].illness, trail.members[0].sick_days = 2, 4
+        for member in trail.members:
+            member.health = 50
+        lines = []
+        self.assertEqual(trail.arrive(tl.FIREHOUSE, lines), "stop")
+        self.assertEqual(lines, ["The Hotfix HQ crew patched up the party. Health +15.", "They cured 1 illness, too."])
+        self.assertEqual([member.health for member in trail.members], [65] * 5)
+        self.assertEqual(trail.members[0].illness, -1)
+        lines = []
+        trail.arrive(tl.FIREHOUSE, lines)
+        self.assertEqual(lines, ["The crew is out on a call. Come back in 5 days."])
+        trail.day += 5
+        self.assertTrue(trail.heal_ready())
+        self.assertEqual(trail.store_keys(), ("patches",))
+        self.assertEqual(trail.price("patches"), 40)
 
 
 class TrailShopRiverTests(unittest.TestCase):
