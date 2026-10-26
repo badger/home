@@ -899,6 +899,17 @@ class TestAscii(unittest.TestCase):
         for vector in ((10, 200, 30, 90, 255, 0), (128,) * 6, (0, 255) * 3):
             self.assertIn(A.match_shape(vector), range(A.GLYPH_COUNT))
 
+    def test_bayer_dither(self):
+        A = self.A
+        self.assertEqual([A.dither_index(level, 0, 0, 10) for level in (0, 64, 128, 200, 255)],
+                         [0, 3, 5, 7, 9])
+        for x in range(4):
+            for y in range(4):
+                self.assertEqual(A.dither_index(0, x, y, 10), 0)
+                self.assertEqual(A.dither_index(255, x, y, 10), 9)
+                steps = [A.dither_index(level, x, y, 10) for level in range(256)]
+                self.assertEqual(steps, sorted(steps))
+
 
 # App files -------------------------------------------------------------------
 

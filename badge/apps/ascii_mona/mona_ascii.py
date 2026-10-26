@@ -1,10 +1,12 @@
 """ASCII Mona: an independent MicroPython take on Ascii-Motion's techniques.
 
 The technique ideas come from Cameron Foxly's Ascii-Motion
-(https://github.com/CameronFoxly/Ascii-Motion), starting with its 6D
-shape-vector glyph matching. This module is written from scratch for the
-badge and shares no code with it.
+(https://github.com/CameronFoxly/Ascii-Motion): 6D shape-vector glyph
+matching and Bayer 4x4 ordered dithering. This module is written from
+scratch for the badge and shares no code with it.
 """
+
+BAYER = (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
 # Teatime glyphs that have distinct 6D vectors. Each vector holds the lit
 # pixel counts of the glyph's 4x4 regions (2 columns x 3 rows), 2 hex digits
@@ -63,3 +65,14 @@ def match_shape(v):
         _shape_cache.clear()
     _shape_cache[key] = best
     return best
+
+
+def dither_index(level, x, y, steps):
+    """Ramp index for a 0..255 level, ordered-dithered with Bayer 4x4."""
+    v = level * (steps - 1) * 16 // 255
+    base = v >> 4
+    if (v & 15) > BAYER[(y & 3) * 4 + (x & 3)]:
+        base += 1
+    if base >= steps:
+        base = steps - 1
+    return base
