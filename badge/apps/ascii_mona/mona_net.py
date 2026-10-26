@@ -1,15 +1,21 @@
 """Optional public-profile lookup on api.github.com to tune a Mona.
 
-A blocking requests.get fetches the profile after the ISS app's
-wifi.connect() polling, without blocking frames while Wi-Fi joins. Only
+The firmware's async fetch downloads the profile while frames keep running,
+the way the Badge app does. Where there is no fetch module, a blocking
+requests.get runs instead, after the ISS app's wifi.connect() polling. Only
 public fields are kept, and a GITHUB_TOKEN from secrets is sent to
 api.github.com and nowhere else.
 """
+
+import json
+import os
 
 import mona_dna
 
 API = "https://api.github.com/users/"
 USER_AGENT = "GitHub Universe Badge 2026"
+STATE_DIR = "/state"
+TEMP = "/state/ascii_mona_profile.tmp"
 KEEP = (
     "login", "name", "bio", "company", "location", "type", "created_at",
     "public_repos", "public_gists", "followers", "following", "site_admin",
@@ -98,6 +104,13 @@ def reason(data, code=0):
     return "no such GitHub user"
 
 
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 class Lookup:
     """One profile lookup at a time, advanced a step per frame."""
 
@@ -105,6 +118,7 @@ class Lookup:
         self.load = load or load_module
         self.state = IDLE
         self.handle = ""
+        self.request = None
         self.requests = None
         self.wifi = None
         self.started = 0
@@ -117,6 +131,7 @@ class Lookup:
 
     def cancel(self):
         self.state = IDLE
+        self.request = None
         self.painted = False
 
     def _fail(self, why):
@@ -148,6 +163,25 @@ class Lookup:
         self.handle = handle
         self.started = now
         self.status = "asking GitHub..."
+        url = API + handle
+        fetch = self.load("fetch")
+        if fetch is not None:
+            if self._missing_wifi():
+                return self._fail("add Wi-Fi in Settings")
+            try:
+                os.mkdir(STATE_DIR)
+            except OSError:
+                pass
+            try:
+                fetch.AsyncFetch.MAX_HEADER_BYTES = 8192
+            except Exception:
+                pass
+            try:
+                self.request = fetch.url(url, headers=headers_for(url, token(self.load))).to(TEMP)
+            except Exception as err:
+                return self._fail("fetch failed: %s" % err)
+            self.state = FETCHING
+            return None
         self.requests = self.load("requests")
         if self.requests is None:
             return self._fail("no network on this badge")
@@ -174,6 +208,8 @@ class Lookup:
         try:
             if self.state == CONNECTING:
                 return self._connecting()
+            if self.request is not None:
+                return self._poll()
             return self._get()
         except Exception as err:
             return self._fail(mona_dna.clean_text("lookup failed: %s" % err, 40))
@@ -192,6 +228,26 @@ class Lookup:
             return None
         if saying:
             self.status = mona_dna.clean_text("Wi-Fi: %s" % saying, 40)
+        return None
+
+    def _poll(self):
+        request = self.request
+        if request:
+            self.request = None
+            data = None
+            try:
+                with open(TEMP) as file:
+                    data = json.load(file)
+            except (OSError, ValueError):
+                data = None
+            _remove(TEMP)
+            return self._finish(data, 0)
+        error = getattr(request, "error", None)
+        if error:
+            return self._fail(mona_dna.clean_text(str(error), 40) or "fetch failed")
+        state = getattr(request, "state", None)
+        if isinstance(state, str) and state not in ("Idle", "Fetching"):
+            self.status = mona_dna.clean_text(state, 40)
         return None
 
     def _get(self):

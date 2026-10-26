@@ -2035,6 +2035,37 @@ class FakeWifi:
         return self.code
 
 
+class FakeDownload:
+    """The firmware's async fetch request: truthy once the file is written."""
+
+    def __init__(self):
+        self.done = False
+        self.error = None
+        self.state = "Idle"
+        self.path = None
+
+    def __bool__(self):
+        return self.done
+
+    def to(self, path):
+        self.path = path
+        return self
+
+
+class FakeFetch:
+    def __init__(self, fail=None):
+        self.AsyncFetch = type("AsyncFetch", (), {"MAX_HEADER_BYTES": 1024})
+        self.fail = fail
+        self.calls = []
+        self.download = FakeDownload()
+
+    def url(self, url, headers=None):
+        self.calls.append((url, headers))
+        if self.fail is not None:
+            raise self.fail
+        return self.download
+
+
 def loader(**modules):
     return modules.get
 
@@ -2051,6 +2082,14 @@ class TestNet(unittest.TestCase):
             if result is not None:
                 return result
         return None
+
+    def temp_state(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        state = os.path.join(folder.name, "state")
+        temp = os.path.join(state, "profile.tmp")
+        inject(self, self.N, STATE_DIR=state, TEMP=temp)
+        return state, temp
 
     def test_firmware_modules_load_lazily(self):
         N = self.N
@@ -2187,6 +2226,60 @@ class TestNet(unittest.TestCase):
         self.assertEqual(broken.start("mona", 0), ("failed", "Wi-Fi: radio off"))
         details = types.SimpleNamespace(missing=lambda key: [key])
         unset = N.Lookup(loader(requests=requests, wifi=FakeWifi(), missing_details=details))
+        self.assertEqual(unset.start("mona", 0), ("failed", "add Wi-Fi in Settings"))
+
+    def test_async_fetch_downloads_to_a_temp_file(self):
+        N = self.N
+        state, temp = self.temp_state()
+        fetch = FakeFetch()
+        secrets = types.SimpleNamespace(GITHUB_TOKEN="tok")
+        lookup = N.Lookup(loader(fetch=fetch, secrets=secrets, requests=FakeRequests()))
+        self.assertIsNone(lookup.start("Octocat", 1000))
+        self.assertTrue(os.path.isdir(state))
+        self.assertEqual(fetch.AsyncFetch.MAX_HEADER_BYTES, 8192)
+        url = N.API + "octocat"
+        self.assertEqual(fetch.calls, [(url, N.headers_for(url, "tok"))])
+        self.assertEqual(fetch.download.path, temp)
+        self.assertEqual(lookup.state, N.FETCHING)
+        self.assertIsNone(lookup.update(1100))
+        fetch.download.state = "Connecting"
+        self.assertIsNone(lookup.update(1200))
+        self.assertEqual(lookup.status, "Connecting")
+        with open(temp, "w") as file:
+            json.dump({"login": "octocat", "name": "The Octocat", "followers": 9, "plan": {"name": "pro"}}, file)
+        fetch.download.done = True
+        self.assertEqual(lookup.update(1300), ("profile", {"login": "octocat", "name": "The Octocat", "followers": 9}))
+        self.assertFalse(os.path.exists(temp))
+        self.assertFalse(lookup.busy)
+
+    def test_async_fetch_failures(self):
+        N = self.N
+        _state, temp = self.temp_state()
+        bodies = (
+            ('{"message": "Not Found"}', "no such GitHub user"),
+            ('{"message": "API rate limit exceeded for 10.0.0.1."}', "GitHub rate limit, try later"),
+            ("<html>captive portal</html>", "bad reply from GitHub"),
+            (None, "bad reply from GitHub"),
+        )
+        for body, expected in bodies:
+            fetch = FakeFetch()
+            lookup = N.Lookup(loader(fetch=fetch))
+            self.assertIsNone(lookup.start("mona", 0))
+            if body is not None:
+                with open(temp, "w") as file:
+                    file.write(body)
+            fetch.download.done = True
+            self.assertEqual(lookup.update(10), ("failed", expected), body)
+            self.assertFalse(os.path.exists(temp))
+        fetch = FakeFetch()
+        lookup = N.Lookup(loader(fetch=fetch))
+        lookup.start("mona", 0)
+        fetch.download.error = "Connection failed"
+        self.assertEqual(lookup.update(10), ("failed", "Connection failed"))
+        refused = N.Lookup(loader(fetch=FakeFetch(fail=OSError("no sockets"))))
+        self.assertEqual(refused.start("mona", 0), ("failed", "fetch failed: no sockets"))
+        details = types.SimpleNamespace(missing=lambda key: [key])
+        unset = N.Lookup(loader(fetch=FakeFetch(), missing_details=details))
         self.assertEqual(unset.start("mona", 0), ("failed", "add Wi-Fi in Settings"))
 
 
