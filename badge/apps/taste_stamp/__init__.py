@@ -136,6 +136,7 @@ CARD_H = 56
 REVEAL_MS = 18
 NUMBER_SCALE = 0.078
 NUMBER_HW = 0.065
+GLOW_MS = 400
 
 TOAST_MS = 1800
 
@@ -394,6 +395,7 @@ class App:
         self.last_motion = None
         self.toast_text = None
         self.toast_until = 0
+        self.glow_start = None
         self.lights = None
         self.render_desk()
 
@@ -684,6 +686,7 @@ class App:
 
     def landed(self, now):
         self.prompt = self.build_prompt(verdicts.PROMPTS[self.ball.number() - 1])
+        self.glow_start = now
 
     def build_prompt(self, text):
         lines = stamp.wrap(text, 14)
@@ -791,6 +794,13 @@ class App:
         levels = None
         if self.slam is not None:
             levels = stamp.strobe_levels(now - self.slam.start - stamp.DROP_MS)
+        if levels is None and self.glow_start is not None:
+            t = now - self.glow_start
+            if t < GLOW_MS:
+                v = 0.5 * (1.0 - t / GLOW_MS)
+                levels = (v, v, v, v)
+            else:
+                self.glow_start = None
         if levels != self.lights:
             self.lights = levels
             set_lights(levels)
