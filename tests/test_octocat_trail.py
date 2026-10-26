@@ -347,6 +347,19 @@ def edge_of(code, deployed=0):
 
 
 class HelperTests(unittest.TestCase):
+    def test_spec_names(self):
+        self.assertEqual(tl.PARTY, ("Markus", "Mona", "Cameron", "Hubot", "Tufty"))
+        self.assertEqual(tl.TRAIL_STEPS, 2000)
+        self.assertEqual([tl.role_label(i) for i in range(3)], [
+            "Creative Director @wmarkus", "Staff Rustacean @mona", "ATC Control Lead @kdaigle"])
+        self.assertEqual([label for _key, label in tl.SUPPLIES],
+                         ["Copilot Credits", "Cold Brew Kegs", "LGTM Stamps", "Hotfix Patches"])
+        self.assertIn("node_modules dysentery", tl.CAUSES)
+        self.assertIn("AI Slop Fever", tl.CAUSES)
+        self.assertEqual(tl.CAUSES[tl.CAUSE_FORCE_PUSH], "a Friday force-push")
+        self.assertEqual([tm.STOPS[spec[0]][0] for spec in tl.RIVERS],
+                         ["Merge Conflict River", "DNS Propagation Rapids"])
+        self.assertEqual(tl.IR_ADDRESS, 0x54)
 
     def test_number_formatting(self):
         self.assertEqual(tl.commas(0), "0")

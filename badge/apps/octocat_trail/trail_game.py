@@ -12,6 +12,15 @@ import trail_logic as tl
 TOAST_MS = 3500
 MAX_DT = 250
 EVENT_PAGE = 3
+# (supply key, singular unit, plural suffix) for store notes.
+UNITS = (("brew", "Cold Brew Keg", "s"), ("lgtm", "LGTM Stamp", "s"), ("patches", "Hotfix Patch", "es"))
+# (stop, counter name) for every stop that sells supplies.
+STORE_NAMES = (
+    (0, "Gatehouse General Store"),
+    (1, "The GitHub Shop"),
+    (9, "Makerspace Parts Counter"),
+    (6, "Firehouse Supply Locker"),
+)
 MONITORS = ("Color", "Green")
 HELP = (
     ("The Octocat Trail", (
@@ -35,6 +44,20 @@ HELP = (
         "Beams only reach badges that are running The Octocat Trail.",
     )),
 )
+
+
+def supply_label(key):
+    for supply, label in tl.SUPPLIES:
+        if supply == key:
+            return label
+    return key
+
+
+def unit(key, count):
+    for supply, word, suffix in UNITS:
+        if supply == key:
+            return tl.plural(count, word, suffix)
+    return str(count)
 
 
 class Keys:
@@ -253,6 +276,12 @@ class Game:
         self.save_run()
         self.store_from = "start"
         self.warned = False
+        self.show_card("Your Studio party", (
+            "Fresh in from Localhost, MO: Markus, Mona, Cameron, Hubot and Tufty.",
+            "The GitHub Ducky pulls the wagon. Mona rides up front.",
+            "It is %s. The Mainstage is %s steps away." % (
+                self.trail.date_text(), tl.commas(tl.TRAIL_STEPS)),
+        ), "store")
 
     def resume_run(self):
         trail = self.resume
@@ -346,6 +375,89 @@ class Game:
         view = View("menu", "Choose a role", ("Who leads the Studio party to the Mainstage?", "You can be:"),
                     options, self.cursor, "UP/DOWN choose  SELECT start  BACK title")
         view.foot = ("%s credits to start. Score x%d at the end." % (tl.commas(role[2]), role[3]), role[4])
+        return view
+
+    # ----- stores -----------------------------------------------------------------
+    def open_store(self, origin):
+        self.store_from = origin
+        self.warned = False
+        self.go("store")
+
+    def store_name(self):
+        at = self.trail.at
+        for stop, name in STORE_NAMES:
+            if stop == at:
+                return name
+        return "General Store"
+
+    def store_options(self):
+        trail = self.trail
+        options = []
+        for key in trail.store_keys():
+            options.append((supply_label(key), tl.commas(int(trail.supplies[key])), True))
+        options.append(("Hit the trail" if self.store_from == "start" else "Leave the store", "", True))
+        return options
+
+    def _store(self, dt, keys):
+        trail = self.trail
+        stock = trail.store_keys()
+        self.menu_input(keys, self.store_options())
+        index = self.cursor
+        if keys.hit("back"):
+            self.save_run()
+            self.go("title" if self.store_from == "start" else "menu")
+            return
+        if index >= len(stock):
+            if keys.hit("select"):
+                self.leave_store()
+            return
+        key = stock[index]
+        pack = tl.store_item(key)[2]
+        if keys.hit("select") or keys.hit("right"):
+            got = trail.buy(key, pack)
+            if got:
+                self.note = "Bought %s." % unit(key, got)
+                self.warned = False
+            elif trail.supplies[key] >= tl.carry_limit(key):
+                self.note = "The wagon can't carry any more."
+            else:
+                self.note = "Not enough Copilot Credits."
+        elif keys.hit("left"):
+            back = trail.sell_back(key, pack)
+            if back:
+                self.note = "Returned %s." % unit(key, back)
+            else:
+                self.note = "Only this visit's purchases can go back."
+
+    def leave_store(self):
+        trail = self.trail
+        if trail.supplies["brew"] <= 0 and not self.warned:
+            self.warned = True
+            self.note = "No cold brew packed! Leave again to go anyway."
+            return
+        trail.ticker = "The Ducky leans into the harness. Onward!"
+        self.save_run()
+
+    def _view_store(self):
+        trail = self.trail
+        stock = trail.store_keys()
+        stop = trail.current_stop()
+        lines = [stop[0] if stop else "Fort Mason Center", trail.date_text()]
+        markup = trail.markup()
+        if markup > 100:
+            lines.append("Venue markup: +%d%%" % (markup - 100))
+        foot = []
+        if self.cursor < len(stock):
+            key = stock[self.cursor]
+            _key, _price, pack, _carry, blurb = tl.store_item(key)
+            foot.append("%s for %s credits." % (unit(key, pack), tl.commas(pack * trail.price(key))))
+            foot.append(blurb)
+        foot.append("Copilot Credits left: " + tl.commas(trail.supplies["credits"]))
+        leave = "title" if self.store_from == "start" else "leave"
+        view = View("store", self.store_name(), lines, self.store_options(), self.cursor,
+                    "RIGHT buy  LEFT return  BACK " + leave)
+        view.note = self.note
+        view.foot = tuple(foot)
         return view
 
     # ----- help ------------------------------------------------------------------------------

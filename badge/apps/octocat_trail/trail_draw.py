@@ -400,6 +400,16 @@ class Renderer:
         self.menu_block(view, y + 2)
         self.hint(view.hint)
 
+    def draw_store(self, view, game):
+        y = self.bar(view.title)
+        self.pen(WHITE)
+        for line in view.lines:
+            self.centred(self.fit(line, TEXT_W), y)
+            y += ROW
+        self.dashes(y)
+        self.menu_block(view, y + ROW + 2, rule=True)
+        self.hint(view.hint)
+
     def draw_help(self, view, game):
         y = self.bar(view.title) + 4
         for line in view.lines:

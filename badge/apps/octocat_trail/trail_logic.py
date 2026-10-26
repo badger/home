@@ -9,6 +9,8 @@ and only APIs that exist in MicroPython 1.29 are used.
 import math
 
 import trail_map as tm
+
+TRAIL_STEPS = 2000
 MAX_STEPS = 99999
 PARTY = ("Markus", "Mona", "Cameron", "Hubot", "Tufty")
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
