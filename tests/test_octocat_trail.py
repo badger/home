@@ -4380,13 +4380,12 @@ class PackagingTests(unittest.TestCase):
         expected = sorted(("README.md", "__init__.py", "icon.png") + tuple("%s.py" % name for name in MODULES))
         self.assertEqual(names, expected)
 
-    def test_the_icon_is_a_square_png_of_at_least_24_pixels(self):
+    def test_the_icon_is_a_24x24_png(self):
         data = (APP / "icon.png").read_bytes()
         self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(data[12:16], b"IHDR")
         width, height = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
-        self.assertEqual(width, height)
-        self.assertGreaterEqual(width, 24)
+        self.assertEqual((width, height), (24, 24))
 
     def test_the_readme_passes_the_repository_validator(self):
         path = ROOT / ".github" / "scripts" / "validate_app_readmes.py"
