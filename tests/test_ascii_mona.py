@@ -381,6 +381,13 @@ class TestHandles(unittest.TestCase):
 
 # DNA -------------------------------------------------------------------------
 
+GOLDEN = (
+    ("octocat", "11160b0808090d000c11000c00000600040603", "c4f5", 0xC9965038),
+    ("mona", "111112030a11071c10120b001100090c000303", "f777", 0x9DA4DD9D),
+    ("ada", "01040e0c0c0b0a1c002a121c000c0000000100", "2406", 0x7633BE0E),
+    ("wmarkus", "0d120d1a1a0807030011000f240003000a0403", "405b", 0x460CF448),
+)
+
 
 class TestDna(unittest.TestCase):
     def setUp(self):
@@ -404,6 +411,19 @@ class TestDna(unittest.TestCase):
                 value = rng.below(limit)
                 self.assertTrue(0 <= value < limit)
                 self.assertIsInstance(value, int)
+
+    def test_golden_dna_is_stable(self):
+        D = self.D
+        for handle, hex_dna, short, seed in GOLDEN:
+            dna = D.dna_for(handle)
+            self.assertIsInstance(dna, tuple)
+            self.assertEqual(len(dna), D.SIZE)
+            self.assertEqual(D.dna_hex(dna), hex_dna, handle)
+            self.assertEqual(D.short_id(dna), short, handle)
+            self.assertEqual(D.seed_of(handle), seed, handle)
+        self.assertEqual(D.dna_hex(D.dna_for_uid("bad9e0051e000001")),
+                         "0d1500191910031c1c1815100f0000090a0000")
+        self.assertEqual(D.dna_for_uid("BAD9E0051E000001"), D.dna_for_uid("bad9e0051e000001"))
 
     def test_dna_ignores_handle_case_and_is_deterministic(self):
         D = self.D
@@ -458,6 +478,15 @@ class TestDna(unittest.TestCase):
             bytes(dna),
         ):
             self.assertFalse(D.valid_dna(bad), repr(bad))
+
+    def test_hex_round_trip_and_rejections(self):
+        D = self.D
+        dna = D.dna_for("octocat")
+        hex_dna = D.dna_hex(dna)
+        self.assertEqual(D.parse_hex(hex_dna), dna)
+        self.assertEqual(D.parse_hex(hex_dna.upper()), dna)
+        for bad in (hex_dna[:-2], "zz" + hex_dna[2:], "ff" + hex_dna[2:], None, b"ab", ""):
+            self.assertIsNone(D.parse_hex(bad), repr(bad))
 
 
 def art_blocks(parts):

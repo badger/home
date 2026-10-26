@@ -20,6 +20,7 @@ MASK = 0xFFFFFFFF
 MAX_HANDLE = 39
 HANDLE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
 PREFIXES = ("https://", "http://", "www.", "github.com/", "@")
+HEX = "0123456789abcdefABCDEF"
 
 # DNA fields, in byte order
 BODY = 0
@@ -316,6 +317,11 @@ def dna_for(handle):
     return random_dna(seed_of("mona:" + handle.lower()))
 
 
+def dna_for_uid(uid):
+    """A mystery Mona for a badge with no GitHub handle."""
+    return random_dna(seed_of("badge:" + str(uid).lower()))
+
+
 def valid_dna(dna):
     if not isinstance(dna, (tuple, list)) or len(dna) != SIZE:
         return False
@@ -343,3 +349,23 @@ def picks_of(dna):
 
 def colours_of(dna):
     return O.colours(dna[BODY], dna[FACE], dna[EYE_COLOUR], dna[HAIR_COLOUR], dna[FACEHAIR_COLOUR])
+
+
+def dna_hex(dna):
+    return "".join(["%02x" % value for value in dna])
+
+
+def parse_hex(text):
+    """38 hex digits back to DNA, or None."""
+    if not isinstance(text, str) or len(text) != SIZE * 2:
+        return None
+    for ch in text:
+        if ch not in HEX:
+            return None
+    dna = tuple([int(text[i:i + 2], 16) for i in range(0, SIZE * 2, 2)])
+    return dna if valid_dna(dna) else None
+
+
+def short_id(dna):
+    """Four hex digits that tell mystery Monas apart."""
+    return "%04x" % (fnv1a(bytes(dna)) & 0xFFFF)
