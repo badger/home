@@ -31,6 +31,7 @@ MODULE_ORDER = (
     "mona_wheel",
     "mona_ir",
     "mona_link",
+    "mona_net",
     "mona_ascii",
 )
 _MISSING = object()
@@ -1980,6 +1981,98 @@ class TestWheel(unittest.TestCase):
         self.assertIsNone(wheel.update(10, ("menu",), ("menu",)))
         self.assertEqual((wheel.text, wheel.nudge), ("a", ""))
         self.assertEqual(wheel.update(20, ("select",), ("select",)), "done")
+
+
+# Network fakes ---------------------------------------------------------------
+
+
+class FakeWifi:
+    def __init__(self, connected=False, status=(1, "joining"), fail_connect=False):
+        self.connected = connected
+        self.code = status
+        self.fail_connect = fail_connect
+        self.calls = []
+
+    def is_connected(self):
+        return self.connected
+
+    def connect(self, timeout=None, retries=None):
+        self.calls.append((timeout, retries))
+        if self.fail_connect:
+            raise OSError("radio off")
+        return self.connected
+
+    def status(self):
+        return self.code
+
+
+def loader(**modules):
+    return modules.get
+
+
+class TestNet(unittest.TestCase):
+    """The optional api.github.com profile lookup."""
+
+    def setUp(self):
+        self.N = M["mona_net"]
+
+    def test_firmware_modules_load_lazily(self):
+        N = self.N
+        wifi = FakeWifi()
+        install_modules(self, {"wifi": wifi, "fetch": None, "missing_details": None})
+        self.assertIs(N.load_module("wifi"), wifi)
+        self.assertIsNone(N.load_module("fetch"))
+        self.assertIsNone(N.load_module("missing_details"))
+        self.assertIsNone(N.load_module("os"))
+
+    def test_token_only_goes_to_the_github_api(self):
+        N = self.N
+        self.assertEqual(N.token(loader(secrets=types.SimpleNamespace(GITHUB_TOKEN="  tok-123  "))), "tok-123")
+        for secrets in (None, types.SimpleNamespace(), types.SimpleNamespace(GITHUB_TOKEN=None)):
+            self.assertEqual(N.token(loader(secrets=secrets)), "")
+        api = N.API + "octocat"
+        self.assertEqual(N.headers_for(api, "tok"), {"User-Agent": N.USER_AGENT, "Authorization": "Bearer tok"})
+        self.assertEqual(N.headers_for(api), {"User-Agent": N.USER_AGENT})
+        for url in ("https://example.com/users/octocat", "http://api.github.com/users/octocat",
+                    "https://api.github.com.example.net/users/octocat"):
+            self.assertNotIn("Authorization", N.headers_for(url, "tok"), url)
+
+    def test_slim_keeps_only_public_scalar_fields(self):
+        N = self.N
+        profile = {
+            "login": "octocat", "name": "The\nOctocat", "bio": "x" * 500, "followers": 10,
+            "site_admin": False, "public_repos": 8, "email": "octo@example.com",
+            "plan": {"name": "pro"}, "blog": "https://github.blog", "hireable": None,
+            "id": 583231, "score": 1.5, "created_at": "2011-01-25T18:44:36Z", "type": "User",
+            "company": "@github", "location": "San Francisco",
+        }
+        slim = N.slim(profile)
+        self.assertEqual(set(slim), set(("login", "name", "bio", "followers", "site_admin", "public_repos",
+                                         "created_at", "type", "company", "location")))
+        self.assertTrue(set(slim) <= set(N.KEEP))
+        self.assertEqual(slim["name"], "The Octocat")
+        self.assertEqual(len(slim["bio"]), N.TEXT_LIMIT)
+        self.assertIs(slim["site_admin"], False)
+        for bad in (None, [], "octocat", {}, {"login": 5}, {"login": "bad handle!"}, {"login": ""}):
+            self.assertIsNone(N.slim(bad), bad)
+
+    def test_failure_reasons_are_short_and_drawable(self):
+        N = self.N
+        cases = (
+            (None, 404, "no such GitHub user"),
+            ({"message": "Not Found"}, 0, "no such GitHub user"),
+            ({"message": "API rate limit exceeded for 10.0.0.1."}, 403, "GitHub rate limit, try later"),
+            ({}, 403, "GitHub rate limit, try later"),
+            (None, 429, "GitHub rate limit, try later"),
+            (None, 500, "GitHub said 500"),
+            ({"message": "Bad credentials"}, 401, "Bad credentials"),
+            ({}, 200, "no such GitHub user"),
+            (None, 0, "bad reply from GitHub"),
+            ("<html>", 200, "bad reply from GitHub"),
+        )
+        for data, code, expected in cases:
+            self.assertEqual(N.reason(data, code), expected, (data, code))
+        self.assertEqual(len(N.reason({"message": "x" * 100}, 422)), 40)
 
 
 # App files -------------------------------------------------------------------
