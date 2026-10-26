@@ -1587,6 +1587,10 @@ def is_pen(v):
     return is_rgb(v) or (isinstance(v, tuple) and len(v) == 4 and v[0] == "pattern")
 
 
+def pen(c, alpha=255):
+    return ("rgb", c[0], c[1], c[2], alpha)
+
+
 class FakeMat3:
     # An immutable affine transform (a, b, c, d, e, f) mapping (x, y) to
     # (ax + by + c, dx + ey + f). Calls post-multiply like the firmware's
@@ -2001,6 +2005,18 @@ class AppTests(unittest.TestCase):
         while self.badge.ticks < end:
             self.step(**badge_state)
 
+    def run_until(self, done, limit_ms, **badge_state):
+        end = self.badge.ticks + limit_ms
+        while not done():
+            self.assertLess(self.badge.ticks, end, "timed out")
+            self.step(**badge_state)
+
+    def spy(self, name):
+        patcher = mock.patch.object(self.app, name, wraps=getattr(self.app, name))
+        spy = patcher.start()
+        self.addCleanup(patcher.stop)
+        return spy
+
     def shapes(self, target=None, kind=None):
         ops = (target or self.screen).ops
         return [op for op in ops if op[0] == "shape" and (kind is None or op[2].kind == kind)]
@@ -2089,6 +2105,146 @@ class AppTests(unittest.TestCase):
         self.assertEqual(boxes, [(A.PAPER_C, None), (A.HEADING_C, 1.5)])
         self.run_for(500)
         self.assertEqual(self.badge.lights, [])
+
+    def test_down_slams_a_verdict_with_shake_splats_and_strobe(self):
+        A = self.launch()
+        app, badge, screen = self.app, self.badge, self.screen
+        self.run_for(160)
+        base = list(app.desk.ops)
+        lit = len(badge.lights)
+        self.step("DOWN")
+        s = app.slam
+        start = s.start
+        self.assertEqual(start, badge.ticks)
+        ink = A.verdicts.INKS[s.index]
+        outlines = A.STAMPS[s.index][0]
+        falling = [op for op in self.shapes() if any(op[2] is o for o in outlines)]
+        self.assertEqual([op[2] for op in falling], outlines)
+        for op in falling:
+            self.assertEqual((op[1], op[3]), (pen(ink, 70), "NON_ZERO"))
+            self.assertIsInstance(op[4], FakeMat3)
+        blocks = [op for op in self.shapes() if op[1] == ("rgb", 0, 0, 0, 50)]
+        self.assertEqual([op[2].kind for op in blocks], ["rounded_rectangle"])
+        self.assertIsInstance(blocks[0][4], FakeMat3)
+        expected = []
+        last = [None]
+
+        def expect(t):
+            levels = S.strobe_levels(t - S.DROP_MS)
+            if levels != last[0]:
+                expected.append((0,) if levels is None else levels)
+                last[0] = levels
+
+        expect(0)
+        shaken = []
+        while app.slam is not None:
+            self.assertLess(badge.ticks - start, 1300)
+            self.step()
+            t = badge.ticks - start
+            expect(t)
+            if screen.ops[0][0] == "clear":
+                shaken.append(t)
+            dots = [op for op in self.shapes(kind="circle") if op[1] == pen(ink, 225)]
+            self.assertEqual(len(dots), 14 if 144 <= t <= 528 else 0, t)
+        self.assertEqual(badge.ticks - start, 1152)
+        self.assertGreaterEqual(len(shaken), 10)
+        self.assertTrue(all(140 <= t < 590 for t in shaken), shaken)
+        self.assertEqual(badge.lights[lit:], expected)
+        self.assertEqual(app.desk.ops[:len(base)], base)
+        added = app.desk.ops[len(base):]
+        n = len(outlines)
+        self.assertEqual([op[2] for op in added[:n]], outlines)
+        for op in added[:n]:
+            self.assertEqual((op[1], op[3]), (pen(ink, 225), "NON_ZERO"))
+            self.assertIsInstance(op[4], FakeMat3)
+        specks = added[n]
+        self.assertIs(specks[2], s.specks)
+        self.assertEqual(len(specks[2].arrays), A.SPECKS)
+        self.assertEqual((specks[1], specks[3]), (pen(A.PAPER, 190), "NON_ZERO"))
+        dots = added[n + 1:]
+        self.assertEqual([op[2].args for op in dots], s.dots)
+        self.assertTrue(all(op[1] == pen(ink, 225) and op[2].kind == "circle" for op in dots))
+        self.assertEqual(app.marks, [s])
+        self.assertTrue(s.inked and s.dried)
+        self.assertEqual(len(s.dots), 14)
+
+    def test_up_picks_the_next_verdict(self):
+        A = self.launch()
+        verdicts = A.verdicts
+        for i in range(7):
+            self.step("UP")
+            self.assertEqual(self.app.toast_text, "NEXT: " + verdicts.VERDICTS[i])
+            op = self.text_at(14, 222)
+            self.assertEqual(op[1:3], (pen(A.lighten(verdicts.INKS[i], 0.45)), "NEXT: " + verdicts.VERDICTS[i]))
+        self.step("UP")
+        self.assertEqual(self.app.toast_text, "NEXT: RANDOM")
+        self.assertEqual(self.text_at(14, 222)[1], A.DIM_C)
+        for _ in range(4):
+            self.step("UP")
+        self.step("DOWN")
+        self.step("DOWN")
+        self.assertEqual(self.app.slam.index, 3)
+        self.assertEqual([m.index for m in self.app.marks], [3])
+
+    def test_flipping_the_badge_slams_once_per_settled_flip(self):
+        self.launch()
+        start_slam = self.spy("start_slam")
+        self.run_for(300, flipped=True, imu_value=REST_SIM)
+        self.assertEqual(self.badge.ticks, 1304)
+        self.assertEqual(start_slam.call_count, 1)
+        self.assertEqual(start_slam.call_args.args[1], 1144)
+        self.run_for(800)
+        self.assertEqual(self.badge.ticks, 2104)
+        self.assertEqual(start_slam.call_count, 1)
+        self.run_for(300, flipped=False, imu_value=REST_UP)
+        self.assertEqual(start_slam.call_count, 2)
+        self.assertEqual(start_slam.call_args.args[1], 2248)
+
+    def test_a_karate_chop_slams_whichever_way_gravity_reads(self):
+        for rest, spike in ((REST_UP, SPIKE), (REST_SIM, (30000, -16384, 0, 0, 0, 0))):
+            with self.subTest(rest=rest):
+                self.launch(imu_value=rest)
+                start_slam = self.spy("start_slam")
+                self.run_for(400)
+                self.assertEqual(self.badge.ticks, 1400)
+                self.assertEqual(start_slam.call_count, 0)
+                self.step(imu_value=spike)
+                self.assertEqual(start_slam.call_count, 1)
+                self.run_for(2000, imu_value=rest)
+                self.assertEqual(self.badge.ticks, 3416)
+                self.assertEqual(start_slam.call_count, 1)
+                # A chop that also turns the badge over is one move, not two.
+                self.step(imu_value=spike, flipped=True)
+                self.assertEqual(start_slam.call_count, 2)
+                self.run_for(400, imu_value=rest)
+                self.assertEqual(start_slam.call_count, 2)
+                self.assertTrue(self.app.flip.state)
+
+    def test_marks_keep_the_last_four_stamps_and_fade_older_ones(self):
+        A = self.launch()
+        app = self.app
+        dealt = []
+        for _ in range(7):
+            self.step("DOWN")
+            dealt.append(app.slam.index)
+        self.assertEqual(sorted(dealt), list(range(7)))
+        self.run_until(lambda: app.slam is None, 1300)
+        self.assertEqual([m.index for m in app.marks], dealt[3:])
+        customs = self.shapes(app.desk, "custom")
+        paper = [op[1][4] for op in customs if op[1][1:4] == A.PAPER]
+        self.assertEqual(paper, [46, 80, 126, 190])
+        self.assertEqual({op[1][4] for op in customs if op[1][1:4] != A.PAPER}, {55, 95, 150, 225})
+        # Leaving stamp mode mid-slam lands the stamp at once.
+        self.step("DOWN")
+        s = app.slam
+        self.run_for(208)
+        self.step("RIGHT")
+        self.assertIsNone(app.slam)
+        self.assertTrue(s.inked and s.dried)
+        self.assertEqual(app.mode, A.BALL_MODE)
+        self.assertEqual(self.badge.lights[-2:], [(1.0,) * 4, (0,)])
+        self.assertEqual(len(app.marks), 4)
+        self.assertIs(app.marks[-1], s)
 
 
 if __name__ == "__main__":
