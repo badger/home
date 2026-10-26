@@ -2,7 +2,7 @@
 
 A handle becomes 19 numbers of Mona DNA that pick parts and colours from
 GitHub's own MyOctocat library (myoctocat.com). The badge paints its owner's
-Mona as vector art.
+Mona as vector art, or as ASCII art built with Ascii-Motion's techniques.
 """
 
 import gc
@@ -27,10 +27,28 @@ except OSError:
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
 
+try:
+    from badgeware import State
+except ImportError:
+    State = None
+
 import mona_ascii
 import mona_dna
 import mona_net
 import mona_octo
+
+
+class _NoState:
+    """Stands in for badgeware.State where a runtime has none."""
+
+    def load(self, key, data):
+        return data
+
+    def save(self, key, data):
+        return None
+
+
+STORE = State if State is not None else _NoState()
 
 badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
@@ -67,6 +85,7 @@ def _art_file():
 
 ART_FILE = _art_file()
 
+STATE_KEY = "ascii_mona"
 BADGE_USER_FILE = "/state/badge_user.json"
 
 WIDTH = 320
@@ -87,6 +106,10 @@ SMALL_SIZE = 12
 
 TOAST_MS = 2600
 HINT_SWAP_MS = 4000
+
+STYLES = ("Vector", "Shapes", "Dither", "Edges")
+VECTOR = 0
+ASCII_STYLE = (0, mona_ascii.SHAPES, mona_ascii.DITHER, mona_ascii.EDGES)
 
 WHITE = color.rgb(240, 246, 252)
 DIM = color.rgb(255, 255, 255, 150)
@@ -250,6 +273,9 @@ def backdrop_key(handle, dna):
 
 class MonaApp:
     def __init__(self):
+        self.style = VECTOR
+        self.palette = mona_ascii.PRIMER
+        self.load()
         self.owner = load_owner()
         self.current = self.me()
 
@@ -265,6 +291,8 @@ class MonaApp:
         self.shown = None
         self.painted = False
         self.art_warned = False
+        self.ascii = mona_ascii.AsciiView()
+        self.ascii_warned = False
 
         self.toast = ""
         self.toast_pen = WHITE
@@ -274,6 +302,29 @@ class MonaApp:
     def me(self):
         return (self.owner[0], self.owner[1], self.owner[2], "you")
 
+    def load(self):
+        data = {"style": VECTOR, "palette": 0}
+        try:
+            STORE.load(STATE_KEY, data)
+        except Exception:
+            pass
+        style = data.get("style")
+        if isinstance(style, int) and 0 <= style < len(STYLES):
+            self.style = style
+        palette = data.get("palette")
+        if isinstance(palette, int) and 0 <= palette < len(mona_ascii.PALETTE_NAMES):
+            self.palette = palette
+
+    def save(self):
+        data = {
+            "style": self.style,
+            "palette": self.palette,
+        }
+        try:
+            STORE.save(STATE_KEY, data)
+        except Exception:
+            pass
+
     def say(self, text, pen=WHITE):
         self.toast = mona_dna.clean_text(text, 60)
         self.toast_pen = pen
@@ -282,8 +333,20 @@ class MonaApp:
     # -- input ---------------------------------------------------------------
 
     def main_input(self, now):
-        if badge.pressed(BUTTON_BACK):
+        if badge.pressed(BUTTON_LEFT):
+            self.set_style(self.style - 1)
+        elif badge.pressed(BUTTON_RIGHT):
+            self.set_style(self.style + 1)
+        elif badge.pressed(BUTTON_UP):
+            if self.style != VECTOR:
+                self.palette = (self.palette + 1) % len(mona_ascii.PALETTE_NAMES)
+                self.save()
+        elif badge.pressed(BUTTON_BACK):
             self.leave()
+
+    def set_style(self, style):
+        self.style = style % len(STYLES)
+        self.save()
 
     # -- painting ---------------------------------------------------------------
 
@@ -294,6 +357,7 @@ class MonaApp:
     def start_paint(self, dna):
         self.shown = dna
         self.painted = False
+        self.ascii.clear()
         art = self.art
         art.pen = CLEAR
         art.clear()
@@ -317,6 +381,8 @@ class MonaApp:
                 if not self.art_warned:
                     self.art_warned = True
                     self.say("Octocat " + self.painter.failed, RED)
+            else:
+                self.ascii.set_source(self.art)
 
     def art_problem(self):
         if self.art is None:
@@ -398,6 +464,7 @@ class MonaApp:
             return
         self.closed = True
         self.painter.close()
+        self.save()
 
     # -- drawing ----------------------------------------------------------------
 
@@ -409,7 +476,20 @@ class MonaApp:
             self.draw_toast()
 
     def draw_stage(self, now):
-        """The backdrop and the vector Mona."""
+        """The backdrop and the Mona, as vector art or as ASCII art."""
+        if self.style != VECTOR and self.painted and not self.art_problem():
+            view = self.ascii
+            if not view.failed:
+                view.set_mode(ASCII_STYLE[self.style], self.palette)
+                view.step(2)
+            if not view.failed:
+                screen.pen = pen_of(mona_ascii.BACKS[self.palette])
+                screen.clear()
+                if view.draw(screen, ART_X, ART_Y, now):
+                    return
+            if view.failed and not self.ascii_warned:
+                self.ascii_warned = True
+                self.say("No memory for ASCII art, showing vector", RED)
         self.draw_backdrop()
         self.draw_art(now)
 
@@ -433,7 +513,7 @@ class MonaApp:
             write("copy octocat.bin with the app", CENTRE_X, 128, SMALL_SIZE, DIM, ART_W - 16, "c")
             return
         bob = 0
-        if self.painted:
+        if self.painted and self.style == VECTOR:
             bob = int(round(2 * math.sin(now / 650.0)))
         screen.blit(self.art, vec2(ART_X, ART_Y + bob))
 
@@ -445,7 +525,14 @@ class MonaApp:
         if not self.painted:
             done = self.painter.progress()
             return ("Painting %d%%" % done, DIM, done)
+        if self.style != VECTOR and self.ascii.typing:
+            return ("Converting", DIM, self.ascii.row * 100 // mona_ascii.ROWS)
         return ("Ready", GREEN, None)
+
+    def style_label(self):
+        if self.style == VECTOR:
+            return "Vector art"
+        return STYLES[self.style] + " / " + mona_ascii.PALETTE_NAMES[self.palette]
 
     def draw_panel(self, now):
         x, y, w, h = PANEL_X, 2, PANEL_W, FOOT_Y - 4
@@ -474,13 +561,16 @@ class MonaApp:
             write(item, left + 10, ty, SMALL_SIZE, WHITE, room - 10)
             ty += 17
         write("Your Mona", left, y + 150, SMALL_SIZE, DIM, room)
+        write(self.style_label(), left, y + 166, SMALL_SIZE, DIM, room)
         text, pen, percent = self.status(now)
         write(text, left, y + 186, SMALL_SIZE, pen, room)
         if percent is not None:
             bar(left, y + 204, room, 4, percent, pen)
 
     def hints(self):
-        return ("BACK exit",)
+        first = "LEFT/RIGHT style" + ("" if self.style == VECTOR else "  UP colours")
+        second = "BACK exit"
+        return (first, second)
 
     def draw_footer(self, now):
         box(0, FOOT_Y, WIDTH, HEIGHT - FOOT_Y, BAR)
