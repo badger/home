@@ -37,6 +37,13 @@ SIZE = 19
 
 TITLES = ("Maintainer", "Hacker", "Designer", "Shipper", "Docs Wizard", "Bug Hunter", "Mentor", "Explorer")
 BACKDROPS = ("Plain", "Contributions", "Stars", "Rings")
+BODY_NAMES = (
+    "Classic", "Charcoal", "Indigo", "Purple", "Lavender", "Magenta",
+    "Crimson", "Rust", "Brown", "Umber", "Slate", "Gold",
+    "Olive", "Moss", "Teal", "Ocean", "Blue", "Periwinkle",
+)
+LABELS = ("Eyes", "Mouth", "Hair", "Hat", "Top", "Bottoms", "Shoes", "Prop", "Eyewear", "Face hair")
+NOUNS = ("eyes", "mouth", "hair", "hat", "top", "bottoms", "shoes", "prop", "eyewear", "face hair", "extra")
 
 LIMITS = (
     len(P.BODY), len(P.FACE), len(P.EYE), len(P.HAIR), len(P.FACEHAIR),
@@ -111,6 +118,8 @@ THEMES = (
     ((O.HEADGEAR, "Cowboy Hat"), (O.TOPS, "Cowboy Vest"), (O.FOOTWEAR, "Cowboy Boots"), (O.PROPS, "Lasso"), (O.MISC, "Cowboy Buckle Belt")),
     ((O.TOPS, "World Cup Jersey"), (O.BOTTOMS, "Soccer Shorts"), (O.FOOTWEAR, "Cleats"), (O.PROPS, "Soccer Ball")),
 )
+
+SHOWCASE = (O.HEADGEAR, O.PROPS, O.TOPS, O.EYEWEAR, O.FACEHAIR, O.FOOTWEAR, O.BOTTOMS, O.HAIR)
 
 
 def handle_problem(text):
@@ -349,6 +358,95 @@ def picks_of(dna):
 
 def colours_of(dna):
     return O.colours(dna[BODY], dna[FACE], dna[EYE_COLOUR], dna[HAIR_COLOUR], dna[FACEHAIR_COLOUR])
+
+
+def body_rgb(dna):
+    """The body swatch (main, light, accent) as 0xRRGGBB values."""
+    return P.BODY[dna[BODY] % len(P.BODY)]
+
+
+def title_of(dna):
+    return TITLES[dna[TITLE] % len(TITLES)]
+
+
+def backdrop_of(dna):
+    return dna[BACKDROP] % len(BACKDROPS)
+
+
+def value_name(dna, field):
+    value = dna[field]
+    if field == BODY:
+        return BODY_NAMES[value % len(BODY_NAMES)]
+    if field == TITLE:
+        return title_of(dna)
+    if field == BACKDROP:
+        return BACKDROPS[backdrop_of(dna)]
+    if field < PART0:
+        return "Swatch %d of %d" % (value + 1, LIMITS[field])
+    if field == MISC_A or field == MISC_B:
+        return O.part_name(O.MISC, value - 1)
+    cat = field - PART0
+    if value == 0 and (cat == O.EYES or cat == O.MOUTHS):
+        value = 1
+    return O.part_name(cat, value - 1)
+
+
+def extras(dna):
+    names = []
+    for slot in (MISC_A, MISC_B):
+        if dna[slot]:
+            names.append(O.part_name(O.MISC, dna[slot] - 1))
+    return ", ".join(names) if names else "None"
+
+
+def describe(dna):
+    """(label, value) pairs for the info card, in display order."""
+    rows = [("Title", title_of(dna)), ("Body", value_name(dna, BODY))]
+    for cat in range(O.PICKS):
+        rows.append((LABELS[cat], value_name(dna, PART0 + cat)))
+    rows.append(("Extras", extras(dna)))
+    rows.append(("Backdrop", BACKDROPS[backdrop_of(dna)]))
+    return tuple(rows)
+
+
+_shared = []
+
+
+def item_name(cat, index):
+    """A part name that reads on its own: MyOctocat names some parts after
+    their outfit set, so "Aussie" becomes "Aussie hat" or "Aussie prop"."""
+    if not _shared:
+        seen = []
+        for c in range(O.HAIR, O.MISC + 1):
+            for i in range(O.count(c)):
+                name = O.part_name(c, i)
+                if name in seen and name not in _shared:
+                    _shared.append(name)
+                seen.append(name)
+        _shared.append("")
+    name = O.part_name(cat, index)
+    if name in _shared:
+        return name + " " + NOUNS[cat]
+    return name
+
+
+def highlights(dna, limit=4):
+    """The stand-out parts, most eye-catching first, one per outfit set."""
+    out = []
+    seen = []
+    parts = []
+    for cat in SHOWCASE:
+        if dna[PART0 + cat]:
+            parts.append((cat, dna[PART0 + cat] - 1))
+    for slot in (MISC_A, MISC_B):
+        if dna[slot]:
+            parts.append((O.MISC, dna[slot] - 1))
+    for cat, index in parts:
+        name = O.part_name(cat, index)
+        if name not in seen and len(out) < limit:
+            seen.append(name)
+            out.append(item_name(cat, index))
+    return out
 
 
 def dna_hex(dna):

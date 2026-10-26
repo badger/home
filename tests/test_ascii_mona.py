@@ -529,6 +529,19 @@ class TestDna(unittest.TestCase):
         self.assertEqual(D.dna_for("mona"), D.dna_for("mona"))
         self.assertNotEqual(D.dna_for("mona"), D.dna_for("monb"))
 
+    def test_limits_fit_in_seven_bit_ir_bytes(self):
+        D = self.D
+        self.assertEqual(D.SIZE, 19)
+        self.assertEqual(D.LIMITS, (18, 24, 24, 31, 31, 20, 19, 32, 37, 50, 33, 31, 38, 16,
+                                    10, 19, 19, 8, 4))
+        self.assertTrue(all(0 < limit <= 0x80 for limit in D.LIMITS))
+        self.assertEqual(D.LIMITS[D.TITLE], len(D.TITLES))
+        self.assertEqual(D.LIMITS[D.BACKDROP], len(D.BACKDROPS))
+        self.assertEqual(D.LIMITS[D.BODY], len(D.BODY_NAMES))
+        for cat in range(self.O.PICKS):
+            self.assertEqual(D.LIMITS[D.PART0 + cat], self.O.count(cat) + 1, cat)
+        self.assertEqual(D.LIMITS[D.MISC_A], self.O.count(self.O.MISC) + 1)
+
     def test_random_dna_follows_the_generator_rules(self):
         D = self.D
         O = self.O
@@ -585,6 +598,32 @@ class TestDna(unittest.TestCase):
         self.assertEqual(D.parse_hex(hex_dna.upper()), dna)
         for bad in (hex_dna[:-2], "zz" + hex_dna[2:], "ff" + hex_dna[2:], None, b"ab", ""):
             self.assertIsNone(D.parse_hex(bad), repr(bad))
+
+    def test_describe_and_highlights(self):
+        D = self.D
+        dna = D.dna_for("octocat")
+        self.assertEqual(list(D.describe(dna)), [
+            ("Title", "Mentor"), ("Body", "Periwinkle"), ("Eyes", "Sad"), ("Mouth", "Chillin"),
+            ("Hair", "None"), ("Hat", "Chullo"), ("Top", "Dress"), ("Bottoms", "None"),
+            ("Shoes", "Platforms"), ("Prop", "None"), ("Eyewear", "None"),
+            ("Face hair", "Full Beard"), ("Extras", "Dress Buckle Belt"), ("Backdrop", "Rings"),
+        ])
+        self.assertEqual(D.highlights(dna), ["Chullo", "Dress", "Full Beard", "Platforms"])
+        self.assertEqual(D.title_of(dna), "Mentor")
+        self.assertEqual(D.backdrop_of(dna), 3)
+        self.assertEqual(D.extras(dna), "Dress Buckle Belt")
+        self.assertEqual([D.value_name(dna, field) for field in range(D.SIZE)], [
+            "Periwinkle", "Swatch 23 of 24", "Swatch 12 of 24", "Swatch 9 of 31",
+            "Swatch 9 of 31", "Sad", "Chillin", "None", "Chullo", "Dress", "None",
+            "Platforms", "None", "None", "Full Beard", "None", "Dress Buckle Belt",
+            "Mentor", "Rings",
+        ])
+        self.assertEqual(D.colours_of(dna), (6250902, 13015112, 14798789, 12160445,
+                                             6901345, 8557442, 13214823, 13214823))
+        self.assertEqual(D.picks_of(dna), ([8, 12, -1, 11, 16, -1, 11, -1, -1, 5], (3,)))
+        self.assertEqual(D.body_rgb(dna), (6250902, 13015112, 14798789))
+        self.assertEqual(D.item_name(self.O.PROPS, -1), "None")
+        self.assertEqual(D.item_name(self.O.MISC, 3), "Dress Buckle Belt")
 
 
 def art_blocks(parts):
