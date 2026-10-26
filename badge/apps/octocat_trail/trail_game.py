@@ -13,6 +13,28 @@ TOAST_MS = 3500
 MAX_DT = 250
 EVENT_PAGE = 3
 MONITORS = ("Color", "Green")
+HELP = (
+    ("The Octocat Trail", (
+        "Lead the Studio party 2,000 steps across Fort Mason, from the Gatehouse to the GitHub Universe Mainstage.",
+        "The GitHub Ducky pulls the wagon. Mona rides up front and hunts the bugs.",
+    )),
+    ("Getting around", (
+        "Walk the venue with the D-pad. Every step passes time and drinks cold brew.",
+        "Press SELECT to stop and look around: wagon, map, pace, rations, camp and stores.",
+    )),
+    ("Production Deployments", (
+        "The piers sit across open water. Deploy a gangway from each dock to cross.",
+        "YOLO the ford, ship with 2 LGTMs, pay Copilot to ferry you or wait for review.",
+    )),
+    ("Sprints and sensors", (
+        "Shake the badge, or press BACK, for a turbo sprint. Sprints drink extra brew.",
+        "Turn off the lights and the party makes Dark Mode Camp. MENU swaps the monitor.",
+    )),
+    ("Beaming over IR", (
+        "Point your badge at a friend's and press SELECT on a tombstone or victory to beam it.",
+        "Beams only reach badges that are running The Octocat Trail.",
+    )),
+)
 
 
 class Keys:
@@ -85,6 +107,7 @@ class Game:
         self.warned = False
         self.record = None
         self.result = None
+        self.help_page = 0
         self.saves = 0
         self.go("title")
 
@@ -324,6 +347,22 @@ class Game:
                     options, self.cursor, "UP/DOWN choose  SELECT start  BACK title")
         view.foot = ("%s credits to start. Score x%d at the end." % (tl.commas(role[2]), role[3]), role[4])
         return view
+
+    # ----- help ------------------------------------------------------------------------------
+    def _help(self, dt, keys):
+        if keys.hit("back"):
+            self.go("title", len(self.title_options()) - 1)
+        elif keys.hit("select") or keys.hit("right"):
+            self.help_page += 1
+            if self.help_page >= len(HELP):
+                self.go("title", len(self.title_options()) - 1)
+        elif keys.hit("left") and self.help_page > 0:
+            self.help_page -= 1
+
+    def _view_help(self):
+        title, lines = HELP[self.help_page]
+        return View("help", "%s  (%d/%d)" % (title, self.help_page + 1, len(HELP)), lines, (), -1,
+                    "SELECT next  LEFT back  BACK title")
 
     # ----- outputs for the renderer and the hardware ------------------------------------------
     def view(self):

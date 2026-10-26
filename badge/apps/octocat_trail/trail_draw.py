@@ -399,3 +399,12 @@ class Renderer:
         y = self.lines(view.lines, y)
         self.menu_block(view, y + 2)
         self.hint(view.hint)
+
+    def draw_help(self, view, game):
+        y = self.bar(view.title) + 4
+        for line in view.lines:
+            y = self.lines((line,), y, limit=176) + 6
+        self.fill(GREEN, 0, 204, W, 4)
+        x = (self.now // 30) % (W + 64) - 64
+        self.token(x, 180, (self.now // 200) & 1, False, 2)
+        self.hint(view.hint)
