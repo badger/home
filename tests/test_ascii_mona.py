@@ -2377,12 +2377,14 @@ class TestAppFiles(unittest.TestCase):
         self.assertNotIn("0XF0", readme.upper())
 
     def test_app_folder_ships_only_app_files(self):
-        allowed = (".py", ".png", ".md", ".bin")
-        for path in APP_DIR.iterdir():
-            if path.name == "__pycache__" or path.name.startswith("."):
-                continue
-            self.assertTrue(path.is_file(), path.name)
-            self.assertIn(path.suffix, allowed, path.name)
+        for folder, allowed in (("", (".py", ".png", ".md")), ("assets", (".bin", ".png"))):
+            for path in (APP_DIR / folder).iterdir():
+                if path.name == "__pycache__" or path.name.startswith("."):
+                    continue
+                if not folder and path.name == "assets":
+                    continue
+                self.assertTrue(path.is_file(), path.name)
+                self.assertIn(path.suffix, allowed, path.name)
         self.assertFalse((APP_DIR / "secrets.py").exists())
         token = re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}")
         for path in sorted(APP_DIR.glob("*.py")) + [APP_DIR / "README.md"]:

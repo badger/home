@@ -94,13 +94,13 @@ MONO_W, MONO_H = _mono_size()
 
 
 def _art_file():
-    for path in (APP_DIR + "/octocat.bin", "octocat.bin"):
+    for path in (APP_DIR + "/assets/octocat.bin", "assets/octocat.bin"):
         try:
             os.stat(path)
             return path
         except OSError:
             pass
-    return APP_DIR + "/octocat.bin"
+    return APP_DIR + "/assets/octocat.bin"
 
 
 ART_FILE = _art_file()
@@ -1090,7 +1090,7 @@ class MonaApp:
         if problem:
             write("Octocat art", CENTRE_X, 88, TITLE_SIZE, RED, ART_W - 16, "c")
             write(problem, CENTRE_X, 110, SMALL_SIZE, WHITE, ART_W - 16, "c")
-            write("copy octocat.bin with the app", CENTRE_X, 128, SMALL_SIZE, DIM, ART_W - 16, "c")
+            write("copy assets/octocat.bin", CENTRE_X, 128, SMALL_SIZE, DIM, ART_W - 16, "c")
             return
         bob = 0
         if self.painted and self.style == VECTOR:

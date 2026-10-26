@@ -114,7 +114,7 @@ UP cycles the Primer, ANSI, Phosphor and Amber palettes. If the badge runs short
 - **Bluetooth badge link (`badgeware.link`):** carries the back-to-back swap. Both badges must be running ASCII Mona.
 - **Wi-Fi (optional):** used only for the GitHub profile lookup, on the network saved in Settings. To raise the GitHub API rate limit, set `GITHUB_TOKEN` in `secrets.py` on the badge. The app sends it only to `api.github.com`.
 - **Case lights:** flash while beaming and follow the proximity swap the way Contacts does. They turn off when you leave the app.
-- **Memory:** the app reads the MyOctocat art from `octocat.bin` on demand and caches only the parts the Mona on screen wears. Retained heap is about 1 MB.
+- **Memory:** the app reads the MyOctocat art from `assets/octocat.bin` on demand and caches only the parts the Mona on screen wears. Retained heap is about 1 MB.
 
 The app saves your style, palette, recent Monas, profiles, your tweaked Mona and the last handle you typed in `/state/ascii_mona.json`.
 
@@ -125,4 +125,4 @@ The Badge Simulator has no IR or badge link. There, a beam runs with the same ti
 ## Credits
 
 - The ASCII styles are an independent MicroPython implementation of techniques from Cameron Foxly's [Ascii-Motion](https://github.com/CameronFoxly/Ascii-Motion): 6D shape-vector character matching, Bayer 4 x 4 ordered dithering, Sobel edge line art and terminal-style palettes. No Ascii-Motion code is copied.
-- The Octocat art is © GitHub, from the [MyOctocat builder](https://myoctocat.com/build-your-octocat/). It's baked into `octocat.bin`, and `mona_parts.py` is generated from the same parts.
+- The Octocat art is © GitHub, from the [MyOctocat builder](https://myoctocat.com/build-your-octocat/). It's baked into `assets/octocat.bin`, and `mona_parts.py` is generated from the same parts.

@@ -5,7 +5,7 @@ Octocat art (c) GitHub, from https://myoctocat.com/build-your-octocat/.
 
 VERSION = 2
 Q = 4  # stored int16 = SVG units * Q
-BIN = "octocat.bin"
+BIN = "assets/octocat.bin"
 BIN_SIZE = 962291
 BIN_CRC = 0xC66BBEA7
 BOX = (241, 1, 1950, 1928)
