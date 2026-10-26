@@ -293,6 +293,55 @@ def install_sender(test, sender):
     install_modules(test, {"aye_arr": package, "aye_arr.nec": nec})
 
 
+class FakeLink:
+    """badgeware.link.Link: messages sent go straight into the peer's queue."""
+
+    def __init__(self, capacity=48):
+        self.games = []
+        self.peer = None
+        self.linked = False
+        self.partner = None
+        self.queue = []
+        self.cap = capacity
+        self.sent = []
+        self.left = 0
+        self.closed = False
+
+    def pump(self):
+        pass
+
+    def update(self):
+        pass
+
+    def capacity(self):
+        return self.cap
+
+    def send(self, message):
+        if not self.linked:
+            return False
+        message = bytes(message)
+        if len(message) > self.cap:
+            raise ValueError("message larger than link capacity")
+        self.sent.append(message)
+        if self.peer is not None:
+            self.peer.queue.append(message)
+        return True
+
+    def receive(self):
+        got = tuple(self.queue)
+        self.queue = []
+        return got
+
+    def leave(self):
+        self.left += 1
+        for side in (self, self.peer):
+            if side is not None:
+                side.linked = False
+
+    def close(self):
+        self.closed = True
+
+
 def circle_raw(width=48, height=54, rgb=(110, 84, 240)):
     """Premultiplied RGBA: an opaque disc on a transparent background."""
     raw = bytearray(width * height * 4)
@@ -1576,6 +1625,30 @@ class TestLink(unittest.TestCase):
             self.assertIsNone(L.read_card(bad), bad)
         for bad in (b"not json", b"[1,2]", b"\xff", b""):
             self.assertIsNone(L.decode_card(bad), bad)
+
+    def test_chunking_survives_small_links_and_any_order(self):
+        L = self.L
+        payload = bytes(range(50))
+        link = FakeLink(capacity=10)
+        outbox = L.Outbox(b"C", payload)
+        self.assertFalse(outbox.done)
+        self.assertFalse(outbox.pump(link))
+        self.assertEqual(link.sent, [])
+        link.linked = True
+        self.assertTrue(outbox.pump(link))
+        self.assertTrue(outbox.done)
+        self.assertEqual(len(link.sent), 8)
+        self.assertTrue(all(len(message) <= 10 and message[:1] == b"C" for message in link.sent))
+        inbox = L.Inbox()
+        results = [inbox.add(message) for message in reversed(link.sent)]
+        self.assertEqual(results[:-1], [None] * 7)
+        self.assertEqual(results[-1], payload)
+        self.assertIsNone(inbox.add(b"C"))
+        self.assertIsNone(inbox.add(b"C\x00\x00"))
+        self.assertIsNone(inbox.add(b"C\x02\x02x"))
+        inbox.add(b"C\x00\x03a")
+        self.assertIsNone(inbox.add(b"C\x00\x02b"))
+        self.assertEqual(inbox.add(b"C\x01\x02c"), b"bc")
 
 
 class TestWheel(unittest.TestCase):
