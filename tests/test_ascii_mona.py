@@ -26,6 +26,7 @@ MODULE_ORDER = (
     "mona_parts",
     "mona_octo",
     "mona_dna",
+    "mona_ascii",
 )
 _MISSING = object()
 M = {}
@@ -881,6 +882,22 @@ class TestOcto(unittest.TestCase):
         self.addCleanup(cut.close)
         self.assertTrue(cut.step(budget_ms=10 ** 9))
         self.assertEqual((cut.errors, cut.drawn, target.count("shape")), (len(blocks), 0, 0))
+
+
+class TestAscii(unittest.TestCase):
+    """The independent MicroPython take on Ascii-Motion's conversion techniques."""
+
+    def setUp(self):
+        self.A = M["mona_ascii"]
+
+    def test_shape_vector_matching(self):
+        A = self.A
+        self.assertEqual(A.match_shape((0,) * 6), 0)
+        self.assertEqual(A.CHARS[A.match_shape((255,) * 6)], "$")
+        self.assertEqual(A.CHARS[A.match_shape((255, 255, 255, 0, 0, 0))], "F")
+        self.assertEqual(A.CHARS[A.match_shape((0, 0, 0, 255, 255, 255))], "y")
+        for vector in ((10, 200, 30, 90, 255, 0), (128,) * 6, (0, 255) * 3):
+            self.assertIn(A.match_shape(vector), range(A.GLYPH_COUNT))
 
 
 # App files -------------------------------------------------------------------
