@@ -19,6 +19,9 @@ PROMPT_BASE = 0x40
 BURST = 3
 FRAME_MS = 77
 GAP_MS = 90
+ECHO_MS = 350
+DEDUPE_MS = 1200
+INBOX_LIMIT = 16
 
 
 def encode(kind, index):
@@ -123,13 +126,21 @@ def stop_listening():
 
 
 class Beam:
-    # Queues outgoing bursts and sends one frame per update.
+    # Queues outgoing bursts one frame per update and filters incoming
+    # frames for echoes and repeats.
 
-    def __init__(self, sender=None):
+    def __init__(self, verdict_count, prompt_count, sender=None):
+        self.verdict_count = verdict_count
+        self.prompt_count = prompt_count
         self.tx = sender
         self.queue = []
         self.next_due = 0
         self.last_send = None
+        # A fixed buffer, so the IR callback never allocates memory.
+        self.inbox = [0] * INBOX_LIMIT
+        self.count = 0
+        self.last_cmd = None
+        self.last_seen = 0
 
     def can_send(self):
         return self.tx is not None
@@ -160,5 +171,36 @@ class Beam:
             self.tx = None
             return False
         self.last_send = now
+        self.last_cmd = cmd
+        self.last_seen = now
         self.next_due = now + FRAME_MS + GAP_MS
         return True
+
+    def heard(self, cmd):
+        # IR callback: only record the byte; update() does the work.
+        count = self.count
+        if count < INBOX_LIMIT:
+            self.inbox[count] = cmd
+            self.count = count + 1
+
+    def receive(self, now):
+        # Returns the newest new (kind, index) message, or None.
+        count = self.count
+        if count == 0:
+            return None
+        frames = self.inbox[:count]
+        self.count = 0
+        if self.queue or (self.last_send is not None and now - self.last_send < ECHO_MS):
+            return None
+        found = None
+        for cmd in frames:
+            if cmd == self.last_cmd and now - self.last_seen < DEDUPE_MS:
+                self.last_seen = now
+                continue
+            message = decode(cmd, self.verdict_count, self.prompt_count)
+            if message is None:
+                continue
+            self.last_cmd = cmd
+            self.last_seen = now
+            found = message
+        return found

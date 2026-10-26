@@ -905,7 +905,7 @@ class EightBallTests(unittest.TestCase):
 
 class BeamTests(unittest.TestCase):
     def make_beam(self, sender=None):
-        return B.Beam(sender)
+        return B.Beam(len(V.VERDICTS), len(V.PROMPTS), sender)
 
     def make_sender(self, fake):
         with fake.patch():
@@ -1083,6 +1083,52 @@ class BeamTests(unittest.TestCase):
         self.assertIsNone(link.tx)
         self.assertEqual(fake.senders[0].stopped, 1)
         self.assertFalse(link.send(B.VERDICT, 0, 2000))
+
+    def test_own_frames_are_ignored_as_echoes(self):
+        fake = FakeIR()
+        link = self.make_beam(self.make_sender(fake))
+        link.send(B.VERDICT, 3, 1000)
+        link.pump(1000)
+        link.heard(3)
+        self.assertIsNone(link.receive(1016))
+        self.assertEqual(link.count, 0)
+        link.pump(1167)
+        link.pump(1334)
+        link.heard(3)
+        self.assertIsNone(link.receive(1334 + B.ECHO_MS - 1))
+        link.heard(3)
+        self.assertIsNone(link.receive(1334 + 400))
+        link.heard(5)
+        self.assertEqual(link.receive(1334 + 450), (B.VERDICT, 5))
+
+    def test_the_inbox_keeps_the_first_16_frames(self):
+        link = self.make_beam()
+        for cmd in range(0x40, 0x54):
+            link.heard(cmd)
+        self.assertEqual(link.count, B.INBOX_LIMIT)
+        self.assertEqual(link.inbox, list(range(0x40, 0x50)))
+        self.assertEqual(link.receive(5000), (B.PROMPT, 15))
+        self.assertEqual(link.count, 0)
+        self.assertIsNone(link.receive(5001))
+
+    def test_receive_skips_foreign_bytes(self):
+        link = self.make_beam()
+        link.heard(2)
+        link.heard(0x30)
+        self.assertEqual(link.receive(5000), (B.VERDICT, 2))
+        link.heard(0xFF)
+        self.assertIsNone(link.receive(5100))
+
+    def test_repeats_are_deduped_until_the_sender_goes_quiet(self):
+        link = self.make_beam()
+        results = []
+        for now in (10000, 10500, 11600, 12900):
+            link.heard(3)
+            link.heard(3)
+            results.append(link.receive(now))
+        self.assertEqual(results, [(B.VERDICT, 3), None, None, (B.VERDICT, 3)])
+        link.heard(4)
+        self.assertEqual(link.receive(12950), (B.VERDICT, 4))
 
 
 def read_png(path):
