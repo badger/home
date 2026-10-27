@@ -35,7 +35,7 @@ See badge/lib/README.md for the settings.
 import os
 import time
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 SECRETS_FILE = "/secrets.py"            # the badge's own settings, which the Settings app writes
 SYSTEM_SECRETS_FILE = "/system/secrets.py"
@@ -280,6 +280,7 @@ class Roamer:
         self._attempts = {}         # lower-case ssid -> joins started
         self._scans = 0
         self._in_range = None       # saved networks the last scan found
+        self._scan_due = False      # scan on the next step, once a frame has said so
         self._began = 0
         self._failed_at = 0
 
@@ -319,6 +320,11 @@ class Roamer:
 
     def _step(self):
         wlan = _wlan(True)
+        if self._scan_due:
+            self._scan_due = False
+            self._scan(wlan)
+            self._next(wlan)
+            return
         if self._queue is None:
             if self.only is None and wlan.isconnected():
                 # still on a network from an earlier app
@@ -356,29 +362,29 @@ class Roamer:
         return not any(_same(ssid, failed) and reason == "wrong password" for failed, reason in self.problems)
 
     def _next(self, wlan):
-        while True:
-            while self._queue:
-                ssid, password = self._queue.pop(0)
-                if not self._worth_trying(ssid):
-                    continue
-                self._attempts[ssid.lower()] = self._attempts.get(ssid.lower(), 0) + 1
-                self.ssid, self._password = ssid, password
-                self.status = "Joining %s" % ssid
-                self._began = time.ticks_ms()
-                try:
-                    wlan.disconnect()
-                except OSError:
-                    pass
-                wlan.connect(ssid, password)
-                return
-            if self._scans >= SCANS:
-                self._fail(self._summary())
-                return
-            self._scan(wlan)
+        while self._queue:
+            ssid, password = self._queue.pop(0)
+            if not self._worth_trying(ssid):
+                continue
+            self._attempts[ssid.lower()] = self._attempts.get(ssid.lower(), 0) + 1
+            self.ssid, self._password = ssid, password
+            self.status = "Joining %s" % ssid
+            self._began = time.ticks_ms()
+            try:
+                wlan.disconnect()
+            except OSError:
+                pass
+            wlan.connect(ssid, password)
+            return
+        if self._scans >= SCANS:
+            self._fail(self._summary())
+        else:
+            # a scan blocks for most of a second: let the app draw this first
+            self.status = "Looking for your networks"
+            self._scan_due = True
 
     def _scan(self, wlan):
         self._scans += 1
-        self.status = "Looking for your networks"
         try:
             wlan.disconnect()       # a join in progress stops the scan
         except OSError:
