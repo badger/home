@@ -16,6 +16,10 @@ sys.path.insert(0, APP_DIR)
 from config import CHANNEL_HANDLE, CHANNEL_ID, SLIDE_MS, REFRESH_MS, RETRY_MS, MAX_RETRY_MS
 from feed import read_feed, thumbnail_url, valid_id, video_url, relative_date, read_clock
 
+CHANNEL_HANDLE = CHANNEL_HANDLE.strip()
+if CHANNEL_HANDLE and not CHANNEL_HANDLE.startswith("@"):
+    CHANNEL_HANDLE = "@" + CHANNEL_HANDLE
+
 badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
 

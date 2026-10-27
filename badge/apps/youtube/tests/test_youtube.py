@@ -277,6 +277,20 @@ class RuntimeTests(unittest.TestCase):
             exec(compile((APP / "__init__.py").read_text(), str(APP / "__init__.py"), "exec"),
                  self.app)
 
+    def test_channel_handle_accepts_optional_at_prefix(self):
+        for value, expected in [
+            ("example", "@example"),
+            ("@example", "@example"),
+            ("  example  ", "@example"),
+            ("  @example  ", "@example"),
+            ("", ""),
+            ("   ", ""),
+        ]:
+            with self.subTest(handle=value), patch.object(config, "CHANNEL_HANDLE", value):
+                self.boot()
+                self.assertEqual(self.app["CHANNEL_HANDLE"], expected)
+                self.assertEqual(config.CHANNEL_HANDLE, value)
+
     def make_qr(self, url, correction, scale):
         self.qr_urls.append(url)
         return types.SimpleNamespace(width=50, height=50, url=url)
