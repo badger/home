@@ -339,6 +339,8 @@ class Apps:
             if not (file_exists(f"{path}/__init__.py") or file_exists(f"{path}/__init__.mpy")):
                 continue
             name = " ".join([capitalize(word) for word in slug.split("_")])
+            if slug == "live_card":
+                name = "KD's GitHub Badge"
             icon_key = slug if slug in ICONS else "default"
             tiles.append(App(len(tiles), name, slug, path, icon_key in animated))
 
