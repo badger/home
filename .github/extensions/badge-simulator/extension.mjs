@@ -62,11 +62,12 @@ function appFiles(dir, base = dir, out = []) {
 // Shared modules in badge/lib are installed to /system/lib on the badge. The
 // page only writes files into the app's folder, so they go there instead; the
 // app's own folder is first on sys.path, so `import <module>` finds them the
-// same way. A file or folder of the same name in the app wins.
+// same way. A module of the same name in the app wins, as it does on the badge.
+const moduleOf = (path) => path.split("/")[0].replace(/\.(py|mpy)$/, "");
 function withSharedLibs(root, files) {
     if (!existsSync(libDir(root))) return files;
-    const taken = new Set(files.map((f) => f.path.split("/")[0]));
-    const shared = appFiles(libDir(root)).filter((f) => !/^readme\.md$/i.test(f.path) && !taken.has(f.path.split("/")[0]));
+    const taken = new Set(files.map((f) => moduleOf(f.path)));
+    const shared = appFiles(libDir(root)).filter((f) => !/^readme\.md$/i.test(f.path) && !taken.has(moduleOf(f.path)));
     return files.concat(shared);
 }
 

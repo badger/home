@@ -285,6 +285,18 @@ def local_modules(app_dir: Path) -> set[str]:
     return modules
 
 
+def shared_lib_modules(repo_root: Path) -> set[str]:
+    """Names of the shared modules in badge/lib, installed in /system/lib."""
+    lib_root = repo_root / "badge" / "lib"
+    if not lib_root.is_dir():
+        return set()
+    modules = {path.stem for path in lib_root.glob("*.py")}
+    modules.update(
+        path.name for path in lib_root.iterdir() if (path / "__init__.py").is_file()
+    )
+    return modules
+
+
 class AppVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.functions: set[str] = set()
@@ -655,6 +667,8 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
                 )
 
     locals_ = local_modules(app_dir)
+    shared = shared_lib_modules(repo_root)
+    shared_imports: dict[str, tuple[Path, int]] = {}
     loaded_pngs: set[Path] = set()
     for python_file, visitor in parsed.items():
         for name, line in visitor.badgeware_names:
@@ -681,6 +695,9 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
         for imported, line in visitor.imports:
             root = module_root(imported)
             if root in locals_ or root in {"", "__future__"}:
+                continue
+            if root in shared:
+                shared_imports.setdefault(root, (python_file, line))
                 continue
             if target in {"both", "hardware"} and root in DESKTOP_ONLY_MODULES:
                 issues.append(
@@ -738,6 +755,24 @@ def validate_app(app_dir: Path, repo_root: Path, target: str = "hardware") -> li
 
         for message, line in visitor.resolution_warnings:
             issues.append(Issue("WARNING", message, python_file, line))
+
+    # The simulator finds badge/lib modules without this, so only the badge fails
+    if shared_imports and not any(
+        "/system/lib" in path.read_text(encoding="utf-8", errors="replace")
+        for path in parsed
+    ):
+        for name, (python_file, line) in sorted(shared_imports.items()):
+            issues.append(
+                Issue(
+                    "WARNING",
+                    f"'{name}' is a shared module from badge/lib, installed in "
+                    "/system/lib on the badge. Add \"/system/lib\" to sys.path before "
+                    "importing it (see badge/lib/README.md): the simulator finds it "
+                    "either way, but the badge's default path may not.",
+                    python_file,
+                    line,
+                )
+            )
 
     estimated_bytes = 0
     image_count = 0

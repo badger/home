@@ -639,6 +639,34 @@ class SkillScriptTests(unittest.TestCase):
 
             self.assertEqual(deploy_app.shared_libs(app_dir, root), [])
 
+    def test_validator_warns_when_shared_lib_path_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.make_shared_libs(root)
+            app_dir = scaffold_app.scaffold(
+                "demo", "Demo", root / "badge" / "apps"
+            )
+            source = (app_dir / "__init__.py").read_text(encoding="utf-8")
+
+            def shared_warnings():
+                return [
+                    issue
+                    for issue in validate_app.validate_app(app_dir, root)
+                    if "shared module from badge/lib" in issue.message
+                ]
+
+            (app_dir / "__init__.py").write_text("import inference\n" + source, encoding="utf-8")
+            warnings = shared_warnings()
+            self.assertEqual(len(warnings), 1)
+            self.assertEqual(warnings[0].severity, "WARNING")
+            self.assertIn("'inference'", warnings[0].message)
+
+            (app_dir / "__init__.py").write_text(
+                'import sys\nsys.path.append("/system/lib")\nimport inference\n' + source,
+                encoding="utf-8",
+            )
+            self.assertEqual(shared_warnings(), [])
+
     def test_deploy_refuses_reserved_system_apps(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
