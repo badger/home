@@ -167,9 +167,13 @@ class User:
     AVATAR_ACTIONS = ("flip", "clockwise", "pulse")
     ROTATE_MS = 1200
     PULSE_MS = 1800
+    STATS = (("Followers", "followers"), ("Contribs", "contribs"),
+             ("Repos", "repos"), ("Best Day", "best_day"), ("Yrs on GH", "years"))
+    VISIBLE_STATS = 3
 
     def __init__(self, handle):
         self.handle = handle
+        self.stats_offset = 0
         self.spin_start = None
         self.avatar_action = "flip"
         self.tile = shape.rounded_rectangle(0, 0, TILE_SIZE, TILE_SIZE, 4)
@@ -395,11 +399,20 @@ class User:
         screen.pen = phosphor
         center_text(placeholder_if_none(self.name), 36, NAME_SIZE)
 
-        self.draw_stat("Followers", self.followers, 176, 66)
-        self.draw_stat("Best Day", self.best_day, 176, 124)
-        self.draw_stat("Yrs on GH", self.years, 176, 182)
+        for row, (title, field) in enumerate(self.STATS[self.stats_offset:self.stats_offset + self.VISIBLE_STATS]):
+            self.draw_stat(title, getattr(self, field), 176, 66 + row * 58)
+
+        screen.pen = phosphor
+        if self.stats_offset > 0:
+            screen.text("^", screen.width - 12, 56, LABEL_SIZE)
+        if self.stats_offset + self.VISIBLE_STATS < len(self.STATS):
+            screen.text("v", screen.width - 12, screen.height - 18, LABEL_SIZE)
 
         self.draw_avatar(10, 74, AVATAR_SIZE)
+
+    def scroll_stats(self, direction):
+        self.stats_offset = max(0, min(len(self.STATS) - self.VISIBLE_STATS,
+                                       self.stats_offset + direction))
 
     def draw_name_view(self, status):
         # The username fills the width, with the full name below it.
@@ -529,10 +542,16 @@ def update():
 
     status = user.fetch_step() if handle else None
     if user.loaded:
-        if badge.pressed(BUTTON_UP):
-            view = (view - 1) % VIEW_COUNT
-        if badge.pressed(BUTTON_DOWN):
-            view = (view + 1) % VIEW_COUNT
+        if not both_held:
+            if badge.pressed(BUTTON_LEFT):
+                view = (view - 1) % VIEW_COUNT
+            if badge.pressed(BUTTON_RIGHT):
+                view = (view + 1) % VIEW_COUNT
+        if view == STATS_VIEW:
+            if badge.pressed(BUTTON_UP):
+                user.scroll_stats(-1)
+            if badge.pressed(BUTTON_DOWN):
+                user.scroll_stats(1)
         if badge.pressed(BUTTON_SELECT):
             user.animate_avatar()
         user.draw(status, view)
