@@ -31,8 +31,8 @@ in `/system/lib`, it also joins any network saved in `WIFI_NETWORKS`.
 1. Create an API key at <https://platform.agpt.co/settings/api-keys> (dev:
    <https://dev-builder.agpt.co/settings/api-keys>) with read-only
    permissions: `IDENTITY`, `READ_RUN`, `READ_GRAPH`, `READ_LIBRARY`,
-   `READ_CREDITS` and `READ_SCHEDULE`, plus the AutoPilot read permission for
-   the AutoPilot tab. Keys only work on the environment that issued them.
+   `READ_CREDITS` and `READ_SCHEDULE`, plus `READ_AUTOPILOT` for the AutoPilot
+   tab. Keys only work on the environment that issued them.
 2. Add these lines to the badge's `secrets.py`, next to your Wi-Fi details.
    That's usually `secrets.py` on the `BADGER` volume (USB Disk Mode). If the
    badge's Settings app has saved its own `/secrets.py`, that file takes
