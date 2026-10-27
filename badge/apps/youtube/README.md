@@ -10,6 +10,7 @@ Configure Wi-Fi in the badge's Settings app. Set `CHANNEL_HANDLE` and
 
 The app uses YouTube's public feed without an API key. Slides advance every
 10 seconds and refresh every 15 minutes. Cached videos remain available offline.
+If YouTube returns 404, the app tries the channel's uploads feed before backing off.
 Scan a video's QR code with your phone to watch it.
 
 The original blue-and-white video-player icon is included under the project's MIT license.

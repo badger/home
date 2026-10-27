@@ -439,6 +439,53 @@ class RuntimeTests(unittest.TestCase):
         self.tick(config.RETRY_MS)
         self.assertEqual(len(self.requests), 2)
 
+    def test_feed_404_tries_uploads_playlist_and_recovers(self):
+        self.seed_cache()
+        self.boot()
+        self.tick()
+        self.assertEqual(self.requests[-1].url,
+                         "https://www.youtube.com/feeds/videos.xml?channel_id=" + TEST_CHANNEL_ID)
+        self.requests[-1].error = "HTTP error 404"
+        self.tick()
+        self.assertTrue(self.app["videos"])
+        self.tick()
+        self.assertEqual(self.requests[-1].url,
+                         "https://www.youtube.com/feeds/videos.xml?playlist_id=UU" + TEST_CHANNEL_ID[2:])
+        self.requests[-1].succeed(document(entry(8)).encode())
+        self.tick()
+        self.assertEqual(self.app["videos"][0]["id"], "video000008")
+        self.assertNotIn("feed", self.app["errors"])
+        self.assertNotIn("feed", self.app["retry_delays"])
+
+    def test_both_feed_endpoints_404_back_off_without_losing_cache(self):
+        self.seed_cache()
+        self.boot()
+        cached = self.mapped("/state/youtube/feed.xml").read_bytes()
+        previous = list(self.app["videos"])
+        self.tick()
+        for delay in (config.RETRY_MS, config.RETRY_MS * 2):
+            self.requests[-1].error = "HTTP error 404"
+            self.tick()
+            self.tick()
+            self.assertIn("playlist_id=UU", self.requests[-1].url)
+            self.requests[-1].error = "HTTP error 404"
+            self.tick()
+            self.assertEqual(self.app["retry_delays"]["feed"], delay)
+            self.assertEqual(self.app["next_feed"], self.badge.ticks + delay)
+            self.assertEqual(self.app["videos"], previous)
+            self.assertEqual(self.mapped("/state/youtube/feed.xml").read_bytes(), cached)
+            self.assertFalse(self.app["uploads_fallback"])
+            self.tick(delay)
+            self.assertIn("channel_id=", self.requests[-1].url)
+
+    def test_feed_404_without_error_word_also_uses_fallback(self):
+        self.boot()
+        self.tick()
+        self.requests[-1].error = "HTTP 404"
+        self.tick()
+        self.tick()
+        self.assertIn("playlist_id=UU", self.requests[-1].url)
+
     def test_thumbnail_success_does_not_hide_feed_failure(self):
         self.seed_cache()
         self.boot()

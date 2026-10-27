@@ -27,6 +27,7 @@ CACHE_DIR = "/state/youtube"
 FEED_FILE = CACHE_DIR + "/feed.xml"
 HEADERS = {"User-Agent": "GitHub Universe Badge 2026"}
 FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id=" + CHANNEL_ID
+UPLOADS_FEED_URL = "https://www.youtube.com/feeds/videos.xml?playlist_id=UU" + CHANNEL_ID[2:]
 CLOCK_URL = "https://timeapi.io/api/time/current/zone?timeZone=UTC"
 CLOCK_FILE = CACHE_DIR + "/clock.json"
 
@@ -62,6 +63,7 @@ index = 0
 paused = False
 slide_at = badge.ticks
 next_feed = 0
+uploads_fallback = False
 next_clock = 0
 download = None
 download_kind = None
@@ -120,7 +122,19 @@ def begin(kind, url, path, video_id=None):
 
 
 def failed(error):
-    global download, next_feed, next_clock
+    global download, next_feed, next_clock, uploads_fallback, status
+    if (download_kind == "feed" and not uploads_fallback
+            and str(error) in ("HTTP error 404", "HTTP 404")):
+        report("Feed", error, "feed")
+        print("YouTube: trying the channel's uploads playlist feed")
+        uploads_fallback = True
+        next_feed = badge.ticks
+        status = "Trying uploads feed..."
+        discard_temp()
+        download = None
+        return
+    if download_kind == "feed":
+        uploads_fallback = False
     key = download_kind if download_kind in ("feed", "clock") else download_id
     delay = min(MAX_RETRY_MS, max(RETRY_MS, retry_delays.get(key, 0) * 2))
     retry_delays[key] = delay
@@ -199,7 +213,7 @@ def fetch_step():
         return
     try:
         if badge.ticks >= next_feed:
-            begin("feed", FEED_URL, FEED_FILE)
+            begin("feed", UPLOADS_FEED_URL if uploads_fallback else FEED_URL, FEED_FILE)
         elif clock_needs_sync() and badge.ticks >= next_clock:
             begin("clock", CLOCK_URL, CLOCK_FILE)
         elif videos:
