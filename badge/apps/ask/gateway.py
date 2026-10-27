@@ -1,6 +1,6 @@
 """Ask an OpenAI-compatible chat gateway, such as CLIProxyAPI, from the badge.
 
-    ai = Gateway("https://gateway.example:8317", key, "claude-haiku-4-5")
+    ai = Gateway("https://gateway.example:8317", key, "claude-opus-5-5")
     ai.ask("Say hello")
     while ai.update() == BUSY:   # once a frame
         draw_waiting()
@@ -21,7 +21,7 @@ try:
 except ImportError:
     fetch = None
 
-DEFAULT_MODEL = "claude-haiku-4-5"
+DEFAULT_MODEL = "claude-opus-5-5"
 
 SYSTEM_PROMPT = (
     "You are the voice of a GitHub Universe conference badge with a small "
@@ -154,8 +154,10 @@ def _async_capable():
 class Gateway:
     """One chat completions conversation partner, one request at a time."""
 
+    # max_tokens leaves room for the tokens a model like Opus spends before
+    # it answers; 200 cut its 60-word answers short
     def __init__(self, url, key="", model=DEFAULT_MODEL, system=SYSTEM_PROMPT,
-                 max_tokens=200, timeout=45):
+                 max_tokens=400, timeout=45):
         self.tls, self.host, self.port, self.path = endpoint(url)
         self.url = "%s://%s:%d%s" % ("https" if self.tls else "http", self.host, self.port, self.path)
         self.key = (key or "").strip()
@@ -287,7 +289,11 @@ class Gateway:
 
         answer = plain(content or "")
         if not answer:
-            self._fail("The model sent back an empty answer.")
+            if choice.get("finish_reason") == "length":
+                # thinking models can spend the whole allowance before answering
+                self._fail("The model used up its %d tokens before it answered. Try again." % self.max_tokens)
+            else:
+                self._fail("The model sent back an empty answer.")
             return
 
         self.answer = answer

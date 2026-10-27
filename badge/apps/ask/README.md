@@ -19,7 +19,7 @@ WIFI_SSID = "your network"
 WIFI_PASSWORD = "your password"
 GATEWAY_URL = "https://gateway.example.com:8317"   # base URL, /v1, or the full /v1/chat/completions URL
 GATEWAY_KEY = ""                                   # sent as "Authorization: Bearer ..."; leave empty if not needed
-GATEWAY_MODEL = "claude-haiku-4-5"                 # optional; a comma-separated list adds a model switcher
+GATEWAY_MODEL = "claude-opus-5-5"                  # optional; a comma-separated list adds a model switcher
 ```
 
 Anyone holding your badge can read `secrets.py` in disk mode. Don't put a key
@@ -56,7 +56,7 @@ model thinks, and it reuses the connection between questions:
 ```python
 import gateway
 
-ai = gateway.Gateway(url, key, "claude-haiku-4-5")
+ai = gateway.Gateway(url, key, "claude-opus-5-5")
 ai.ask("Summarise this in one line: ...")
 
 def update():
