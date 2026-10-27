@@ -6,6 +6,8 @@ The badge can't join a tailnet, so a small bridge does that part: the
 [badge bridge](../../../tools/badge_bridge/README.md) follows each of your T3
 Code servers over Tailscale with a read-only token and publishes a compact
 summary through Tailscale Funnel. The badge only needs Wi-Fi and plain HTTPS.
+When the badge has the shared `wifi_networks` module in `/system/lib`, the app
+also joins any network saved in `WIFI_NETWORKS`.
 
 - Counts of threads that need you (an approval or a question), are working,
   failed in the last 24 hours, or finished in the last 24 hours and are unseen.
@@ -27,11 +29,14 @@ summary through Tailscale Funnel. The badge only needs Wi-Fi and plain HTTPS.
 ## Setup
 
 Run the badge bridge with your T3 Code servers configured (see its README),
-then put the badge in USB Disk Mode and add these lines to `secrets.py` on the
-`BADGER` volume, next to your Wi-Fi details:
+then add these lines to the badge's `secrets.py`, next to your Wi-Fi details.
+That's usually `secrets.py` on the `BADGER` volume (USB Disk Mode). If the
+badge's Settings app has saved its own `/secrets.py`, that file takes
+precedence: edit it over USB serial instead (`mpremote cp :/secrets.py .`,
+then copy it back).
 
 ```python
-BADGE_BRIDGE_URL = "https://<bridge-host>.<tailnet>.ts.net:10000/badge"
+BADGE_BRIDGE_URL = "https://<bridge-host>.<tailnet>.ts.net/badge"
 BADGE_BRIDGE_TOKEN = "<the bridge's BADGE_BRIDGE_TOKEN>"
 ```
 

@@ -18,6 +18,9 @@ import sys
 APP_DIR = "/system/apps/t3code"
 os.chdir(APP_DIR)
 sys.path.insert(0, APP_DIR)
+# The menu puts "/" on the path so /secrets.py is found; keep it when launched another way.
+if "/" not in sys.path:
+    sys.path.append("/")
 
 import time
 
@@ -116,7 +119,7 @@ class App:
     def configure(self):
         self.poller = None
         self.problem = None
-        self.missing = list(missing_details.missing("WIFI_SSID"))
+        self.missing = net.wifi_missing()
         self.missing += [name for name in ("BADGE_BRIDGE_URL", "BADGE_BRIDGE_TOKEN") if not setting(name)]
         if self.missing:
             return
@@ -161,7 +164,9 @@ class App:
                 self.poller.error = str(error)
                 return
             if status["src"] != self.host:
-                return  # an answer for the previous host filter
+                # An answer for the previous host filter: ask for the current one now.
+                self.poller.refresh()
+                return
             self.status = status
             self.refresh_rows()
 
@@ -189,7 +194,8 @@ class App:
         turn = (1 if badge.pressed(BUTTON_RIGHT) else 0) - (1 if badge.pressed(BUTTON_LEFT) else 0)
         if turn and not self.detail and self.status and self.poller:
             self.host = model.next_host(self.status, self.host, turn)
-            self.poller.client.cancel()
+            # Keep any request in flight: cancelling it would close the kept-alive
+            # TLS connection, and a new handshake is slow on a weak signal.
             self.poller.path = model.status_path(self.host)
             self.poller.refresh()
             self.selected, self.selected_id = 0, None
@@ -218,7 +224,9 @@ class App:
             if not self.status["ok"]:
                 dot = STATE_COLORS["error"]
             label = model.source_line(self.status)
-            if stale:
+            if self.status["src"] != self.host:
+                label = "loading"
+            elif stale:
                 label = "stale " + model.age_text(since // 1000)
             label = fit(label, 11, 120)
             draw_right(label, screen.width - MARGIN, 11, 11, MUTED)
@@ -296,8 +304,14 @@ class App:
         draw_centre(title, screen.width / 2, 82, 18, TEXT)
         y = 112
         for line in lines:
-            draw_centre(fit(line, 11, screen.width - 30), screen.width / 2, y, 11, MUTED)
-            y += 17
+            if width_of(line, 11) <= screen.width - 30:
+                draw_centre(line, screen.width / 2, y, 11, MUTED)
+                y += 17
+            else:
+                # Long messages, such as the saved networks Wi-Fi couldn't find, get two lines.
+                screen.pen = MUTED
+                screen.text(line, rect(15, y, screen.width - 30, 34), 11, align=(CENTER, TOP), overflow=ELLIPSES)
+                y += 34
         if spinning:
             turned = now / 1200 * 360
             screen.pen = DIM

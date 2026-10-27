@@ -193,6 +193,18 @@ class NativeClientTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.client.start("/b")
 
+    def test_running_out_of_memory_parsing_is_reported(self):
+        self.client.start("/runs")
+        request = FakeAsyncFetch.instances[0]
+        request.script = [(200, b"{}", {})]
+
+        def too_big():
+            raise MemoryError()
+
+        request.to_json = too_big
+        self.assertEqual(self.client.poll(), (0, "response too large"))
+        self.assertFalse(self.client.busy)
+
 
 class ShimClientTests(unittest.TestCase):
     def setUp(self):
@@ -260,7 +272,42 @@ class PollerTests(unittest.TestCase):
         self.assertTrue(self.poller.due(self.clock.now))
 
 
+class FakeRoamer:
+    """badge/lib's wifi_networks.Roamer, scripted one update() result at a time."""
+
+    def __init__(self):
+        self.script = []
+        self.restarts = 0
+        self.status = "Starting Wi-Fi"
+
+    def update(self):
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+    def restart(self):
+        self.restarts += 1
+
+
+def fake_wifi_networks(missing=()):
+    module = types.ModuleType("wifi_networks")
+    module.CONNECTING, module.CONNECTED, module.FAILED = 0, 1, 2
+    module.Roamer = FakeRoamer
+    module.missing = lambda: list(missing)
+    return module
+
+
 class WiFiTests(unittest.TestCase):
+    def setUp(self):
+        self.original = (net.wifi_networks, net.time)
+        self.clock = Clock()
+        net.time = self.clock
+        net.wifi_networks = None
+
+    def tearDown(self):
+        net.wifi_networks, net.time = self.original
+
     def test_first_call_sets_patient_retries(self):
         calls = []
         fake_wifi.connect = lambda *args, **kwargs: calls.append(kwargs) or False
@@ -271,6 +318,47 @@ class WiFiTests(unittest.TestCase):
         # The first call starts the attempt and pumps it once; later calls only pump.
         self.assertEqual(calls, [{"timeout": net.WIFI_TIMEOUT, "retries": net.WIFI_RETRIES}, {}, {}])
         self.assertEqual(link.status(), "Connecting to home")
+
+    def test_roams_with_the_shared_module_when_the_badge_has_it(self):
+        net.wifi_networks = fake_wifi_networks()
+        fake_wifi.connect = lambda *args, **kwargs: self.fail("firmware wifi used alongside the roamer")
+        link = net.WiFi()
+        link.roamer.script = [0, 1]
+        link.roamer.status = "Joining GitHub Guest"
+        self.assertFalse(link.ready())
+        self.assertEqual(link.status(), "Joining GitHub Guest")
+        self.assertTrue(link.ready())
+
+    def test_looks_again_after_every_saved_network_failed(self):
+        net.wifi_networks = fake_wifi_networks()
+        link = net.WiFi()
+        link.roamer.script = [2] * 4
+        self.assertFalse(link.ready())
+        self.clock.advance(net.ROAM_RETRY_MS - 1)
+        self.assertFalse(link.ready())
+        self.assertEqual(link.roamer.restarts, 0)
+        self.clock.advance(1)
+        self.assertFalse(link.ready())
+        self.assertEqual(link.roamer.restarts, 1)
+        # The wait starts over after a restart.
+        self.assertFalse(link.ready())
+        self.assertEqual(link.roamer.restarts, 1)
+
+    def test_falls_back_to_firmware_wifi_without_a_radio_module(self):
+        net.wifi_networks = fake_wifi_networks()
+        calls = []
+        fake_wifi.connect = lambda *args, **kwargs: calls.append(kwargs) or True
+        link = net.WiFi()
+        link.roamer.script = [ImportError("no module named 'network'")]
+        self.assertTrue(link.ready())
+        self.assertIsNone(link.roamer)
+        self.assertEqual(len(calls), 2)
+
+    def test_missing_settings_follow_the_shared_module(self):
+        net.wifi_networks = fake_wifi_networks(missing=["WIFI_SSID"])
+        self.assertEqual(net.wifi_missing(), ["WIFI_SSID"])
+        net.wifi_networks = fake_wifi_networks()
+        self.assertEqual(net.wifi_missing(), [])
 
 
 class T3ModelTests(unittest.TestCase):
@@ -420,6 +508,21 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.dash.balance, 432)
         self.assertEqual(self.dash.next_schedule, ("Soon", ag.iso_to_epoch("2026-10-27T09:00:00Z")))
         self.assertTrue(self.dash.loaded)
+
+    def test_first_cycle_counts_failures_once_an_answer_sets_the_clock(self):
+        paths = []
+
+        def answers(key, path):
+            paths.append(path)
+            if key == "recent":
+                # The app sets the clock from each response's Date header.
+                self.dash.set_clock(ag.http_date_to_epoch("Tue, 27 Oct 2026 02:21:52 GMT"), self.clock.now)
+            return 200, {"items": [], "total_count": 1}
+
+        served = self.drain(answers)
+        self.assertIn("count:FAILED", served)
+        self.assertIn("/runs?statuses=FAILED&started_after=2026-10-26T02:21:52Z&limit=1", paths)
+        self.assertEqual(self.dash.counts["FAILED"], 1)
 
     def test_later_cycles_count_recent_failures_and_raise_alerts(self):
         self.dash.set_clock(1793067712, self.clock.now)

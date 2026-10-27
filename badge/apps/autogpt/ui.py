@@ -126,7 +126,7 @@ class App:
         epoch = time.time()
         if epoch > 1700000000:
             self.dash.set_clock(int(epoch), time.ticks_ms())
-        self.missing = list(missing_details.missing("WIFI_SSID"))
+        self.missing = net.wifi_missing()
         if not setting("AUTOGPT_API_KEY"):
             self.missing.append("AUTOGPT_API_KEY")
         if self.missing:
@@ -135,7 +135,8 @@ class App:
             self.client = net.Client(
                 self.base_url,
                 {"X-API-Key": setting("AUTOGPT_API_KEY"), "Accept": "application/json"},
-                timeout=20, max_bytes=48 * 1024)
+                # Run inputs can be large; the badge's heap (in PSRAM) has room.
+                timeout=20, max_bytes=128 * 1024)
         except ValueError as error:
             self.problem = "AUTOGPT_API_URL: %s" % error
 
@@ -370,8 +371,14 @@ class App:
         draw_centre(title, screen.width / 2, 82, 18, TEXT)
         y = 112
         for line in lines:
-            draw_centre(fit(line, 11, screen.width - 30), screen.width / 2, y, 11, MUTED)
-            y += 17
+            if width_of(line, 11) <= screen.width - 30:
+                draw_centre(line, screen.width / 2, y, 11, MUTED)
+                y += 17
+            else:
+                # Long messages, such as the saved networks Wi-Fi couldn't find, get two lines.
+                screen.pen = MUTED
+                screen.text(line, rect(15, y, screen.width - 30, 34), 11, align=(CENTER, TOP), overflow=ELLIPSES)
+                y += 34
         if spinning:
             turned = now / 1200 * 360
             screen.pen = DIM

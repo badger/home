@@ -118,6 +118,29 @@ Check it from outside your tailnet (the name must resolve publicly):
 curl https://<host>.<tailnet>.ts.net:10000/badge/health
 ```
 
+### Port 443 for strict Wi-Fi
+
+Guest and venue networks often allow only port 443. If the host already
+serves something on 443, give the bridge its own Tailscale node and publish it
+there. The node runs in userspace beside the bridge, with its own state:
+
+```sh
+docker run -d --name badge-funnel --restart unless-stopped --network host \
+  -v /path/to/badge-funnel/state:/var/lib/tailscale \
+  --entrypoint tailscaled tailscale/tailscale:stable \
+  --tun=userspace-networking --statedir=/var/lib/tailscale \
+  --socket=/tmp/tailscaled.sock --port=41642
+TS="docker exec badge-funnel tailscale --socket=/tmp/tailscaled.sock"
+$TS up --hostname=badge --accept-dns=false   # open the printed login link once
+$TS funnel --bg --set-path=/badge http://127.0.0.1:8787
+```
+
+Badges then use `BADGE_BRIDGE_URL = "https://badge.<tailnet>.ts.net/badge"`.
+The Funnel setting is kept in the node's state, so it survives restarts.
+Run `tailscaled` directly as above: the image's default entrypoint exits if
+the login link isn't approved within a minute, which restarts the container
+and replaces the link.
+
 ## Security
 
 - Every route but `/health` needs `Authorization: Bearer <BADGE_BRIDGE_TOKEN>`,

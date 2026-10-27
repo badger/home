@@ -1,11 +1,16 @@
-"""Non-blocking JSON GETs for status apps.
+"""Non-blocking JSON GETs and Wi-Fi for status apps.
 
 On the badge one fetch.AsyncFetch per host keeps its TLS connection alive
 between polls, so only the first request pays for a handshake. The
 simulator's fetch module only implements fetch.url(), which is used there.
+
+Wi-Fi uses the shared wifi_networks module (badge/lib, installed in
+/system/lib) when the badge has it, so the app joins whichever saved network
+is in range. Without it, the firmware's wifi module joins WIFI_SSID.
 """
 
 import json
+import sys
 import time
 
 import fetch
@@ -15,12 +20,23 @@ try:
 except ImportError:
     wifi = None
 
+LIB_DIR = "/system/lib"
+if LIB_DIR not in sys.path:
+    sys.path.append(LIB_DIR)
+
+try:
+    import wifi_networks
+except ImportError:
+    wifi_networks = None
+
 NATIVE = hasattr(fetch.AsyncFetch, "update")
 
 # A short attempt so failures report quickly, and enough retries that the
 # firmware never gives up and parks the app on its fatal error screen.
 WIFI_TIMEOUT = 10
 WIFI_RETRIES = 100000
+# After every saved network has failed, look for them again this often.
+ROAM_RETRY_MS = 20000
 
 
 def split_url(url):
@@ -75,13 +91,38 @@ def error_message(status, body):
     return "HTTP %d: %s" % (status, detail) if detail else "HTTP %d" % status
 
 
+def wifi_missing():
+    """Wi-Fi settings secrets.py still needs, for missing_details.show()."""
+    if wifi_networks is not None:
+        return list(wifi_networks.missing())
+    import missing_details
+    return list(missing_details.missing("WIFI_SSID"))
+
+
 class WiFi:
-    """Drives the firmware's Wi-Fi state machine one step per frame."""
+    """Joins Wi-Fi one step per frame.
+
+    A wifi_networks.Roamer tries the active network, then the other saved
+    networks in range. Without one, the firmware's wifi module retries
+    WIFI_SSID.
+    """
 
     def __init__(self):
         self.started = False
+        self.failed_at = None
+        self.roamer = None
+        if wifi_networks is not None:
+            try:
+                self.roamer = wifi_networks.Roamer()
+            except Exception:  # noqa: BLE001 - an incompatible copy: use the firmware's wifi
+                self.roamer = None
 
     def ready(self):
+        if self.roamer is not None:
+            try:
+                return self._roam()
+            except Exception:  # noqa: BLE001 - no usable radio module: use the firmware's wifi
+                self.roamer = None
         if wifi is None:
             return True
         if not self.started:
@@ -89,7 +130,25 @@ class WiFi:
             wifi.connect(timeout=WIFI_TIMEOUT, retries=WIFI_RETRIES)
         return bool(wifi.connect())
 
+    def _roam(self):
+        state = self.roamer.update()
+        if state == wifi_networks.CONNECTED:
+            self.failed_at = None
+            return True
+        if state == wifi_networks.FAILED:
+            # Nothing saved could be joined. Look again later, in case the
+            # badge has been carried into range of one.
+            now = time.ticks_ms()
+            if self.failed_at is None:
+                self.failed_at = now
+            elif time.ticks_diff(now, self.failed_at) >= ROAM_RETRY_MS:
+                self.failed_at = None
+                self.roamer.restart()
+        return False
+
     def status(self):
+        if self.roamer is not None:
+            return self.roamer.status
         if wifi is None:
             return "No Wi-Fi module"
         try:
@@ -166,6 +225,8 @@ class Client:
                 return self._finish(status, request.to_json())
             except ValueError:
                 return self._finish(0, "bad JSON from server")
+            except MemoryError:
+                return self._finish(0, "response too large")
         try:
             body = bytes(request.body[:512])
         except (ValueError, TypeError):
@@ -179,6 +240,8 @@ class Client:
                 return self._finish(200, request.json())
             except ValueError:
                 return self._finish(0, "bad JSON from server")
+            except MemoryError:
+                return self._finish(0, "response too large")
         problem = request.error
         if problem:
             text = str(problem)

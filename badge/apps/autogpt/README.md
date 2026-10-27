@@ -3,7 +3,8 @@
 AutoGPT shows the live status of your AutoGPT agent runs and AutoPilot chats.
 
 It talks to the AutoGPT Platform's v2 API with your API key over plain HTTPS,
-so it only needs Wi-Fi.
+so it only needs Wi-Fi. When the badge has the shared `wifi_networks` module
+in `/system/lib`, it also joins any network saved in `WIFI_NETWORKS`.
 
 - **Runs**: how many runs are running, queued or waiting for review, how many
   failed in the last 24 hours, your credit balance, the next scheduled run,
@@ -32,8 +33,11 @@ so it only needs Wi-Fi.
    permissions: `IDENTITY`, `READ_RUN`, `READ_GRAPH`, `READ_LIBRARY`,
    `READ_CREDITS` and `READ_SCHEDULE`, plus the AutoPilot read permission for
    the AutoPilot tab. Keys only work on the environment that issued them.
-2. Put the badge in USB Disk Mode and add these lines to `secrets.py` on the
-   `BADGER` volume, next to your Wi-Fi details:
+2. Add these lines to the badge's `secrets.py`, next to your Wi-Fi details.
+   That's usually `secrets.py` on the `BADGER` volume (USB Disk Mode). If the
+   badge's Settings app has saved its own `/secrets.py`, that file takes
+   precedence: edit it over USB serial instead (`mpremote cp :/secrets.py .`,
+   then copy it back).
 
    ```python
    AUTOGPT_API_KEY = "agpt_..."
@@ -43,7 +47,7 @@ so it only needs Wi-Fi.
    `AUTOGPT_API_URL` defaults to production (`https://backend.agpt.co/api/v2`).
    The header shows `prod`, `dev` or the host you set.
 
-Anyone holding your badge can read `secrets.py` in disk mode, so use a
+Anyone holding your badge can read `secrets.py` over USB, so use a
 read-only key and revoke it when you no longer need it. Never commit a filled
 `secrets.py`.
 

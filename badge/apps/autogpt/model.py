@@ -259,9 +259,9 @@ class Dashboard:
             work.append(("autopilot", "/autopilot/sessions?limit=%d" % AUTOPILOT_SESSIONS))
         for status in ("RUNNING", "QUEUED", "REVIEW"):
             work.append(("count:" + status, "/runs?statuses=%s&limit=1" % status))
-        now = self.now(ticks)
-        if now:
-            work.append(("count:FAILED", "/runs?statuses=FAILED&started_after=%s&limit=1" % epoch_to_iso(now - DAY)))
+        # Counting the last day's failures needs the time, which the badge
+        # learns from the first answer, so this path is filled in when sent.
+        work.append(("count:FAILED", None))
         if slow:
             if self.credits_allowed:
                 work.append(("credits", "/credits"))
@@ -273,12 +273,19 @@ class Dashboard:
     def next_request(self, ticks):
         if self.fatal:
             return None
-        if not self.queue:
-            if self.cycle_at is not None and time.ticks_diff(ticks, self.cycle_at) < 0:
-                return None
-            self.queue = self.plan(ticks)
-            self.cycle_at = time.ticks_add(ticks, CYCLE_MS)
-        return self.queue.pop(0)
+        while True:
+            if not self.queue:
+                if self.cycle_at is not None and time.ticks_diff(ticks, self.cycle_at) < 0:
+                    return None
+                self.queue = self.plan(ticks)
+                self.cycle_at = time.ticks_add(ticks, CYCLE_MS)
+            key, path = self.queue.pop(0)
+            if path is None:
+                now = self.now(ticks)
+                if not now:
+                    continue  # still no clock: skip it this cycle
+                path = "/runs?statuses=FAILED&started_after=%s&limit=1" % epoch_to_iso(now - DAY)
+            return key, path
 
     # answers ----------------------------------------------------------------------
 

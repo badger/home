@@ -10,6 +10,9 @@ import sys
 APP_DIR = "/system/apps/autogpt"
 os.chdir(APP_DIR)
 sys.path.insert(0, APP_DIR)
+# The menu puts "/" on the path so /secrets.py is found; keep it when launched another way.
+if "/" not in sys.path:
+    sys.path.append("/")
 
 badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
