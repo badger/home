@@ -42,6 +42,54 @@ The repository targets the **GitHub Universe 2026 badge** by default.
   mass-storage mode to deploy under `/system/apps/`. Inspect state under
   `:/state/`, and reset after copying so the normal startup path is exercised.
 
+## Testing apps in the Badge Simulator canvas
+
+This repository ships a **Badge Simulator** canvas in
+`.github/extensions/badge-simulator/` (see its `README.md`). When creating,
+changing or testing an app, open it beside the conversation with
+`open_canvas` using `canvasId: "badge-simulator"` and
+`input: { "app": "<folder under badge/apps>" }`.
+
+**Simulator first in the GitHub Copilot app.** When the `badge-simulator`
+canvas is available (it is listed under available canvases in the GitHub
+Copilot app), prefer it whenever the user asks to create, change, run, try or
+deploy an app:
+
+1. Open (or `load_app`) the requested app in the canvas before touching a
+   physical badge.
+2. Check it yourself: `check_app`, then `run_script` or `wait_for` to exercise
+   it, `get_output` (its `error.location` points at the failing repo line),
+   `screenshot`, `record` (for motion) and `exec`. Fix any tracebacks or obvious rendering problems.
+3. End your reply by reminding the user that the app is running in the Badge
+   Simulator, and that when they are happy with it they can press the canvas
+   **Deploy** button to install it on their connected badge.
+
+Deploy to hardware directly only when the user explicitly asks to skip the
+simulator, the request came from the Deploy button, or the canvas is not
+available (for example, in the Copilot CLI).
+
+- It reruns the app automatically whenever files in `badge/apps/<app>` change,
+  so save edits and check the result without reopening it.
+- Use `invoke_canvas_action` to verify behavior: `get_output` returns status,
+  console output and the last error mapped to `badge/apps/...:line`,
+  `screenshot` returns a PNG path to view, `record` captures an interaction
+  as a GIF plus a contact-sheet PNG to view (and optional MP4/WebM video for
+  pull requests), `press` presses a badge button
+  (`up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu`, or combos
+  such as `"a+b"`), `exec` runs MicroPython in the running app's globals,
+  `wait_for` waits for output, frames or a crash, `run_script` runs a scripted
+  sequence of presses, waits, screenshots and checks, `rotate` turns the badge
+  upside down, `check_app` runs pre-flight checks (icon, README, 2025 APIs,
+  secrets), `load_app` switches apps and `reload` reruns. See
+  `.github/extensions/badge-simulator/README.md` for inputs.
+- The canvas **Deploy** button sends a request to install the app on the
+  connected badge. Handle it by following `hardware/USB_SERIAL.md`
+  ("Installing an app", including "Menu icon patch"): always use USB
+  mass-storage mode for `/system/apps/<app>`, apply the patched menu `app.py`
+  when the badge's menu lacks it, run one `mpremote` command at a time, and
+  finish with `mpremote connect <port> reset` so the badge reboots to the menu.
+- The simulator approximates the firmware; still test on real hardware.
+
 When porting a 2025 app, preserve behavior and assets but explicitly translate
 the graphics, input, timing, orientation, lifecycle, and state APIs. Use
 `badge/apps/input_test/`, `badge/apps/demos/` and `badge/apps/flappy_mona/` as primary references.

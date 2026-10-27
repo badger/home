@@ -73,6 +73,17 @@ the RP2350 GPIO map and onboard peripheral connections. See the
 [USB serial and MicroPython REPL guide](./hardware/USB_SERIAL.md) to inspect a
 connected badge and copy files or apps.
 
+## Skills for building 2026 apps
+
+The [`hyb26-skill`](./.github/skills/hyb26-skill/SKILL.md) Copilot skill helps
+you create, check, debug, and install apps on your badge from macOS, Linux, or
+Windows. Copilot picks it up automatically in this repository. It covers
+`mpremote` and the REPL, switching the badge into USB Disk Mode from your
+computer, enabling custom `icon.png` menu icons on stock badges, and the
+[badger.github.io simulator](https://badger.github.io/editor). See its
+[README](./.github/skills/hyb26-skill/README.md) to install it for other
+projects.
+
 ## Creating a 2026 app
 
 Apps are directories under `badge/apps/`:
@@ -116,6 +127,14 @@ including `badge`, `screen`, `image`, `font`, `color`, `shape`, `brush`,
 `vec2`, `rect`, `mat3`, `run`, button constants, mode constants, and filesystem
 helpers. Inspect the apps in [`badge/apps/`](./badge/apps/) for working
 patterns.
+
+### Badge Simulator canvas
+
+If you use the GitHub Copilot app, this repository includes a **Badge
+Simulator** canvas that loads automatically. Ask Copilot to "open the Badge
+Simulator for my_app": your app runs on a 3D badge beside the chat and reloads
+every time you save. **Deploy** asks Copilot to install it on a connected badge.
+See [`.github/extensions/badge-simulator/`](./.github/extensions/badge-simulator/README.md).
 
 ### Input and orientation
 
