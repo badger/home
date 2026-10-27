@@ -13,6 +13,7 @@ The app uses YouTube's public feed without an API key. Slides advance every
 Scan a video's QR code with your phone to watch it.
 
 The original blue-and-white video-player icon is included under the project's MIT license.
+The app is self-contained; no badge menu changes are required.
 
 ## Controls
 

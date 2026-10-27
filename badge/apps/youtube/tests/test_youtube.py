@@ -1,5 +1,4 @@
 import contextlib
-import ast
 import builtins
 import datetime
 import io
@@ -171,98 +170,7 @@ class Screen:
         self.blits.append(args)
 
 
-class LauncherIconTests(unittest.TestCase):
-    def setUp(self):
-        source = (APP.parent / "menu" / "app.py").read_text()
-        definition = next(node for node in ast.parse(source).body
-                          if isinstance(node, ast.ClassDef) and node.name == "App")
-        tile = type("Tile", (), {
-            "bounds": lambda *args: (0, 0, 75, 75),
-            "clip": lambda *args: True,
-        })
-        transform = MagicMock()
-        transform.translate.return_value = transform
-        transform.scale.return_value = transform
-        transform.rotate.return_value = transform
-        draws = []
-        screen = types.SimpleNamespace(
-            rectangle=lambda *args: None, antialias=0,
-            shape=lambda element: draws.append((screen.pen, element)),
-        )
-        ui = types.SimpleNamespace(PALETTE=[(88, 58, 247)], shade=lambda *args: (0, 0, 0),
-                                   white=(255, 255, 255))
-        context = {
-            "Tile": tile, "ui": ui, "color": types.SimpleNamespace(rgb=lambda *args: args),
-            "shape": types.SimpleNamespace(rounded_rectangle=lambda *args: types.SimpleNamespace()),
-            "polygon": lambda *args: types.SimpleNamespace(points=args),
-            "ICONS": {"default": ()}, "build_icon": lambda *args: types.SimpleNamespace(),
-            "load_picture": lambda path: None,
-            "PATTERNS": [[]], "BASE_STRENGTH": 0.22, "MID_STRENGTH": 0.42,
-            "HIGH_STRENGTH": 0.62, "HALF": 37.5, "TILE": 75, "BORDER": 2,
-            "DESIGN_SCALE": 1, "ICON_SIZE": 48, "ICON_SHIFT": 3, "BACKGROUND_SHIFT": 6,
-            "mat3": lambda: transform, "screen": screen,
-            "image": types.SimpleNamespace(OFF=0),
-            "badge": types.SimpleNamespace(ticks=0),
-            "load_animation": MagicMock(side_effect=AssertionError("Unexpected fallback animation")),
-        }
-        exec(compile(ast.Module(body=[definition], type_ignores=[]), "<launcher>", "exec"), context)
-        self.context = context
-        self.draws = draws
-        self.transform = transform
-
-    def test_video_icon_draws_blue_monitor_and_white_play_triangle(self):
-        context, draws = self.context, self.draws
-        for selected in (False, True):
-            app = context["App"](0, "Youtube", "youtube", "/system/apps/youtube")
-            draws.clear()
-            app.draw(0, types.SimpleNamespace(x=0, y=0), selected)
-            self.assertEqual(draws, [((24, 96, 200), app.youtube_body),
-                                     ((255, 255, 255), app.icon)])
-            self.assertGreater(len(app.youtube_body.points), 8)
-        other = context["App"](0, "Other", "other", "/system/apps/other")
-        self.assertIsNone(other.youtube_body)
-
-    def test_focused_play_button_spins_pauses_and_restarts(self):
-        context = self.context
-        app = context["App"](0, "Youtube", "youtube", "/system/apps/youtube", animated=True)
-        tilt = types.SimpleNamespace(x=0, y=0)
-        for elapsed, angle in [(0, 0), (250, 90), (500, 180), (750, 270),
-                               (1000, 360), (1500, 360), (1999, 360),
-                               (2000, 0), (2250, 90)]:
-            context["badge"].ticks = 100 + elapsed
-            self.transform.rotate.reset_mock()
-            app.draw(0, tilt, True)
-            self.transform.rotate.assert_called_once_with(angle)
-            self.assertIs(self.draws[-1][1], app.icon)
-        context["load_animation"].assert_not_called()
-        self.transform.rotate.reset_mock()
-        app.draw(0, tilt, False)
-        self.transform.rotate.assert_not_called()
-        context["badge"].ticks += 100
-        app.draw(0, tilt, True)
-        self.transform.rotate.assert_called_once_with(0)
-
-    def test_play_rotation_does_not_mutate_monitor_transform(self):
-        matrices = []
-
-        def matrix():
-            transform = MagicMock()
-            transform.translate.return_value = transform
-            transform.scale.return_value = transform
-            transform.rotate.return_value = transform
-            matrices.append(transform)
-            return transform
-
-        self.context["mat3"] = matrix
-        app = self.context["App"](0, "Youtube", "youtube", "/system/apps/youtube", animated=True)
-        app.draw(0, types.SimpleNamespace(x=0, y=0), True)
-        self.assertIsNot(app.icon.transform, app.youtube_body.transform)
-        app.youtube_body.transform.rotate.assert_not_called()
-        app.icon.transform.rotate.assert_called_once_with(0)
-        translations = app.icon.transform.translate.call_args_list
-        self.assertEqual(translations[-2].args, (0, -0.10))
-        self.assertEqual(translations[-1].args, (0, 0.10))
-
+class AppIconTests(unittest.TestCase):
     def test_app_icon_is_24_by_24_rgba_png(self):
         data = (APP / "icon.png").read_bytes()
         self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")

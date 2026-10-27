@@ -201,26 +201,11 @@ class App(Tile):
         self.icon_key = slug if slug in ICONS else "default"
         self.icon = build_icon(ICONS[self.icon_key])
         self.picture = None if slug in ICONS else load_picture(path)
-        self.youtube_body = None
-        if slug == "youtube":
-            self.picture = None
-            self.youtube_body = polygon(
-                -0.46, -0.46, 0.46, -0.46, 0.46, 0.25,
-                0.08, 0.25, 0.08, 0.38, 0.29, 0.38, 0.29, 0.46,
-                -0.29, 0.46, -0.29, 0.38, -0.08, 0.38, -0.08, 0.25,
-                -0.46, 0.25,
-            )
-            self.icon = polygon(-0.13, -0.29, 0.21, -0.10, -0.13, 0.09)
         self.animation = None
         self.was_selected = False
         self.selected_at = 0
 
     def current_icon(self, selected):
-        if self.youtube_body is not None:
-            if selected and not self.was_selected:
-                self.selected_at = badge.ticks
-            self.was_selected = selected
-            return self.icon
         if not self.animated:
             return self.icon
         if selected and not self.was_selected:
@@ -277,22 +262,10 @@ class App(Tile):
             return
 
         icon = self.current_icon(selected)
-        transform = mat3().translate(
+        icon.transform = mat3().translate(
             centre_x + tilt.x * ICON_SHIFT,
             centre_y + tilt.y * ICON_SHIFT,
         ).scale(ICON_SIZE * scale)
-        if self.youtube_body is not None:
-            self.youtube_body.transform = transform
-            screen.pen = color.rgb(24, 96, 200)
-            screen.shape(self.youtube_body)
-            if selected:
-                phase = (badge.ticks - self.selected_at) % 2000
-                angle = 360 * min(phase / 1000, 1)
-                transform = mat3().translate(
-                    centre_x + tilt.x * ICON_SHIFT,
-                    centre_y + tilt.y * ICON_SHIFT,
-                ).scale(ICON_SIZE * scale).translate(0, -0.10).rotate(angle).translate(0, 0.10)
-        icon.transform = transform
         screen.pen = ui.white
         screen.shape(icon)
 
