@@ -126,8 +126,8 @@ def _toast(text):
 
 
 def _to_gameover():
-    if state["score"] > state["hiscore"]:
-        state["hiscore"] = state["score"]
+    if state["score"] > state["hiscore"] or state["save_error"]:
+        state["hiscore"] = max(state["hiscore"], state["score"])
         try:
             State.save("gitris", {"hiscore": state["hiscore"]})
             state["save_error"] = False
