@@ -344,6 +344,28 @@ class WiFiTests(unittest.TestCase):
         self.assertFalse(link.ready())
         self.assertEqual(link.roamer.restarts, 1)
 
+    def test_a_retry_by_the_roamer_restarts_the_wait(self):
+        net.wifi_networks = fake_wifi_networks()
+        link = net.WiFi()
+        link.roamer.script = [2, 0, 2, 2]
+        self.assertFalse(link.ready())
+        self.clock.advance(net.ROAM_RETRY_MS)
+        self.assertFalse(link.ready())  # joining again: the failure is over
+        self.assertFalse(link.ready())  # a new failure starts a new wait
+        self.clock.advance(net.ROAM_RETRY_MS - 1)
+        self.assertFalse(link.ready())
+        self.assertEqual(link.roamer.restarts, 0)
+
+    def test_leaves_retries_to_a_roamer_that_retries_itself(self):
+        net.wifi_networks = fake_wifi_networks()
+        link = net.WiFi()
+        link.roamer.retry_in = 20
+        link.roamer.script = [2, 2]
+        self.assertFalse(link.ready())
+        self.clock.advance(net.ROAM_RETRY_MS * 3)
+        self.assertFalse(link.ready())
+        self.assertEqual(link.roamer.restarts, 0)
+
     def test_falls_back_to_firmware_wifi_without_a_radio_module(self):
         net.wifi_networks = fake_wifi_networks()
         calls = []

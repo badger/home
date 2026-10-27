@@ -132,18 +132,19 @@ class WiFi:
 
     def _roam(self):
         state = self.roamer.update()
-        if state == wifi_networks.CONNECTED:
+        if state != wifi_networks.FAILED:
             self.failed_at = None
-            return True
-        if state == wifi_networks.FAILED:
-            # Nothing saved could be joined. Look again later, in case the
-            # badge has been carried into range of one.
-            now = time.ticks_ms()
-            if self.failed_at is None:
-                self.failed_at = now
-            elif time.ticks_diff(now, self.failed_at) >= ROAM_RETRY_MS:
-                self.failed_at = None
-                self.roamer.restart()
+            return state == wifi_networks.CONNECTED
+        if hasattr(self.roamer, "retry_in"):
+            return False  # this Roamer looks again by itself, waiting longer each time
+        # Older Roamers stay FAILED: look again later, in case the badge has
+        # been carried into range of a saved network.
+        now = time.ticks_ms()
+        if self.failed_at is None:
+            self.failed_at = now
+        elif time.ticks_diff(now, self.failed_at) >= ROAM_RETRY_MS:
+            self.failed_at = None
+            self.roamer.restart()
         return False
 
     def status(self):
