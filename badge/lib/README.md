@@ -107,8 +107,10 @@ knows `WIFI_SSID`, and when it gives up it shows a full-screen error. A
 `Roamer` works differently:
 
 1. It tries the active network first.
-2. If that fails, it scans once and tries the other saved networks in range,
-   strongest first.
+2. If that fails, it scans and tries the saved networks in range, strongest
+   first. Each network gets a second attempt, because a weak signal often fails
+   once. A network that has joined but is still waiting for an address gets 10
+   more seconds.
 3. The network that works becomes the active one, so apps that only know
    `WIFI_SSID` join it next time.
 

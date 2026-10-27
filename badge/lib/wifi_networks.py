@@ -19,10 +19,11 @@ them:
             screen.text(roamer.status, 10, 10)
 
 A Roamer tries the active network (WIFI_SSID) first. If it can't join that,
-it scans once and tries the other saved networks that are in range, strongest
-first. Names match whatever case the network broadcasts. The network that
-works becomes the active one in secrets.py, so the next app, which only knows
-WIFI_SSID, joins it too. The network you were on stays saved.
+it scans and tries the saved networks that are in range, strongest first,
+giving each a second attempt, since a weak signal often fails once. Names
+match whatever case the network broadcasts. The network that works becomes
+the active one in secrets.py, so the next app, which only knows WIFI_SSID,
+joins it too. The network you were on stays saved.
 
 See badge/lib/README.md for the settings.
 """
@@ -30,7 +31,7 @@ See badge/lib/README.md for the settings.
 import os
 import time
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 SECRETS_FILE = "/secrets.py"            # the badge's own settings, which the Settings app writes
 SYSTEM_SECRETS_FILE = "/system/secrets.py"
@@ -39,12 +40,17 @@ CONNECTING = 0
 CONNECTED = 1
 FAILED = 2
 
-TRY_SECONDS = 15                        # how long one network gets before the next is tried
+TRY_SECONDS = 15                        # how long one join attempt gets before the next is tried
+DHCP_SECONDS = 10                       # more time when it has joined and is waiting for an address
+ATTEMPTS = 2                            # joins per network: a weak signal often fails just once
+SCANS = 2
 
 # network.WLAN.status() link states
 _BAD_PASSWORD = -3
 _NOT_FOUND = -2
 _JOIN_FAILED = -1
+_NO_ADDRESS = 2
+_LINK_UP = 3
 
 
 def _secrets():
@@ -257,8 +263,9 @@ class Roamer:
         self.problems = []          # (ssid, reason) for each network that didn't work
         self._password = None
         self._queue = None
-        self._scanned = False
-        self._in_range = None       # saved networks the scan found
+        self._attempts = {}         # lower-case ssid -> joins started
+        self._scans = 0
+        self._in_range = None       # saved networks the last scan found
         self._began = 0
 
     @property
@@ -290,28 +297,37 @@ class Roamer:
             self._next(wlan)
             return
 
-        if wlan.isconnected():
+        # read the state once: a join can finish between two reads
+        code = wlan.status()
+        if code == _LINK_UP or wlan.isconnected():
             self._joined(self.ssid, self._password)
             return
-        code = wlan.status()
         waited = time.ticks_diff(time.ticks_ms(), self._began)
         if code == _BAD_PASSWORD and waited > 2000:
             self._give_up(wlan, "wrong password")
         elif code in (_NOT_FOUND, _JOIN_FAILED) and waited > 5000:
             self._give_up(wlan, "not found" if code == _NOT_FOUND else "could not join")
-        elif waited > self.try_ms:
+        elif code == _NO_ADDRESS and waited > self.try_ms + DHCP_SECONDS * 1000:
+            self._give_up(wlan, "no address")
+        elif code != _NO_ADDRESS and waited > self.try_ms:
             self._give_up(wlan, "no answer")
 
     def _give_up(self, wlan, reason):
-        self.problems.append((self.ssid, reason))
+        self.problems = [p for p in self.problems if not _same(p[0], self.ssid)] + [(self.ssid, reason)]
         self._next(wlan)
+
+    def _worth_trying(self, ssid):
+        if self._attempts.get(ssid.lower(), 0) >= ATTEMPTS:
+            return False
+        return not any(_same(ssid, failed) and reason == "wrong password" for failed, reason in self.problems)
 
     def _next(self, wlan):
         while True:
             while self._queue:
                 ssid, password = self._queue.pop(0)
-                if any(_same(ssid, failed) for failed, _ in self.problems):
+                if not self._worth_trying(ssid):
                     continue
+                self._attempts[ssid.lower()] = self._attempts.get(ssid.lower(), 0) + 1
                 self.ssid, self._password = ssid, password
                 self.status = "Joining %s" % ssid
                 self._began = time.ticks_ms()
@@ -321,13 +337,13 @@ class Roamer:
                     pass
                 wlan.connect(ssid, password)
                 return
-            if self._scanned:
+            if self._scans >= SCANS:
                 self._fail(self._summary())
                 return
             self._scan(wlan)
 
     def _scan(self, wlan):
-        self._scanned = True
+        self._scans += 1
         self.status = "Looking for your networks"
         try:
             wlan.disconnect()       # a join in progress stops the scan
@@ -336,13 +352,17 @@ class Roamer:
         visible = scan()
         found = in_range(visible)
         if self.only is not None:
-            chosen = [(s, p) for s, p, _ in found if _same(s, self.only)]
-            self._queue = chosen or [(s, p) for s, p in saved() if _same(s, self.only)]
+            ranked = [(s, p, r) for s, p, r in found if _same(s, self.only)]
+            ranked = ranked or [(s, p, -1000) for s, p in saved() if _same(s, self.only)]
         elif visible:
             self._in_range = found
-            self._queue = [(s, p) for s, p, _ in found]
+            ranked = found
         else:
-            self._queue = saved()   # couldn't scan: try each saved network in turn
+            # couldn't scan: try each saved network in turn
+            ranked = [(s, p, -index) for index, (s, p) in enumerate(saved())]
+        # networks not tried yet before second attempts, then the strongest
+        ranked.sort(key=lambda item: (self._attempts.get(item[0].lower(), 0), -item[2]))
+        self._queue = [(s, p) for s, p, _ in ranked]
 
     def _summary(self):
         names = [ssid for ssid, _ in saved()]
@@ -361,6 +381,8 @@ class Roamer:
         self.state = CONNECTED
         self.ssid = ssid
         self.status = "Connected to %s" % (ssid or "Wi-Fi")
+        if ssid:
+            self.problems = [p for p in self.problems if not _same(p[0], ssid)]
         if self.remember and ssid and password is not None:
             try:
                 remember(ssid, password)
