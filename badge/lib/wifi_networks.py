@@ -25,13 +25,17 @@ match whatever case the network broadcasts. The network that works becomes
 the active one in secrets.py, so the next app, which only knows WIFI_SSID,
 joins it too. The network you were on stays saved.
 
+If nothing works, update() returns FAILED and status says why. The roamer
+tries again on its own, after 20 seconds, then 40, then every minute, until it
+joins; retry_in counts down to the next try, and restart() tries again now.
+
 See badge/lib/README.md for the settings.
 """
 
 import os
 import time
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 SECRETS_FILE = "/secrets.py"            # the badge's own settings, which the Settings app writes
 SYSTEM_SECRETS_FILE = "/system/secrets.py"
@@ -44,6 +48,7 @@ TRY_SECONDS = 15                        # how long one join attempt gets before 
 DHCP_SECONDS = 10                       # more time when it has joined and is waiting for an address
 ATTEMPTS = 2                            # joins per network: a weak signal often fails just once
 SCANS = 2
+RETRY_SECONDS = (20, 40, 60)            # waits before trying again after FAILED; the last one repeats
 
 # network.WLAN.status() link states
 _BAD_PASSWORD = -3
@@ -249,13 +254,22 @@ def current():
 class Roamer:
     """Joins the best saved network, a step each frame. See the module docstring."""
 
-    def __init__(self, try_seconds=TRY_SECONDS, remember=True):
+    def __init__(self, try_seconds=TRY_SECONDS, remember=True, retry_seconds=RETRY_SECONDS):
         self.try_ms = int(try_seconds * 1000)
         self.remember = remember    # make the network that works the active one
+        if retry_seconds is None:
+            retry_seconds = ()      # stay FAILED until restart()
+        elif isinstance(retry_seconds, (int, float)):
+            retry_seconds = (retry_seconds,)
+        self.retry_ms = [int(seconds * 1000) for seconds in retry_seconds]
         self.restart()
 
     def restart(self, only=None):
-        """Start over. With only, join that saved network and no other."""
+        """Start over now. With only, join that saved network and no other."""
+        self._retries = 0           # tries it has started on its own since
+        self._start(only)
+
+    def _start(self, only):
         self.only = only
         self.state = CONNECTING
         self.status = "Starting Wi-Fi"
@@ -267,14 +281,34 @@ class Roamer:
         self._scans = 0
         self._in_range = None       # saved networks the last scan found
         self._began = 0
+        self._failed_at = 0
 
     @property
     def connected(self):
         return self.state == CONNECTED
 
+    @property
+    def retry_in(self):
+        """Whole seconds until it tries again on its own, while FAILED; otherwise None."""
+        wait = self._retry_wait()
+        if wait is None:
+            return None
+        left = wait - time.ticks_diff(time.ticks_ms(), self._failed_at)
+        return max(0, (left + 999) // 1000)
+
+    def _retry_wait(self):
+        if self.state != FAILED or not self.retry_ms:
+            return None
+        return self.retry_ms[min(self._retries, len(self.retry_ms) - 1)]
+
     def update(self):
         """Move along. Call once a frame; returns CONNECTING, CONNECTED or FAILED."""
         try:
+            if self.state == FAILED:
+                wait = self._retry_wait()
+                if wait is not None and time.ticks_diff(time.ticks_ms(), self._failed_at) >= wait:
+                    self._retries += 1
+                    self._start(self.only)
             if self.state == CONNECTING:
                 self._step()
             elif self.state == CONNECTED and not _wlan().isconnected():
@@ -392,3 +426,4 @@ class Roamer:
     def _fail(self, message):
         self.state = FAILED
         self.status = message
+        self._failed_at = time.ticks_ms()

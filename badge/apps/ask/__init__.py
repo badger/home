@@ -76,6 +76,7 @@ BODY_TOP = HEADER_H + 10
 BODY_ROWS = (HEIGHT - FOOTER_H - BODY_TOP - 4) // LINE_H
 
 LIST, CONNECTING, THINKING, ANSWER, FAILED = range(5)
+NO_WIFI = "No Wi-Fi"        # the FAILED page's title while the roamer keeps trying
 
 
 MODELS = inference.models()
@@ -94,6 +95,7 @@ if not MISSING:
 
 mode = FAILED if problem else LIST
 heading = None              # the FAILED page's title
+wifi_reason = None          # the roamer status the No Wi-Fi page shows
 selected = 0
 model_index = 0
 lines = []                  # the answer or the error, wrapped to the screen
@@ -152,7 +154,15 @@ def wifi_label():
         return ""
     if roamer.connected:
         return "Wi-Fi: %s" % roamer.ssid
-    return "No Wi-Fi" if roamer.state == wifi_networks.FAILED else "Finding Wi-Fi..."
+    return NO_WIFI if roamer.state == wifi_networks.FAILED else "Finding Wi-Fi..."
+
+
+def wifi_progress():
+    """What the roamer is up to, for the No Wi-Fi page."""
+    if roamer.state != wifi_networks.FAILED:
+        return roamer.status        # "Joining ...", "Looking for your networks"
+    wait = roamer.retry_in
+    return "" if wait is None else "Trying again in %ds" % wait
 
 
 def draw_header(title):
@@ -275,8 +285,12 @@ def draw_failed():
     screen.pen = warning
     screen.text(heading or ("No answer" if client else "Check secrets.py"), BODY_X, BODY_TOP, TITLE_SIZE)
     screen.pen = ink
-    for row, line in enumerate(lines[:BODY_ROWS - 1]):
+    rows = BODY_ROWS - (2 if heading == NO_WIFI else 1)
+    for row, line in enumerate(lines[:rows]):
         screen.text(line, BODY_X, BODY_TOP + 28 + row * LINE_H, BODY_SIZE)
+    if heading == NO_WIFI:
+        screen.pen = muted
+        screen.text(wifi_progress(), BODY_X, BODY_TOP + 28 + rows * LINE_H + 2, SMALL_SIZE)
     if client:
         draw_footer("SELECT try again", "BACK prompts")
     else:
@@ -297,9 +311,10 @@ def ask():
 
 
 def no_wifi():
-    global mode, lines, heading
-    heading = "No Wi-Fi"
-    lines = wrap(roamer.status, BODY_W, BODY_SIZE)
+    global mode, lines, heading, wifi_reason
+    heading = NO_WIFI
+    wifi_reason = roamer.status
+    lines = wrap(wifi_reason, BODY_W, BODY_SIZE)
     mode = FAILED
 
 
@@ -376,6 +391,12 @@ def update():
             ask()
         if badge.pressed(BUTTON_BACK):
             mode = LIST
+        if mode == FAILED and heading == NO_WIFI:
+            # the roamer keeps trying: ask as soon as it gets online
+            if roamer.connected:
+                send()
+            elif roamer.state == wifi_networks.FAILED and roamer.status != wifi_reason:
+                no_wifi()
 
     if mode == LIST:
         draw_list()

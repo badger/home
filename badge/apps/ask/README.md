@@ -56,6 +56,10 @@ the gateway, the key was refused, the model isn't available to that key, the
 gateway is out of quota, or nothing came back within 45 seconds. Press Select to
 try again.
 
+If no saved Wi-Fi network can be joined, the No Wi-Fi page says why and keeps
+trying in the background, counting down to the next try. Ask sends your
+question as soon as the badge gets online. Press Select to try again now.
+
 ## Installing
 
 Ask depends on the shared `inference` and `wifi_networks` modules in

@@ -113,6 +113,9 @@ knows `WIFI_SSID`, and when it gives up it shows a full-screen error. A
    more seconds.
 3. The network that works becomes the active one, so apps that only know
    `WIFI_SSID` join it next time.
+4. If none works, `update()` returns `FAILED` and `status` says why. The roamer
+   tries again on its own after 20 seconds, then 40, then every minute, as long
+   as the app keeps calling `update()`. `restart()` tries again at once.
 
 [Ask](../apps/ask/) is the reference app: it uses a `Roamer` to get online.
 
@@ -135,10 +138,11 @@ Names match whatever case the network broadcasts.
 
 | Name | What it does |
 | --- | --- |
-| `Roamer(try_seconds=15, remember=True)` | Joins a saved network a step at a time. `remember` makes the network that works the active one |
+| `Roamer(try_seconds=15, remember=True, retry_seconds=(20, 40, 60))` | Joins a saved network a step at a time. `remember` makes the network that works the active one. After `FAILED` it waits each of `retry_seconds` in turn (the last repeats) and tries again; `None` leaves it `FAILED` until `restart()` |
 | `roamer.update()` | Move it along; returns `CONNECTING`, `CONNECTED` or `FAILED`. A dropped connection starts it again |
-| `roamer.restart(only=None)` | Start over. `only` joins that one saved network |
+| `roamer.restart(only=None)` | Start over now, back to the shortest retry wait. `only` joins that one saved network |
 | `roamer.status`, `roamer.ssid`, `roamer.problems` | What it is doing (or why it failed), the network, and `(ssid, reason)` for each network that didn't work |
+| `roamer.retry_in` | Whole seconds until it tries again on its own, while `FAILED`; otherwise `None` |
 | `saved()`, `active()`, `current()` | Saved networks as `(ssid, password)` pairs with the active one first, `WIFI_SSID`, and the network the radio is on |
 | `missing()` | `["WIFI_SSID"]` when no network is saved, for `missing_details.show()` |
 | `scan()`, `in_range(visible=None)` | Visible networks as `{ssid: rssi}` (blocks about a second), and the saved ones among them, strongest first |
