@@ -22,6 +22,10 @@ GATEWAY_KEY = ""                                   # sent as "Authorization: Bea
 GATEWAY_MODEL = "claude-opus-5-5"                  # optional; a comma-separated list adds a model switcher
 ```
 
+A badge already set up for the badge bridge (`BADGE_BRIDGE_URL` and
+`BADGE_BRIDGE_TOKEN`) doesn't need the `GATEWAY_URL` and `GATEWAY_KEY` lines.
+Ask then uses the bridge's `/gateway` route.
+
 Anyone holding your badge can read `secrets.py` in disk mode. Don't put a key
 there that you can't afford to lose. Prefer a bridge that adds the real gateway
 key on the server side and only takes a revocable token from the badge.
@@ -47,29 +51,25 @@ the gateway, the key was refused, the model isn't available to that key, the
 gateway is out of quota, or nothing came back within 45 seconds. Press Select to
 try again.
 
+## Installing
+
+Ask depends on the shared `inference` module in
+[`badge/lib`](../../lib/README.md), which the badge keeps in `/system/lib`.
+`deploy_app.py` copies it into `lib/` next to `apps/` on the `BADGER` drive
+along with the app. To copy by hand, copy both `apps/ask/` and
+`lib/inference.py`.
+
 ## For other apps
 
-`gateway.py` works on its own. It runs the request over the firmware's
-`fetch.AsyncFetch` a little each frame, so the screen keeps drawing while the
-model thinks, and it reuses the connection between questions:
+Ask is the reference app for the shared [`inference`](../../lib/README.md)
+module. Any app can use the same engine to ask an LLM a question:
 
 ```python
-import gateway
+import inference
 
-ai = gateway.Gateway(url, key, "claude-opus-5-5")
-ai.ask("Summarise this in one line: ...")
-
-def update():
-    if ai.update() == gateway.DONE:
-        screen.text(ai.answer, 10, 10)
-    elif ai.state == gateway.FAILED:
-        screen.text(ai.error, 10, 10)
+engine = inference.from_secrets()
+engine.ask("Summarise this in one line: ...")
 ```
 
-`ask(prompt, history)` takes earlier `{"role": ..., "content": ...}` messages
-for follow-up questions. Answers are folded into characters the badge fonts
-can draw, and markdown is stripped.
-
-In the simulators the firmware's fetch library isn't available. `gateway.py`
-falls back to a blocking `requests.post`, so it can only get real answers where
-the simulator has network access.
+Call `engine.update()` once a frame until it returns `inference.DONE` or
+`inference.FAILED`.

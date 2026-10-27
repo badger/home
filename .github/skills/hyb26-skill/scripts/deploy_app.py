@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Safely copy one badge app to a mounted BADGER volume."""
+"""Safely copy one badge app, and the shared badge/lib modules it imports, to a
+mounted BADGER volume."""
 
 from __future__ import annotations
 
 import argparse
+import ast
+import filecmp
 import getpass
 import importlib.util
 import os
@@ -109,6 +112,91 @@ def copy_app(source: Path, destination: Path) -> None:
             shutil.copy2(item, target)
 
 
+def imported_modules(path: Path) -> set[str]:
+    """Top-level module names a Python file or package folder imports."""
+    sources = [path] if path.is_file() else [
+        source for source in path.rglob("*.py") if included(source.relative_to(path))
+    ]
+    names: set[str] = set()
+    for source in sources:
+        try:
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue  # validate_app reports these
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                names.add(node.module.split(".")[0])
+    return names
+
+
+def shared_libs(app_dir: Path, repo_root: Path) -> list[Path]:
+    """badge/lib modules (files or packages) the app needs, including theirs."""
+    lib_root = repo_root / "badge" / "lib"
+    if not lib_root.is_dir():
+        return []
+    local = {path.stem for path in app_dir.glob("*.py")}
+    local.update(path.name for path in app_dir.iterdir() if path.is_dir())
+
+    def find(name: str) -> Path | None:
+        module, package = lib_root / f"{name}.py", lib_root / name
+        if module.is_file():
+            return module
+        if package.is_dir() and (package / "__init__.py").is_file():
+            return package
+        return None
+
+    found: dict[str, Path] = {}
+    pending = sorted(imported_modules(app_dir) - local)
+    while pending:
+        name = pending.pop()
+        lib = None if name in found else find(name)
+        if lib is not None:
+            found[name] = lib
+            pending.extend(sorted(imported_modules(lib) - found.keys()))
+    return [found[name] for name in sorted(found)]
+
+
+def same_content(source: Path, target: Path) -> bool:
+    if source.is_file():
+        return target.is_file() and filecmp.cmp(source, target, shallow=False)
+    if not target.is_dir():
+        return False
+    files = [path for path in source.rglob("*") if path.is_file() and included(path.relative_to(source))]
+    copied = [path for path in target.rglob("*") if path.is_file()]
+    return len(files) == len(copied) and all(
+        same_content(path, target / path.relative_to(source)) for path in files
+    )
+
+
+def install_shared_libs(libs: list[Path], lib_dir: Path, backup_root: Path) -> None:
+    """Copy each shared module into lib_dir, keeping a backup of any it changes."""
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    for lib in libs:
+        target = lib_dir / lib.name
+        if same_content(lib, target):
+            print(f"Shared {lib.name} is already up to date")
+            continue
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        staging = lib_dir / f".{lib.name}.staging"
+        if staging.is_dir():
+            shutil.rmtree(staging)
+        elif staging.exists():
+            staging.unlink()
+        if lib.is_file():
+            shutil.copy2(lib, staging)
+        else:
+            copy_app(lib, staging)
+        if target.exists():
+            backup_root.mkdir(exist_ok=True)
+            backup = backup_root / f"lib-{lib.name}-{timestamp}"
+            target.rename(backup)
+            print(f"Backed up existing shared {lib.name} to {backup}")
+        staging.rename(target)
+        print(f"Installed shared {lib.name} to {target}")
+
+
 def deploy(
     app_dir: Path,
     mount: Path,
@@ -147,15 +235,21 @@ def deploy(
         and not path.is_symlink()
         and included(path.relative_to(app_dir))
     ]
+    libs = shared_libs(app_dir, repo_root)
+    lib_dir = apps_dir.parent / "lib"
     print(f"{'Would deploy' if not write else 'Deploying'} {app_dir.name} to {destination}")
     for path in copied:
         print(f"  {path.relative_to(app_dir)}")
+    for lib in libs:
+        print(f"  shared: badge/lib/{lib.name} -> {lib_dir / lib.name}")
     if not write:
         print("Dry run only. Re-run with --write to copy files.")
         return destination
 
     staging_root = mount / ".badge-app-staging"
     backup_root = mount / ".badge-app-backups"
+    # shared modules first, so the app never lands without what it imports
+    install_shared_libs(libs, lib_dir, backup_root)
     staging = staging_root / app_dir.name
     if staging.exists():
         shutil.rmtree(staging)

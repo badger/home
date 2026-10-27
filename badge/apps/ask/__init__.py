@@ -17,19 +17,17 @@ import os
 import sys
 
 APP_DIR = "/system/apps/ask"
+LIB_DIR = "/system/lib"     # shared modules; see badge/lib/README.md
 os.chdir(APP_DIR)
 sys.path.insert(0, APP_DIR)
+if LIB_DIR not in sys.path:
+    sys.path.append(LIB_DIR)
 
 import missing_details  # noqa: E402
 
-import gateway  # noqa: E402
+import inference  # noqa: E402
 
-try:
-    import secrets
-except ImportError:
-    secrets = None
-
-MISSING = missing_details.missing("WIFI_SSID", "GATEWAY_URL")
+MISSING = missing_details.missing("WIFI_SSID") + inference.missing()
 if not MISSING:
     import wifi
 
@@ -85,19 +83,14 @@ BODY_ROWS = (HEIGHT - FOOTER_H - BODY_TOP - 4) // LINE_H
 LIST, CONNECTING, THINKING, ANSWER, FAILED = range(5)
 
 
-def setting(name):
-    return str(getattr(secrets, name, "") or "").strip()
-
-
-MODELS = [name.strip() for name in setting("GATEWAY_MODEL").split(",") if name.strip()]
-MODELS = MODELS or [gateway.DEFAULT_MODEL]
+MODELS = inference.models()
 
 client = None
 problem = None              # what is wrong with secrets.py, if anything
 if not MISSING:
     try:
-        client = gateway.Gateway(setting("GATEWAY_URL"), setting("GATEWAY_KEY"), MODELS[0])
-    except ValueError as reason:
+        client = inference.from_secrets(MODELS[0])
+    except inference.ConfigError as reason:
         problem = "%s\n\nFix it in secrets.py on the badge, then open Ask again." % reason
     else:
         # start the radio now so it has associated by the first question
@@ -306,7 +299,7 @@ def send():
 def answered():
     global mode, lines, top
     top = 0
-    if client.state == gateway.DONE:
+    if client.state == inference.DONE:
         lines = wrap(client.answer, BODY_W, BODY_SIZE)
         if client.truncated:
             lines[-1] += "..."
@@ -345,7 +338,7 @@ def update():
         if badge.pressed(BUTTON_BACK):
             client.cancel()
             mode = LIST
-        elif client.update() != gateway.BUSY:
+        elif client.update() != inference.BUSY:
             answered()
 
     elif mode == ANSWER:

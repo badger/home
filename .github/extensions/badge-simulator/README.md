@@ -71,7 +71,10 @@ you open a pull request.
 
 `extension.mjs` starts a loopback HTTP server for each canvas. The server
 hosts `web/`, sends the app's files to the page, and pushes reload events when
-they change. The page (`web/simulator.js`) runs the badge's MicroPython WASM
+they change. Shared modules from `badge/lib/` go along with every app. On the
+badge they are installed in `/system/lib`. The page only writes into the app's
+folder, so the simulator puts them there instead. A change in either place
+reloads the app. The page (`web/simulator.js`) runs the badge's MicroPython WASM
 runtime in a web worker and draws frames on the 3D model. Recordings stream
 changed frames from the page to the extension, and `media.mjs` encodes the GIF
 and PNGs without dependencies. Video comes from the browser's `MediaRecorder`.

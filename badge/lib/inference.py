@@ -1,15 +1,30 @@
-"""Ask an OpenAI-compatible chat gateway, such as CLIProxyAPI, from the badge.
+"""A shared inference engine for badge apps.
 
-    ai = Gateway("https://gateway.example:8317", key, "claude-opus-5-5")
-    ai.ask("Say hello")
-    while ai.update() == BUSY:   # once a frame
-        draw_waiting()
-    print(ai.answer or ai.error)
+It asks an OpenAI-compatible chat completions gateway (CLIProxyAPI, the badge
+bridge in front of it, or any other compatible server) a question without
+stalling the frame loop:
+
+    import sys
+    if "/system/lib" not in sys.path:
+        sys.path.append("/system/lib")
+    import inference
+
+    engine = inference.from_secrets()       # or inference.Engine(url, key, model)
+    engine.ask("Summarise this in one line: ...")
+
+    def update():
+        state = engine.update()             # once a frame
+        if state == inference.DONE:
+            screen.text(engine.answer, 10, 10)
+        elif state == inference.FAILED:
+            screen.text(engine.error, 10, 10)
 
 On the badge the request runs over the firmware's fetch.AsyncFetch, a little
-each frame, so the screen keeps drawing while the model thinks. Where that is
+each frame, and the connection is reused between questions. Where that is
 missing (the simulators) it falls back to a blocking requests.post, sent on the
 frame after ask() so a waiting screen can be drawn first.
+
+See badge/lib/README.md for the secrets.py settings and the full API.
 """
 
 import errno
@@ -20,6 +35,8 @@ try:
     import fetch
 except ImportError:
     fetch = None
+
+__version__ = "1.0.0"
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
@@ -77,10 +94,11 @@ def plain(text):
     return "\n".join(lines).strip()
 
 
-def endpoint(url):
+def endpoint(url, name="The gateway URL"):
     """Split a gateway URL into (tls, host, port, path) for chat completions.
 
     Takes the gateway's base URL, its /v1 URL, or the full chat completions URL.
+    name is what error messages call the URL, such as a secrets.py setting.
     """
     url = url.strip()
     if url.startswith("https://"):
@@ -88,16 +106,16 @@ def endpoint(url):
     elif url.startswith("http://"):
         tls, rest = False, url[7:]
     else:
-        raise ValueError("GATEWAY_URL must start with https:// or http://")
+        raise ValueError("%s must start with https:// or http://" % name)
 
     host_port, _, path = rest.partition("/")
     host, _, port = host_port.partition(":")
     if not host:
-        raise ValueError("GATEWAY_URL has no host name")
+        raise ValueError("%s has no host name" % name)
     try:
         port = int(port) if port else (443 if tls else 80)
     except ValueError:
-        raise ValueError("GATEWAY_URL has a bad port number") from None
+        raise ValueError("%s has a bad port number" % name) from None
 
     path = "/" + path.strip("/")
     if not path.endswith("/chat/completions"):
@@ -111,7 +129,7 @@ def _clip(text, length):
     return text if len(text) <= length else text[: length - 3].rstrip() + "..."
 
 
-def _problem(status, reply, raw, model):
+def _problem(status, reply, raw, engine):
     """Turn a gateway's error reply into a short message for the screen."""
     detail = ""
     if isinstance(reply, dict):
@@ -128,13 +146,13 @@ def _problem(status, reply, raw, model):
     detail = plain(detail)
 
     if status in (401, 403):
-        hint = "The gateway refused the key. Check GATEWAY_KEY."
+        hint = "The gateway refused the key. Check %s." % engine.key_name
     elif status == 404:
-        hint = "There is no chat endpoint at GATEWAY_URL."
+        hint = "There is no chat endpoint at %s." % engine.url_name
     elif status == 429:
         hint = "The gateway is out of quota for now. Try another model."
     elif status == 400 and "model" in detail.lower():
-        hint = "This key cannot use %s." % model
+        hint = "This key cannot use %s." % engine.model
     elif status and status >= 500:
         hint = "The gateway ran into a problem."
     else:
@@ -151,8 +169,64 @@ def _async_capable():
     return fetch is not None and hasattr(getattr(fetch, "AsyncFetch", None), "fetch")
 
 
-class Gateway:
-    """One chat completions conversation partner, one request at a time."""
+class ConfigError(ValueError):
+    """secrets.py has no usable gateway settings."""
+
+
+def _setting(name):
+    try:
+        import secrets
+    except ImportError:
+        return ""
+    return str(getattr(secrets, name, "") or "").strip()
+
+
+def settings():
+    """Where to send questions, from secrets.py: (url, key, url_name, key_name).
+
+    GATEWAY_URL and GATEWAY_KEY come first. Without them, a badge set up for the
+    badge bridge (BADGE_BRIDGE_URL and BADGE_BRIDGE_TOKEN) uses the bridge's
+    /gateway route, so one bridge configuration serves every app. The key always
+    comes from the same pair as the URL, so a bridge token is never sent to a
+    different gateway.
+    """
+    url = _setting("GATEWAY_URL")
+    if url:
+        return url, _setting("GATEWAY_KEY"), "GATEWAY_URL", "GATEWAY_KEY"
+    bridge = _setting("BADGE_BRIDGE_URL")
+    if bridge:
+        return bridge.rstrip("/") + "/gateway", _setting("BADGE_BRIDGE_TOKEN"), "BADGE_BRIDGE_URL", "BADGE_BRIDGE_TOKEN"
+    raise ConfigError("Set GATEWAY_URL (or BADGE_BRIDGE_URL) in secrets.py")
+
+
+def missing():
+    """secrets.py names to ask for with missing_details.show(), or []."""
+    return [] if _setting("GATEWAY_URL") or _setting("BADGE_BRIDGE_URL") else ["GATEWAY_URL"]
+
+
+def models():
+    """The models listed in GATEWAY_MODEL (comma-separated), or [DEFAULT_MODEL]."""
+    return [name.strip() for name in _setting("GATEWAY_MODEL").split(",") if name.strip()] or [DEFAULT_MODEL]
+
+
+def from_secrets(model=None, **options):
+    """An Engine set up from secrets.py. Raises ConfigError when it can't be.
+
+    model defaults to the first of models(); options go to Engine (system,
+    max_tokens, timeout).
+    """
+    url, key, url_name, key_name = settings()
+    try:
+        endpoint(url, url_name)
+    except ValueError as reason:
+        raise ConfigError(str(reason)) from None
+    engine = Engine(url, key, model or models()[0], **options)
+    engine.url_name, engine.key_name = url_name, key_name
+    return engine
+
+
+class Engine:
+    """Asks one chat completions gateway, one question at a time."""
 
     # max_tokens leaves room for the tokens a model like Opus spends before
     # it answers; 200 cut its 60-word answers short
@@ -165,6 +239,8 @@ class Gateway:
         self.system = system
         self.max_tokens = max_tokens
         self.timeout = timeout          # seconds without data before giving up
+        self.url_name = "the gateway URL"   # what error hints call the settings
+        self.key_name = "the gateway key"
 
         self.state = IDLE
         self.answer = None              # the last answer, as plain text
@@ -273,7 +349,7 @@ class Gateway:
             reply = None
 
         if status != 200:
-            self._fail(_problem(status, reply, raw, self.model))
+            self._fail(_problem(status, reply, raw, self))
             return
 
         try:

@@ -557,6 +557,88 @@ class SkillScriptTests(unittest.TestCase):
 
             self.assertTrue((destination / "__init__.py").is_file())
 
+    def make_shared_libs(self, root: Path) -> Path:
+        lib_root = root / "badge" / "lib"
+        (lib_root / "toolkit").mkdir(parents=True)
+        (lib_root / "README.md").write_text("# Shared\n", encoding="utf-8")
+        (lib_root / "inference.py").write_text("import json\nimport toolkit\n", encoding="utf-8")
+        (lib_root / "toolkit" / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (lib_root / "unused.py").write_text("VALUE = 2\n", encoding="utf-8")
+        return lib_root
+
+    def test_deploy_copies_shared_libs_the_app_imports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.make_shared_libs(root)
+            app_dir = scaffold_app.scaffold(
+                "demo", "Demo", root / "badge" / "apps"
+            )
+            source = (app_dir / "__init__.py").read_text(encoding="utf-8")
+            (app_dir / "__init__.py").write_text("import inference\n" + source, encoding="utf-8")
+            mount = root / "BADGER"
+            (mount / "apps").mkdir(parents=True)
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                deploy_app.deploy(app_dir, mount, False, False, root)
+            self.assertIn("shared: badge/lib/inference.py", output.getvalue())
+            self.assertIn("shared: badge/lib/toolkit", output.getvalue())
+            self.assertFalse((mount / "lib").exists())
+
+            with redirect_stdout(io.StringIO()):
+                deploy_app.deploy(app_dir, mount, True, False, root)
+
+            self.assertTrue((mount / "lib" / "inference.py").is_file())
+            self.assertTrue((mount / "lib" / "toolkit" / "__init__.py").is_file())
+            self.assertFalse((mount / "lib" / "unused.py").exists())
+            self.assertFalse((mount / "lib" / "README.md").exists())
+            self.assertTrue((mount / "apps" / "demo" / "__init__.py").is_file())
+
+    def test_deploy_backs_up_a_changed_shared_lib_and_skips_an_unchanged_one(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            lib_root = self.make_shared_libs(root)
+            app_dir = scaffold_app.scaffold(
+                "demo", "Demo", root / "badge" / "apps"
+            )
+            source = (app_dir / "__init__.py").read_text(encoding="utf-8")
+            (app_dir / "__init__.py").write_text("import inference\n" + source, encoding="utf-8")
+            mount = root / "BADGER"
+            (mount / "system" / "apps").mkdir(parents=True)
+            installed = mount / "system" / "lib"
+            (installed / "toolkit").mkdir(parents=True)
+            (installed / "inference.py").write_text("OLD = True\n", encoding="utf-8")
+            (installed / "toolkit" / "__init__.py").write_bytes(
+                (lib_root / "toolkit" / "__init__.py").read_bytes()
+            )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                deploy_app.deploy(app_dir, mount, True, False, root)
+
+            self.assertEqual(
+                (installed / "inference.py").read_text(encoding="utf-8"),
+                (lib_root / "inference.py").read_text(encoding="utf-8"),
+            )
+            backups = list((mount / ".badge-app-backups").glob("lib-inference.py-*"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(encoding="utf-8"), "OLD = True\n")
+            self.assertIn("Shared toolkit is already up to date", output.getvalue())
+            self.assertFalse(list((mount / ".badge-app-backups").glob("lib-toolkit-*")))
+
+    def test_deploy_prefers_an_apps_own_module_over_a_shared_one(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.make_shared_libs(root)
+            app_dir = scaffold_app.scaffold(
+                "demo", "Demo", root / "badge" / "apps"
+            )
+            (app_dir / "inference.py").write_text("LOCAL = True\n", encoding="utf-8")
+            source = (app_dir / "__init__.py").read_text(encoding="utf-8")
+            (app_dir / "__init__.py").write_text("import inference\n" + source, encoding="utf-8")
+
+            self.assertEqual(deploy_app.shared_libs(app_dir, root), [])
+
     def test_deploy_refuses_reserved_system_apps(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
