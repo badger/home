@@ -5,7 +5,8 @@ Modules here are shared by several badge apps. On the badge they live in
 
 ## Depending on a shared module
 
-Put `/system/lib` on the path before importing:
+The badge's default import path is `['', '.frozen', '/rom', '/rom/lib',
+'/lib']`. That doesn't include `/system/lib`, so add it before importing:
 
 ```python
 import sys
@@ -24,7 +25,8 @@ folder comes first on the path.
   backup of any module it changes. To copy by hand, put the module in `lib/`
   next to `apps/` on the `BADGER` drive.
 - **Simulator:** the Badge Simulator canvas sends `badge/lib` along with the
-  app, so dependent apps run there unchanged.
+  app, so dependent apps run there unchanged. It finds them even without the
+  `sys.path` line, so `validate_app.py` warns when an app leaves that line out.
 - **App store:** an app installed on its own, such as from the app store,
   doesn't bring its shared modules with it.
 
@@ -96,6 +98,55 @@ own `system=` for other jobs, such as summarising an app's status.
 `max_tokens=400` leaves room for models that think before answering. A
 starved model fails with "used up its N tokens before it answered" rather than
 an empty answer. The timeout counts seconds without any data.
+
+## `wifi_networks`: several Wi-Fi networks
+
+[`wifi_networks.py`](wifi_networks.py) lets the badge keep several Wi-Fi
+networks and join whichever is in range. The firmware's `wifi.connect()` only
+knows `WIFI_SSID`, and when it gives up it shows a full-screen error. A
+`Roamer` works differently:
+
+1. It tries the active network first.
+2. If that fails, it scans once and tries the other saved networks in range,
+   strongest first.
+3. The network that works becomes the active one, so apps that only know
+   `WIFI_SSID` join it next time.
+
+[Ask](../apps/ask/) is the reference app: it uses a `Roamer` to get online.
+
+```python
+roamer = wifi_networks.Roamer()
+
+def update():
+    if roamer.update() == wifi_networks.CONNECTED:   # call once a frame
+        ...                                          # online
+    else:
+        draw_text(roamer.status)                     # "Joining ...", or why it failed
+```
+
+| Setting | Meaning |
+| --- | --- |
+| `WIFI_SSID`, `WIFI_PASSWORD` | The active network, which every app joins |
+| `WIFI_NETWORKS` | The other saved networks, as `{"name": "password", ...}` |
+
+Names match whatever case the network broadcasts.
+
+| Name | What it does |
+| --- | --- |
+| `Roamer(try_seconds=15, remember=True)` | Joins a saved network a step at a time. `remember` makes the network that works the active one |
+| `roamer.update()` | Move it along; returns `CONNECTING`, `CONNECTED` or `FAILED`. A dropped connection starts it again |
+| `roamer.restart(only=None)` | Start over. `only` joins that one saved network |
+| `roamer.status`, `roamer.ssid`, `roamer.problems` | What it is doing (or why it failed), the network, and `(ssid, reason)` for each network that didn't work |
+| `saved()`, `active()`, `current()` | Saved networks as `(ssid, password)` pairs with the active one first, `WIFI_SSID`, and the network the radio is on |
+| `missing()` | `["WIFI_SSID"]` when no network is saved, for `missing_details.show()` |
+| `scan()`, `in_range(visible=None)` | Visible networks as `{ssid: rssi}` (blocks about a second), and the saved ones among them, strongest first |
+| `remember(ssid, password)` | Save a network and make it the active one |
+| `save_settings(values)` | Set values in the badge's `/secrets.py`, keeping the rest. The file is only replaced if it still loads |
+
+Don't call the firmware's `wifi.connect()` while a `Roamer` is joining. A
+roamer scans only when the active network fails, so most starts don't stall.
+
+## Simulators
 
 In the simulators the firmware's `fetch` isn't available, so `inference` falls
 back to a blocking `requests.post`. It sends that on the frame after `ask()`,

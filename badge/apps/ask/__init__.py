@@ -3,7 +3,8 @@ Ask your own AI gateway a question and read the answer on the badge.
 
 The badge has no keyboard, so you pick one of a few ready-made prompts. It goes
 to an OpenAI-compatible chat completions gateway, such as CLIProxyAPI, and the
-answer comes back as plain text. The gateway details come from secrets.py.
+answer comes back as plain text. The gateway details come from secrets.py, and
+it joins whichever saved Wi-Fi network is in range.
 
 Controls:
 * Up and down = Choose a prompt, or scroll an answer
@@ -26,10 +27,9 @@ if LIB_DIR not in sys.path:
 import missing_details  # noqa: E402
 
 import inference  # noqa: E402
+import wifi_networks  # noqa: E402
 
-MISSING = missing_details.missing("WIFI_SSID") + inference.missing()
-if not MISSING:
-    import wifi
+MISSING = wifi_networks.missing() + inference.missing()
 
 badge.mode(HIRES | VSYNC)
 screen.antialias = image.X2
@@ -45,11 +45,6 @@ PROMPTS = (
     ("Hot take", "Give me one playful, harmless hot take about software development."),
     ("Pep talk", "Give me a short, upbeat pep talk before I walk into my next conference session."),
 )
-
-# a short timeout so failures report quickly; retries set high enough that
-# wifi's own error card never appears and the connecting page keeps reporting
-WIFI_TIMEOUT = 10
-WIFI_RETRIES = 100000
 
 REPEAT_DELAY = 350          # ms a held button waits before repeating
 REPEAT_EVERY = 90           # ms between repeats
@@ -86,6 +81,7 @@ LIST, CONNECTING, THINKING, ANSWER, FAILED = range(5)
 MODELS = inference.models()
 
 client = None
+roamer = None               # joins a saved Wi-Fi network in the background
 problem = None              # what is wrong with secrets.py, if anything
 if not MISSING:
     try:
@@ -93,10 +89,11 @@ if not MISSING:
     except inference.ConfigError as reason:
         problem = "%s\n\nFix it in secrets.py on the badge, then open Ask again." % reason
     else:
-        # start the radio now so it has associated by the first question
-        wifi.connect(timeout=WIFI_TIMEOUT, retries=WIFI_RETRIES)
+        # start on the network now so it is ready by the first question
+        roamer = wifi_networks.Roamer()
 
 mode = FAILED if problem else LIST
+heading = None              # the FAILED page's title
 selected = 0
 model_index = 0
 lines = []                  # the answer or the error, wrapped to the screen
@@ -148,6 +145,14 @@ def stepped(button):
 def model_label():
     name = MODELS[model_index]
     return "< %s >" % name if len(MODELS) > 1 else name
+
+
+def wifi_label():
+    if roamer is None:
+        return ""
+    if roamer.connected:
+        return "Wi-Fi: %s" % roamer.ssid
+    return "No Wi-Fi" if roamer.state == wifi_networks.FAILED else "Finding Wi-Fi..."
 
 
 def draw_header(title):
@@ -202,7 +207,7 @@ def draw_list():
             screen.pen = muted
         screen.text(title, 22, y + 2, ROW_SIZE)
 
-    draw_footer("SELECT ask", "LEFT/RIGHT model" if len(MODELS) > 1 else "")
+    draw_footer("SELECT ask", "LEFT/RIGHT model" if len(MODELS) > 1 else wifi_label())
 
 
 def draw_waiting(heading, saying):
@@ -268,7 +273,7 @@ def draw_failed():
     draw_header(PROMPTS[selected][0] if client else "Ask")
     screen.font = typeface
     screen.pen = warning
-    screen.text("No answer" if client else "Check secrets.py", BODY_X, BODY_TOP, TITLE_SIZE)
+    screen.text(heading or ("No answer" if client else "Check secrets.py"), BODY_X, BODY_TOP, TITLE_SIZE)
     screen.pen = ink
     for row, line in enumerate(lines[:BODY_ROWS - 1]):
         screen.text(line, BODY_X, BODY_TOP + 28 + row * LINE_H, BODY_SIZE)
@@ -283,10 +288,19 @@ def ask():
     global mode, question
     client.model = MODELS[model_index]
     question = wrap(PROMPTS[selected][1], BODY_W, SMALL_SIZE)
-    if wifi.is_connected():
+    if roamer.connected:
         send()
     else:
+        if roamer.state == wifi_networks.FAILED:
+            roamer.restart()
         mode = CONNECTING
+
+
+def no_wifi():
+    global mode, lines, heading
+    heading = "No Wi-Fi"
+    lines = wrap(roamer.status, BODY_W, BODY_SIZE)
+    mode = FAILED
 
 
 def send():
@@ -297,8 +311,9 @@ def send():
 
 
 def answered():
-    global mode, lines, top
+    global mode, lines, top, heading
     top = 0
+    heading = None
     if client.state == inference.DONE:
         lines = wrap(client.answer, BODY_W, BODY_SIZE)
         if client.truncated:
@@ -316,6 +331,9 @@ def update():
         missing_details.show(MISSING, draw_list)
         return
 
+    if roamer is not None:
+        roamer.update()
+
     if mode == LIST:
         if stepped(BUTTON_UP):
             selected = (selected - 1) % len(PROMPTS)
@@ -331,8 +349,10 @@ def update():
     elif mode == CONNECTING:
         if badge.pressed(BUTTON_BACK):
             mode = LIST
-        elif wifi.connect():
+        elif roamer.connected:
             send()
+        elif roamer.state == wifi_networks.FAILED:
+            no_wifi()
 
     elif mode == THINKING:
         if badge.pressed(BUTTON_BACK):
@@ -360,11 +380,7 @@ def update():
     if mode == LIST:
         draw_list()
     elif mode == CONNECTING:
-        try:
-            saying = wifi.status()[1]
-        except (KeyError, IndexError):
-            saying = "Joining the network"
-        draw_waiting("Connecting to Wi-Fi...", saying)
+        draw_waiting("Connecting to Wi-Fi...", roamer.status)
     elif mode == THINKING:
         draw_waiting("Thinking...", "%s, %.1fs" % (client.model, (badge.ticks - asked_at) / 1000))
     elif mode == ANSWER:

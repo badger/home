@@ -26,6 +26,11 @@ A badge already set up for the badge bridge (`BADGE_BRIDGE_URL` and
 `BADGE_BRIDGE_TOKEN`) doesn't need the `GATEWAY_URL` and `GATEWAY_KEY` lines.
 Ask then uses the bridge's `/gateway` route.
 
+To use more than one Wi-Fi network, save the others too, for example
+`WIFI_NETWORKS = {"Office Guest": "its password"}`. Ask joins the active
+network if it can, and otherwise the strongest saved one in range. That network
+then becomes the active one for every app.
+
 Anyone holding your badge can read `secrets.py` in disk mode. Don't put a key
 there that you can't afford to lose. Prefer a bridge that adds the real gateway
 key on the server side and only takes a revocable token from the badge.
@@ -53,11 +58,11 @@ try again.
 
 ## Installing
 
-Ask depends on the shared `inference` module in
+Ask depends on the shared `inference` and `wifi_networks` modules in
 [`badge/lib`](../../lib/README.md), which the badge keeps in `/system/lib`.
-`deploy_app.py` copies it into `lib/` next to `apps/` on the `BADGER` drive
-along with the app. To copy by hand, copy both `apps/ask/` and
-`lib/inference.py`.
+`deploy_app.py` copies them into `lib/` next to `apps/` on the `BADGER` drive
+along with the app. To copy by hand, copy `apps/ask/`, `lib/inference.py` and
+`lib/wifi_networks.py`.
 
 ## For other apps
 
