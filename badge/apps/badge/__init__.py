@@ -34,7 +34,8 @@ NUDGE_SIZE = 17
 NUDGE_RECT = (176, 70, 136, 150)
 
 CONTRIB_URL = "https://github.com/{user}.contribs"
-USER_AVATAR = "https://wsrv.nl/?url=https://github.com/{user}.png&w=150&output=png"
+# The refresh query busts both the proxy cache and its upstream GitHub image request.
+USER_AVATAR = "https://wsrv.nl/?url=https://github.com/{user}.png%3Fbadge_refresh%3D{refresh}&w=150&output=png"
 DETAILS_URL = "https://api.github.com/users/{user}"
 
 CACHE_DIR = "/state"
@@ -64,6 +65,15 @@ TILE_STEP = 37
 GRAPH_TOP = (240 - GRAPH_DAYS * TILE_STEP) // 2
 PARALLAX_SHIFT = 8
 AVATAR_SIZE = 150
+PROFILE_AVATAR = 96
+
+STATS_VIEW = 0
+NAME_VIEW = 1
+PROFILE_VIEW = 2
+VIEW_COUNT = 3
+
+TITLE_SIZE = 72
+LINE_GAP = 4
 
 try:
     os.mkdir(CACHE_DIR)
@@ -152,8 +162,16 @@ class User:
         color.rgb(43, 105, 50),
     ]
 
+    SPIN_MS = 1000
+    SPIN_TURNS = 2
+    AVATAR_ACTIONS = ("flip", "clockwise", "pulse")
+    ROTATE_MS = 1200
+    PULSE_MS = 1800
+
     def __init__(self, handle):
         self.handle = handle
+        self.spin_start = None
+        self.avatar_action = "flip"
         self.tile = shape.rounded_rectangle(0, 0, TILE_SIZE, TILE_SIZE, 4)
         self.update()
 
@@ -163,6 +181,10 @@ class User:
         self.contribs = None
         self.contribution_data = None
         self.repos = None
+        self.created_at = None
+        self.company = None
+        self.best_day = None
+        self.years = None
         self.avatar = None
         self._download = None
         self._force_update = force_update
@@ -180,6 +202,8 @@ class User:
         self.handle = data["login"]
         self.followers = data["followers"]
         self.repos = data["public_repos"]
+        self.created_at = data.get("created_at")
+        self.company = data.get("company")
         del data
         gc.collect()
 
@@ -188,9 +212,17 @@ class User:
             data = json.load(f)
         self.contribs = data["total_contributions"]
         self.contribution_data = [[0 for _ in range(GRAPH_WEEKS)] for _ in range(GRAPH_DAYS)]
+        best_day = 0
         for week_index, week in enumerate(data["weeks"][:GRAPH_WEEKS]):
             for day, contribution in enumerate(week["contribution_days"][:GRAPH_DAYS]):
                 self.contribution_data[day][week_index] = contribution["level"]
+                best_day = max(best_day, int(contribution.get("count", 0)))
+        self.best_day = best_day
+        # Use the downloaded history's end date; the badge clock may be unset.
+        try:
+            self.years = account_years(self.created_at, data.get("to"))
+        except (TypeError, ValueError) as e:
+            print(f"Badge: could not calculate years on GitHub: {e}")
         del data
         gc.collect()
 
@@ -229,7 +261,8 @@ class User:
                 self.missing = missing_details.missing("WIFI_SSID")
                 if self.missing:
                     return label
-            self._download = Download(url.format(user=self.handle), file, self._force_update)
+            url = url.format(user=self.handle, refresh=random.getrandbits(32))
+            self._download = Download(url, file, self._force_update)
 
         if self._download.ready():
             self._download = None
@@ -283,33 +316,144 @@ class User:
                 self.tile.transform = mat3().translate(pos_x, y * TILE_STEP + offset_y)
                 screen.shape(self.tile)
 
-    def draw_avatar(self):
-        if self.avatar:
-            screen.blit(self.avatar, rect(10, 74, AVATAR_SIZE, AVATAR_SIZE))
+    def animate_avatar(self):
+        self.avatar_action = random.choice(User.AVATAR_ACTIONS)
+        self.spin_start = badge.ticks
+
+    def avatar_progress(self):
+        if self.spin_start is None:
+            return 1
+        duration = (User.ROTATE_MS if self.avatar_action == "clockwise" else
+                    User.PULSE_MS if self.avatar_action == "pulse" else User.SPIN_MS)
+        progress = (badge.ticks - self.spin_start) / duration
+        if progress >= 1:
+            self.spin_start = None
+            return 1
+        return progress
+
+    def avatar_spin_scale(self, progress):
+        # Horizontal scale for a coin-flip spin, matching the menu icon effect.
+        eased = 1 - (1 - progress) ** 2
+        return math.cos(eased * User.SPIN_TURNS * 2 * math.pi)
+
+    def draw_avatar(self, x, y, size):
+        if not self.avatar:
+            self.draw_spinner(x + size / 2, y + size / 2, size / AVATAR_SIZE)
             return
 
+        progress = self.avatar_progress()
+        if self.avatar_action == "clockwise" and progress < 1:
+            self.draw_rotated_avatar(x, y, size, progress * 360)
+            return
+        width = height = size
+        if progress < 1:
+            if self.avatar_action == "pulse":
+                width = height = size * (0.6 + 0.4 * math.cos(progress * 6 * math.pi))
+            else:
+                width = size * abs(self.avatar_spin_scale(progress))
+        if width >= 1:
+            screen.blit(self.avatar, rect(x + (size - width) / 2, y + (size - height) / 2, width, height))
+
+    def draw_rotated_avatar(self, x, y, size, angle):
+        # Shrink while turning so the rotated square stays inside the avatar area.
+        radians = math.radians(angle)
+        scale = size / self.avatar.width / (abs(math.cos(radians)) + abs(math.sin(radians)))
+        half = self.avatar.width / 2
+        outline = shape.rectangle(0, 0, self.avatar.width, self.avatar.height)
+        outline.transform = mat3().translate(x + size / 2, y + size / 2).rotate(angle).scale(scale, scale).translate(-half, -half)
+        screen.pen = brush.image(self.avatar, mat3())
+        screen.shape(outline)
+
+    def draw_spinner(self, cx, cy, scale):
         squircle = shape.squircle(0, 0, 20, 5)
         screen.pen = spinner
         for i in range(4):
             mul = math.sin(badge.ticks / 1000) * 14000
-            squircle.transform = mat3().translate(85, 149).rotate((badge.ticks + i * mul) / 40).scale(1 + i / 1.3)
+            squircle.transform = mat3().translate(cx, cy).rotate((badge.ticks + i * mul) / 40).scale((1 + i / 1.3) * scale)
             screen.shape(squircle)
 
-    def draw(self, status):
-        self.draw_graph()
+    def display_handle(self):
+        return "@" + self.handle if self.handle else ""
 
+    def display_company(self):
+        return (self.company or "").strip()
+
+    def draw(self, status, view=STATS_VIEW):
+        self.draw_graph()
         screen.font = mona_sans
+        if view == NAME_VIEW:
+            self.draw_name_view(status)
+        elif view == PROFILE_VIEW:
+            self.draw_profile_view(status)
+        else:
+            self.draw_stats_view(status)
+
+    def draw_stats_view(self, status):
         screen.pen = white
-        center_text(status or self.handle, 4, HANDLE_SIZE)
+        center_text(status or self.display_handle(), 4, HANDLE_SIZE)
 
         screen.pen = phosphor
         center_text(placeholder_if_none(self.name), 36, NAME_SIZE)
 
-        self.draw_stat("followers", self.followers, 176, 66)
-        self.draw_stat("contribs", self.contribs, 176, 124)
-        self.draw_stat("repos", self.repos, 176, 182)
+        self.draw_stat("Followers", self.followers, 176, 66)
+        self.draw_stat("Best Day", self.best_day, 176, 124)
+        self.draw_stat("Yrs on GH", self.years, 176, 182)
 
-        self.draw_avatar()
+        self.draw_avatar(10, 74, AVATAR_SIZE)
+
+    def draw_name_view(self, status):
+        # The username fills the width, with the full name below it.
+        lines = [(self.display_handle(), TITLE_SIZE, white),
+                 (placeholder_if_none(self.name), HANDLE_SIZE, phosphor)]
+        top = 32 if status else 0
+        draw_lines(lines, None, top + (screen.height - top) / 2, screen.width - 8)
+        if status:
+            screen.pen = white
+            center_text(status, 4, NAME_SIZE)
+
+    def draw_profile_view(self, status):
+        # Name and company sit beside the avatar; the username fills the space below.
+        self.draw_avatar(8, 8, PROFILE_AVATAR)
+        lines = [(placeholder_if_none(self.name), HANDLE_SIZE, phosphor)]
+        company = self.display_company()
+        if company:
+            lines.append((company, NAME_SIZE, faded))
+        left = 8 + PROFILE_AVATAR + 10
+        draw_lines(lines, left, 56, screen.width - left - 6)
+        draw_lines([(self.display_handle(), TITLE_SIZE, white)], None, 152, screen.width - 8)
+        if status:
+            screen.pen = white
+            center_text(status, 208, NAME_SIZE)
+
+
+def account_years(created_at, as_of):
+    created = tuple(int(part) for part in created_at[:10].split("-"))
+    current = tuple(int(part) for part in as_of[:10].split("-"))
+    if len(created) != 3 or len(current) != 3 or current < created:
+        raise ValueError("Invalid account or contribution date")
+    return current[0] - created[0] - (current[1:] < created[1:])
+
+
+def fit_text(text, max_width, size):
+    """Shrink the text size until it fits max_width; return the size and width."""
+    w, _ = screen.measure_text(text, font_size=size)
+    if w > max_width:
+        size = size * max_width / w
+        w = max_width
+    return size, w
+
+
+def draw_lines(lines, x, centre_y, max_width):
+    """Draw (text, size, pen) lines as a block centred on centre_y.
+
+    Lines are centred horizontally when x is None, otherwise left-aligned at x.
+    """
+    fitted = [(text,) + fit_text(text, max_width, size) + (pen,) for text, size, pen in lines]
+    y = centre_y - (sum(line[1] for line in fitted) + LINE_GAP * (len(fitted) - 1)) / 2
+    for text, size, w, pen in fitted:
+        screen.pen = pen
+        screen.text(text, screen.width / 2 - w / 2 if x is None else x, y, size)
+        y += size + LINE_GAP
 
 
 def center_text(text, y, size):
@@ -337,6 +481,7 @@ handle = setting("GITHUB_USERNAME")
 contact_name = setting("CONTACT_NAME")
 linkedin = linkedin_label(setting("CONTACT_LINKEDIN"))
 user = User(handle)
+view = STATS_VIEW
 badge_id = bytes(machine.unique_id())[:badgelink.ID_LEN]
 
 
@@ -368,6 +513,7 @@ def draw_simple(status):
 
 
 def update():
+    global view
     tilt.update()
 
     screen.pen = black
@@ -383,7 +529,13 @@ def update():
 
     status = user.fetch_step() if handle else None
     if user.loaded:
-        user.draw(status)
+        if badge.pressed(BUTTON_UP):
+            view = (view - 1) % VIEW_COUNT
+        if badge.pressed(BUTTON_DOWN):
+            view = (view + 1) % VIEW_COUNT
+        if badge.pressed(BUTTON_SELECT):
+            user.animate_avatar()
+        user.draw(status, view)
     else:
         draw_simple(status)
 
