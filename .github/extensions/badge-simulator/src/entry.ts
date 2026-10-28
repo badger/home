@@ -356,10 +356,18 @@ function setApps(apps: string[], selected: string | null) {
   deployButton.disabled = !selected
 }
 
+function setAppIdentity(payload: AppPayload | null) {
+  document.title = payload ? `Badge Simulator · ${payload.app}` : 'Badge Simulator'
+  const icon = payload?.files.find(file => file.path === 'icon.png')
+  const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+  if (favicon) favicon.href = icon ? `data:image/png;base64,${icon.data}` : 'data:,'
+}
+
 async function loadApp() {
   const response = await fetch('/api/app')
   if (response.status === 204) {
     current = null
+    setAppIdentity(null)
     deployButton.disabled = true
     startWorker()
     screen.getContext('2d')?.clearRect(0, 0, screen.width, screen.height)
@@ -369,6 +377,7 @@ async function loadApp() {
   }
   if (!response.ok) { setStatus(await response.text(), 'error'); return }
   const payload = await response.json() as AppPayload
+  setAppIdentity(payload)
   if (![...appSelect.options].some(option => option.value === payload.app)) appSelect.add(new Option(payload.app, payload.app))
   appSelect.value = payload.app
   deployButton.disabled = false
