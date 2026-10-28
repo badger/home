@@ -30,7 +30,6 @@ HANDLE_SIZE = 28
 NAME_SIZE = 16
 VALUE_SIZE = 28
 LABEL_SIZE = 14
-ROLE_SIZE = 13
 NUDGE_SIZE = 17
 NUDGE_RECT = (176, 70, 136, 150)
 
@@ -305,9 +304,6 @@ class User:
 
         screen.pen = phosphor
         center_text(placeholder_if_none(self.name), 36, NAME_SIZE)
-        if role:
-            screen.pen = faded
-            center_text(role, 54, ROLE_SIZE)
 
         self.draw_stat("followers", self.followers, 176, 66)
         self.draw_stat("contribs", self.contribs, 176, 124)
@@ -337,15 +333,8 @@ def linkedin_label(url):
     return path.rstrip("/")
 
 
-def role_label(title, company):
-    if title and company:
-        return title + ", " + company
-    return title or company
-
-
 handle = setting("GITHUB_USERNAME")
 contact_name = setting("CONTACT_NAME")
-role = role_label(setting("CONTACT_TITLE"), setting("CONTACT_COMPANY"))
 linkedin = linkedin_label(setting("CONTACT_LINKEDIN"))
 user = User(handle)
 badge_id = bytes(machine.unique_id())[:badgelink.ID_LEN]
@@ -355,20 +344,12 @@ def draw_simple(status):
     user.draw_graph()
     screen.font = mona_sans
     screen.pen = white
-    center_text(contact_name or handle or role or linkedin, 4, HANDLE_SIZE)
-    links = []
-    if handle and contact_name:
-        links.append("@" + handle)
-    if linkedin and (contact_name or handle):
-        links.append(linkedin)
+    center_text(contact_name or handle or linkedin, 4, HANDLE_SIZE)
     details = []
-    if role and (contact_name or handle):
-        details.append(role)
-    # Only two detail lines fit above the identicon, so share one for links.
-    if details and links:
-        details.append("  |  ".join(links))
-    else:
-        details.extend(links)
+    if handle and contact_name:
+        details.append("@" + handle)
+    if linkedin and (contact_name or handle):
+        details.append(linkedin)
     screen.pen = phosphor
     for index, line in enumerate(details):
         center_text(line, 36 + index * 18, NAME_SIZE)
@@ -392,7 +373,7 @@ def update():
     screen.pen = black
     screen.clear()
 
-    if not handle and not contact_name and not role and not linkedin:
+    if not handle and not contact_name and not linkedin:
         missing_details.show([], user.draw_graph, ("your name, GitHub username,", "and LinkedIn stub"))
         return
 

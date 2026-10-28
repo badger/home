@@ -18,10 +18,17 @@ back into the rain.
 
 ## Settings
 
-The app reads `CONTACT_NAME`, `CONTACT_TITLE`, `CONTACT_COMPANY` and
-`GITHUB_USERNAME`, which you can enter in the **Settings** app or add to
-`secrets.py` on the badge. Empty values are skipped; with none set, the app
-asks you to add your details in Settings.
+The app shows these values from `secrets.py` on the badge, in this order:
+
+| Key | Where to set it |
+| --- | --- |
+| `CONTACT_NAME` | **Settings** app (Contact Name) or `secrets.py` |
+| `CONTACT_TITLE` | `secrets.py`, for example `CONTACT_TITLE = "Badge Hacker"` |
+| `CONTACT_COMPANY` | `secrets.py`, for example `CONTACT_COMPANY = "Universe Labs"` |
+| `GITHUB_USERNAME` | **Settings** app (GitHub Username) or `secrets.py` |
+
+Empty values are skipped; with none set, the app asks you to add your details
+in Settings.
 
 No Wi-Fi or extra hardware is needed.
 

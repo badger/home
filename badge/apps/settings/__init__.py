@@ -16,8 +16,6 @@ FIELDS = (
     ("WIFI_PASSWORD", "WiFi Password", True),
     ("GITHUB_USERNAME", "GitHub Username", False),
     ("CONTACT_NAME", "Contact Name", False),
-    ("CONTACT_TITLE", "Job Title", False),
-    ("CONTACT_COMPANY", "Company", False),
     ("CONTACT_LINKEDIN", "LinkedIn Profile", False),
 )
 
