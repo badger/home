@@ -153,6 +153,134 @@ class PollenTests(unittest.TestCase):
         self.assertEqual(self.app["hint"], [])
         self.assertEqual(self.app["hint_remaining"], 0)
 
+    def test_tap_moves_one_step_and_holding_waits_before_repeating(self):
+        self.grid(("#######", "#.....#", "#######"))
+        player = self.app["Player"](1, 1)
+        self.pressed = {"RIGHT"}
+        self.held = {"RIGHT"}
+        self.assertTrue(player.update(self.builder.maze))
+        self.assertEqual((player.x, player.moves), (2, 1))
+        self.pressed = set()
+        self.held = {"RIGHT"}
+        self.badge.ticks_delta = 179
+        self.assertFalse(player.update(self.builder.maze))
+        self.badge.ticks_delta = 1
+        self.assertTrue(player.update(self.builder.maze))
+        self.assertEqual((player.x, player.moves), (3, 2))
+
+    def test_repeated_press_edge_during_hold_does_not_skip_repeat_delay(self):
+        self.grid(("#######", "#.....#", "#######"))
+        player = self.app["Player"](1, 1)
+        self.held = self.pressed = {"RIGHT"}
+        player.update(self.builder.maze)
+        self.badge.ticks_delta = 16
+        player.update(self.builder.maze)
+        self.assertEqual((player.x, player.moves), (2, 1))
+
+    def test_turn_and_release_allow_another_immediate_step(self):
+        self.grid(("#######", "#.....#", "#######"))
+        player = self.app["Player"](2, 1)
+        self.held = {"RIGHT"}
+        player.update(self.builder.maze)
+        self.held = {"LEFT"}
+        player.update(self.builder.maze)
+        self.assertEqual(player.x, 2)
+        self.held = set()
+        player.update(self.builder.maze)
+        self.held = {"LEFT"}
+        player.update(self.builder.maze)
+        self.assertEqual((player.x, player.moves), (1, 3))
+
+    def test_held_movement_matches_across_frame_rates(self):
+        for frame_ms in (10, 16, 40, 100):
+            maze = [[0] * 60]
+            player = self.app["Player"](0, 0)
+            self.held = {"RIGHT"}
+            player.update(maze)
+            elapsed = 0
+            while elapsed < 1800:
+                self.badge.ticks_delta = min(frame_ms, 1800 - elapsed)
+                elapsed += self.badge.ticks_delta
+                player.update(maze)
+            self.assertEqual((player.x, player.moves), (20, 20), frame_ms)
+
+    def test_wall_and_open_edge_do_not_count_as_moves(self):
+        for maze in ([[0, 16]], [[0]]):
+            player = self.app["Player"](0, 0)
+            self.held = {"RIGHT"}
+            self.assertFalse(player.update(maze))
+            self.badge.ticks_delta = 250
+            self.assertFalse(player.update(maze))
+            self.assertEqual((player.x, player.moves), (0, 0))
+
+    def test_slow_frame_stops_at_flower_and_pause_does_not_rush(self):
+        maze = [[0] * 60]
+        player = self.app["Player"](0, 0)
+        self.held = {"RIGHT"}
+        player.update(maze)
+        self.badge.ticks_delta = 10000
+        player.update(maze)
+        self.assertLessEqual(player.x, 3)
+        player.move_wait = 0
+        target = player.x + 1
+        player.update(maze, target=(target, 0))
+        self.assertEqual(player.x, target)
+
+    def test_late_levels_keep_readable_tiles_and_fit_below_header(self):
+        for width, height in ((320, 240), (160, 120)):
+            self.app["screen"].width = width
+            self.app["screen"].height = height
+            self.app["level"] = 10000
+            self.app["build_maze"]()
+            pitch = self.app["wall_separation"]
+            self.assertGreaterEqual(pitch, self.app["MIN_TILE_SIZE"])
+            self.assertGreaterEqual(self.app["offset_y"], self.app["HEADER_HEIGHT"])
+            self.assertLessEqual(self.app["offset_y"] + self.builder.grid_rows * pitch,
+                                 height - self.app["FOOTER_HEIGHT"] + 1)
+            self.assertLessEqual(self.app["offset_x"] + self.builder.grid_columns * pitch,
+                                 width + 1)
+
+    def test_hint_counter_and_move_counter_reset_for_next_level(self):
+        self.start()
+        self.tick(pressed=("SELECT",))
+        self.tick()
+        self.tick(pressed=("SELECT",))
+        self.assertEqual(self.app["hints_used"], 2)
+        self.app["player"].position(*self.app["goal"])
+        self.tick()
+        self.tick(pressed=("SELECT",))
+        self.assertEqual(self.app["hints_used"], 0)
+        self.assertEqual(self.app["player"].moves, 0)
+
+    def test_select_on_finishing_frame_does_not_skip_completion_card(self):
+        self.start()
+        self.app["player"].position(*self.app["goal"])
+        self.tick(pressed=("SELECT",))
+        self.assertTrue(self.app["complete"])
+        self.assertEqual(self.app["level"], 0)
+
+    def test_full_level_through_direction_inputs_and_continue(self):
+        self.app["level"] = 8
+        self.app["build_maze"]()
+        self.app["player"].position(*self.app["start"])
+        self.start()
+        player = self.app["player"]
+        route = self.builder.pollen_trail((player.x, player.y), self.app["goal"], 9999)
+        for cell in route:
+            direction = {(-1, 0): "LEFT", (1, 0): "RIGHT",
+                         (0, -1): "UP", (0, 1): "DOWN"}[
+                             cell[0] - player.x, cell[1] - player.y]
+            self.tick(held=(direction,))
+            self.assertEqual((player.x, player.y), cell)
+            self.tick()
+        self.assertTrue(self.app["complete"])
+        self.assertEqual(player.moves, len(route))
+        self.tick(pressed=("SELECT",))
+        self.assertEqual(self.app["level"], 9)
+        self.assertFalse(self.app["complete"])
+        self.assertEqual((player.x, player.y), self.app["start"])
+        self.assertEqual(player.moves, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

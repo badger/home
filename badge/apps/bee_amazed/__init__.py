@@ -1,6 +1,5 @@
 """
-A single player game demo. Navigate a set of mazes from the start (red) to the goal (green).
-Mazes get bigger / harder with each increase in level.
+Guide a bee through growing hedge mazes to reach the flower.
 
 Controls:
 * Direction controls = Move
@@ -54,6 +53,7 @@ WALL = color.rgb(127, 125, 244)
 BACKGROUND = image.load("assets/background.png")
 PATH = color.rgb((227 + 60) // 2, (231 + 57) // 2, (110 + 169) // 2)
 POLLEN = color.rgb(255, 210, 64)
+HUD = color.rgb(24, 47, 29)
 
 
 screen.pen = color.rgb(0, 0, 0)
@@ -77,6 +77,17 @@ DIFFICULT_SCALE = 0.5
 N, S, E, W = 1, 2, 4, 8
 HINT_STEPS = 6
 HINT_MS = 2500
+MOVE_DELAY_MS = 180
+MOVE_REPEAT_MS = 90
+HEADER_HEIGHT = 18
+FOOTER_HEIGHT = 16
+MIN_TILE_SIZE = 10
+MOVE_DIRECTIONS = (
+    (BUTTON_LEFT, -1, 0, W, E, "left"),
+    (BUTTON_RIGHT, 1, 0, E, W, "right"),
+    (BUTTON_UP, 0, -1, N, S, "up"),
+    (BUTTON_DOWN, 0, 1, S, N, "down"),
+)
 
 # Variables
 complete = False                                # Has the game been completed?
@@ -86,6 +97,7 @@ player = None
 builder = None
 hint = []
 hint_remaining = 0
+hints_used = 0
 
 
 # Classes
@@ -290,46 +302,60 @@ class MazeBuilder:
 
 class Player(object):
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.last_move = badge.ticks
-
-        self.current_animation = animations["right"]
+        self.position(x, y)
 
     def position(self, x, y):
         self.x = x
         self.y = y
+        self.moves = 0
+        self.direction = None
+        self.move_wait = 0
+        self.current_animation = animations["right"]
 
-    def update(self, maze):
+    def step(self, maze, direction):
+        _button, dx, dy, leaving, entering, animation = direction
+        nx, ny = self.x + dx, self.y + dy
+        if not (0 <= ny < len(maze) and 0 <= nx < len(maze[ny])):
+            return False
+        if maze[ny][nx] >> WALL_BITSHIFT:
+            return False
+        maze[self.y][self.x] |= leaving
+        self.x, self.y = nx, ny
+        maze[ny][nx] |= entering
+        self.current_animation = animations[animation]
+        self.moves += 1
+        return True
 
-        if badge.ticks - self.last_move > 20:
-            if badge.held(BUTTON_LEFT) and maze[self.y][self.x - 1] < (1 << WALL_BITSHIFT):
-                maze[self.y][self.x] |= W
-                self.x -= 1
-                maze[self.y][self.x] |= E
-                self.current_animation = animations["left"]
-                self.last_move = badge.ticks
+    def update(self, maze, target=None):
+        direction = None
+        for candidate in MOVE_DIRECTIONS:
+            if badge.held(candidate[0]):
+                direction = candidate
+                break
+        if direction is None:
+            self.direction = None
+            self.move_wait = 0
+            return False
 
-            elif badge.held(BUTTON_RIGHT) and maze[self.y][self.x + 1] < (1 << WALL_BITSHIFT):
-                maze[self.y][self.x] |= E
-                self.x += 1
-                maze[self.y][self.x] |= W
-                self.current_animation = animations["right"]
-                self.last_move = badge.ticks
+        # A tap or turn moves once immediately; holding repeats after a short
+        # delay. Use elapsed time so normal frame-rate changes do not alter speed.
+        if direction != self.direction:
+            self.direction = direction
+            self.move_wait = MOVE_DELAY_MS
+            return self.step(maze, direction)
 
-            elif badge.held(BUTTON_UP) and maze[self.y - 1][self.x] < (1 << WALL_BITSHIFT):
-                maze[self.y][self.x] |= N
-                self.y -= 1
-                maze[self.y][self.x] |= S
-                self.current_animation = animations["up"]
-                self.last_move = badge.ticks
-
-            elif badge.held(BUTTON_DOWN) and maze[self.y + 1][self.x] < (1 << WALL_BITSHIFT):
-                maze[self.y][self.x] |= S
-                self.y += 1
-                maze[self.y][self.x] |= N
-                self.current_animation = animations["down"]
-                self.last_move = badge.ticks
+        # Resuming after a long pause must not send the bee across the maze.
+        self.move_wait -= min(250, max(0, badge.ticks_delta))
+        moved = False
+        while self.move_wait <= 0:
+            self.move_wait += MOVE_REPEAT_MS
+            if not self.step(maze, direction):
+                self.move_wait = MOVE_REPEAT_MS
+                break
+            moved = True
+            if target is not None and (self.x, self.y) == target:
+                break
+        return moved
 
     def draw(self):
         image = self.current_animation.sprite(round(badge.ticks / 100) % BEE_FRAMES, 0)
@@ -346,22 +372,28 @@ def build_maze():
     global offset_y
     global start
     global goal
-    global hint, hint_remaining
+    global hint, hint_remaining, hints_used
 
     hint = []
     hint_remaining = 0
+    hints_used = 0
 
     difficulty = int(level * DIFFICULT_SCALE)
     width = random.randrange(MIN_MAZE_WIDTH, MAX_MAZE_WIDTH)
     height = random.randrange(MIN_MAZE_HEIGHT, MAX_MAZE_HEIGHT)
-    builder.build(width + difficulty, height + difficulty)
+    maze_height = screen.height - HEADER_HEIGHT - FOOTER_HEIGHT
+    # Keep even late-game mazes readable and bound generation / hint memory.
+    max_width = max(2, (screen.width // MIN_TILE_SIZE - 1) // 2)
+    max_height = max(2, (maze_height // MIN_TILE_SIZE - 1) // 2)
+    builder.build(min(width + difficulty, max_width),
+                  min(height + difficulty, max_height))
 
-    wall_separation = min(screen.height // builder.grid_rows,
+    wall_separation = min(maze_height // builder.grid_rows,
                           screen.width // builder.grid_columns)
     wall_size = wall_separation - WALL_GAP
 
     offset_x = (screen.width - (builder.grid_columns * wall_separation) + WALL_GAP) // 2
-    offset_y = (screen.height - (builder.grid_rows * wall_separation) + WALL_GAP) // 2
+    offset_y = HEADER_HEIGHT + (maze_height - builder.grid_rows * wall_separation + WALL_GAP) // 2
 
     start = Position(1, builder.grid_rows - 2)
     goal = Position(builder.grid_columns - 2, 1)
@@ -393,6 +425,28 @@ def draw_maze():
 
     # Draw the player
     player.draw()
+
+    draw_hud()
+
+
+def count_label(count, noun):
+    return "%d %s%s" % (count, noun, "" if count == 1 else "s")
+
+
+def draw_hud():
+    screen.pen = HUD
+    screen.rectangle(0, 0, screen.width, HEADER_HEIGHT)
+    screen.rectangle(0, screen.height - FOOTER_HEIGHT, screen.width, FOOTER_HEIGHT)
+    screen.font = small_font
+    shadow_text("LEVEL %d" % (level + 1), 6, 4)
+    moves = count_label(player.moves, "move")
+    width, _ = screen.measure_text(moves)
+    shadow_text(moves, screen.width - width - 6, 4)
+    text = "Follow the pollen!" if hint else "SELECT: pollen"
+    shadow_text(text, 6, screen.height - FOOTER_HEIGHT + 3)
+    count = count_label(hints_used, "hint")
+    width, _ = screen.measure_text(count)
+    shadow_text(count, screen.width - width - 6, screen.height - FOOTER_HEIGHT + 3)
 
 
 def shadow_text(text, x, y):
@@ -429,19 +483,21 @@ def intro():
         state = GameState.PLAYING
 
 
-def draw_complete_banner():
+def draw_complete_banner(allow_continue=True):
     global level, complete
 
     screen.pen = WINDOW_COLOR
-    screen.shape(shape.rounded_rectangle(10, CY - 24, screen.width - 20, 50, 5))
+    screen.shape(shape.rounded_rectangle(10, CY - 34, screen.width - 20, 72, 5))
 
     # Draw text
     screen.font = small_font
     screen.pen = WHITE
-    center_text(f"Level {level + 1} Complete!", CY - 15)
-    center_text("Press SELECT to continue", CY + 5)
+    center_text(f"Level {level + 1} Complete!", CY - 25)
+    center_text(count_label(player.moves, "move") + " / " +
+                count_label(hints_used, "hint"), CY - 5)
+    center_text("Press SELECT to continue", CY + 15)
 
-    if badge.pressed(BUTTON_SELECT):
+    if allow_continue and badge.pressed(BUTTON_SELECT):
         complete = False
         level += 1
         build_maze()
@@ -460,13 +516,14 @@ def init():
 
 def update():
     global complete, builder, player, level
-    global hint, hint_remaining
+    global hint, hint_remaining, hints_used
 
     if state == GameState.INTRO:
         intro()
         return
 
     if state == GameState.PLAYING:
+        was_complete = complete
 
         if not complete:
             hint_remaining = max(0, hint_remaining - badge.ticks_delta)
@@ -474,15 +531,15 @@ def update():
                 hint = []
 
             # Update the player's position in the maze
-            previous = (player.x, player.y)
-            player.update(builder.maze)
-            if previous != (player.x, player.y):
+            if player.update(builder.maze, goal):
                 hint = []
                 hint_remaining = 0
 
             if badge.pressed(BUTTON_SELECT):
                 hint = builder.pollen_trail((player.x, player.y), goal)
                 hint_remaining = HINT_MS
+                if hint:
+                    hints_used += 1
 
             # Check if any player has reached the goal position
             if player.x == goal.x and player.y == goal.y:
@@ -492,7 +549,7 @@ def update():
 
         draw_maze()
         if complete:
-            draw_complete_banner()
+            draw_complete_banner(allow_continue=was_complete)
 
 
 def on_exit():
