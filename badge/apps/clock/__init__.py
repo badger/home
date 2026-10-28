@@ -19,6 +19,8 @@ import ntptime
 from daylightsaving import DaylightSavingPolicy, DaylightSaving
 from usermessage import user_message, center_text, stretch_text
 from machine import RTC
+
+rtc = RTC()
 import math
 
 
@@ -142,7 +144,11 @@ regions = {
     "egypt": (0, 0, 4, 4, 0, 0, 10, 3, 24, 60),
     "chile": (1, 1, 9, 5, 24, 1, 4, 5, 24, 60),
     "australia": (1, 1, 10, 6, 2, 1, 4, 6, 3, 60),
-    "nz": (1, 0, 9, 6, 2, 1, 4, 6, 3, 60)
+    "nz": (1, 0, 9, 6, 2, 1, 4, 6, 3, 60),
+    # Mexico: abolished DST in 2022; fixed offset year-round.
+    # mins_difference = 0 makes the DST offset equal the standard offset,
+    # so the transition dates are irrelevant.
+    "mx": (0, 1, 1, 6, 0, 1, 12, 6, 0, 0),
 }
 
 
@@ -168,8 +174,8 @@ def update_time(region, timezone):
     t = time.mktime(time.gmtime())
     tm = time.gmtime(dst.localtime(t))
     RTC().datetime((tm[0], tm[1], tm[2], tm[6] + 1, tm[3], tm[4], tm[5], 0))
-    year, month, day, dow, hour, minute, second, dow = RTC().datetime()
-    rtc.datetime((year, month, day, hour, minute, second, dow))
+    year, month, day, dow, hour, minute, second, _subsec = RTC().datetime()
+    rtc.datetime((year, month, day, dow, hour, minute, second, 0))
 
     return True
 
@@ -179,6 +185,10 @@ def display_time():
     global clock_dots, numerals, background, foreground
 
     currenttime = rtc.datetime()
+    # Firmware RTC layout: (y, mo, d, wd, h, mi, s, sub). The app expects
+    # (y, mo, d, h, mi, s, wd, sub) — remap so hour/minute land at [3]/[4].
+    _t = currenttime
+    currenttime = (_t[0], _t[1], _t[2], _t[4], _t[5], _t[6], _t[3], 0)
 
     if state["clock_style"] == DisplayType.textclock:
         draw_text_clock(currenttime)
@@ -663,7 +673,11 @@ def write_settings():
 
 
 def init():
-    pass
+    # Eat the menu's launch button press so it doesn't leak into update()
+    # and trigger the SELECT NTP-sync path (and its WiFi timeout) on entry.
+    if badge.pressed(BUTTON_SELECT):
+        while badge.pressed() or badge.held():
+            badge.poll()
 
 
 def update():
