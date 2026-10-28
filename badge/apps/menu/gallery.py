@@ -4,6 +4,7 @@ GALLERY_DIR = "/system/apps/menu/photos"
 TILE_DIR = GALLERY_DIR + "/tiles"
 
 GALLERY = (
+    ("temple-square", 2, 1, 5, (160, 120, 0.55)),
     ("mona-quilt", 2, 1, 7, (185, 100, 0.55)),
     ("ducky-quilt", 2, 2, 10, (235, 142, 0.76)),
     ("mona-ducky-blue", 2, 1, 13, (160, 148, 0.5)),
