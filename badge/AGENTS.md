@@ -29,6 +29,7 @@ badge/
 ├── main.py
 ├── secrets.py
 ├── assets/
+├── lib/            # shared modules, /system/lib on the badge
 └── apps/
     └── my_app/
         ├── __init__.py
@@ -61,6 +62,15 @@ APP_DIR = "/system/apps/my_app"
 os.chdir(APP_DIR)
 sys.path.insert(0, APP_DIR)
 ```
+
+## Shared libraries
+
+Code that several apps use lives in `badge/lib/` and is installed to
+`/system/lib` on the badge. To use it, append `/system/lib` to `sys.path` and
+import the module. `deploy_app.py` copies the shared modules an app imports,
+and the Badge Simulator canvas sends them with the app. For LLM answers, use
+the shared `inference` module instead of writing another gateway client. See
+[`lib/README.md`](lib/README.md).
 
 ## Runtime-provided globals
 

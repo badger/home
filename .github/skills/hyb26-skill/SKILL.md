@@ -64,7 +64,9 @@ python "$scripts\badge_serial.py" eject
 
 `deploy_app.py` and `patch_menu_icons.py` preview by default; add `--write`
 only after reviewing the output. `deploy_app.py --replace` updates an existing
-app and keeps a backup in `.badge-app-backups`. Use `--repo-root` (or
+app and keeps a backup in `.badge-app-backups`. It also copies any shared
+modules the app imports from `badge/lib/` into `lib/` beside `apps/` (see
+`badge/lib/README.md`), backing up ones it changes. Use `--repo-root` (or
 `--apps-dir` for scaffolding) to choose a project explicitly. Never use the
 skill folder itself as the app project.
 
@@ -166,8 +168,10 @@ the behavior substantially. Then:
 7. Keep assets app-relative after `os.chdir("/system/apps/<name>")`. Load
    images once; prefer paletted PNGs and sprite sheets.
 8. Read `hardware/README.md` before raw GPIO, I2C, ADC, IR, or power work.
-9. Never put credentials in an app; never deploy or commit a filled
-   `secrets.py`. Do not modify unrelated apps or system files.
+9. For LLM answers, depend on the shared `inference` module in `badge/lib/`
+   (see `badge/lib/README.md`) instead of writing another gateway client.
+10. Never put credentials in an app; never deploy or commit a filled
+    `secrets.py`. Do not modify unrelated apps or system files.
 
 References: [app-contract.md](references/app-contract.md),
 [badgeware-api.md](references/badgeware-api.md),

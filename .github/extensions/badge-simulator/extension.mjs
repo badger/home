@@ -39,6 +39,7 @@ function repoRoot(ctx) {
     return resolve(extDir, "..", "..", "..");
 }
 const appsDir = (root) => join(root, "badge", "apps");
+const libDir = (root) => join(root, "badge", "lib");
 function listApps(root) {
     try {
         return readdirSync(appsDir(root), { withFileTypes: true })
@@ -57,6 +58,17 @@ function appFiles(dir, base = dir, out = []) {
         else if (entry.isFile()) out.push({ path: relative(base, full).split(sep).join("/"), data: readFileSync(full).toString("base64") });
     }
     return out;
+}
+// Shared modules in badge/lib are installed to /system/lib on the badge. The
+// page only writes files into the app's folder, so they go there instead; the
+// app's own folder is first on sys.path, so `import <module>` finds them the
+// same way. A module of the same name in the app wins, as it does on the badge.
+const moduleOf = (path) => path.split("/")[0].replace(/\.(py|mpy)$/, "");
+function withSharedLibs(root, files) {
+    if (!existsSync(libDir(root))) return files;
+    const taken = new Set(files.map((f) => moduleOf(f.path)));
+    const shared = appFiles(libDir(root)).filter((f) => !/^readme\.md$/i.test(f.path) && !taken.has(moduleOf(f.path)));
+    return files.concat(shared);
 }
 
 // ---- persisted selection --------------------------------------------------------
@@ -119,21 +131,32 @@ function broadcast(inst, event) {
 
 function watchApp(inst) {
     inst.watcher?.close();
-    inst.watcher = null;
+    inst.libWatcher?.close();
+    inst.watcher = inst.libWatcher = null;
     clearTimeout(inst.reloadTimer);
     if (!inst.app) return;
+    const changed = (_type, name) => {
+        if (name && String(name).split(/[\\/]/).some(ignoredFile)) return;
+        clearTimeout(inst.reloadTimer);
+        inst.reloadTimer = setTimeout(() => {
+            inst.revision++;
+            broadcast(inst, { type: "reload", app: inst.app, revision: inst.revision });
+        }, 300);
+    };
     try {
-        inst.watcher = watch(join(appsDir(inst.root), inst.app), { recursive: true }, (_type, name) => {
-            if (name && String(name).split(/[\\/]/).some(ignoredFile)) return;
-            clearTimeout(inst.reloadTimer);
-            inst.reloadTimer = setTimeout(() => {
-                inst.revision++;
-                broadcast(inst, { type: "reload", app: inst.app, revision: inst.revision });
-            }, 300);
-        });
+        inst.watcher = watch(join(appsDir(inst.root), inst.app), { recursive: true }, changed);
         inst.watcher.on("error", () => {});
     } catch (error) {
         session?.log(`badge-simulator: could not watch ${inst.app}: ${error.message}`, { level: "warning" });
+    }
+    // shared modules are sent with every app, so a change there reloads it too
+    if (existsSync(libDir(inst.root))) {
+        try {
+            inst.libWatcher = watch(libDir(inst.root), { recursive: true }, changed);
+            inst.libWatcher.on("error", () => {});
+        } catch (error) {
+            session?.log(`badge-simulator: could not watch badge/lib: ${error.message}`, { level: "warning" });
+        }
     }
 }
 
@@ -200,13 +223,24 @@ function lastError(inst) {
         if (frame) {
             const [, rawFile, lineNo, fn] = frame;
             const file = rawFile.replace(/^\/+/, "/");
-            const repoFile = file.startsWith("/system/") ? `badge/${file.slice("/system/".length)}` : null;
-            frames.push({ file, line: Number(lineNo), function: fn ?? null, repo_path: repoFile && existsSync(join(inst.root, repoFile)) ? `${repoFile}:${lineNo}` : null });
+            const repoFile = repoPathFor(inst, file);
+            frames.push({ file, line: Number(lineNo), function: fn ?? null, repo_path: repoFile ? `${repoFile}:${lineNo}` : null });
         } else if (offset > 0 && !/^\s/.test(line)) { message = line; break; }
         else if (offset === 0 && line.startsWith("- ERROR:")) message = line.slice(8).trim();
     }
     const inApp = [...frames].reverse().find((f) => f.repo_path?.startsWith(`badge/apps/${inst.app}/`)) ?? [...frames].reverse().find((f) => f.repo_path);
     return { message, location: inApp?.repo_path ?? null, frames, traceback: traceback.join("\n") };
+}
+
+// Map a simulator path to the repo file it came from. Shared modules are sent
+// into the app's folder (see withSharedLibs), so fall back to badge/lib.
+function repoPathFor(inst, file) {
+    if (!file.startsWith("/system/")) return null;
+    const repoFile = `badge/${file.slice("/system/".length)}`;
+    if (existsSync(join(inst.root, repoFile))) return repoFile;
+    const inApp = /^\/system\/apps\/[^/]+\/(.+)$/.exec(file);
+    const shared = inApp && `badge/lib/${inApp[1]}`;
+    return shared && existsSync(join(inst.root, shared)) ? shared : null;
 }
 
 function snapshot(inst) {
@@ -245,7 +279,7 @@ function deployPrompt(app) {
         "1. Run `mpremote devs` to find the badge port (USB `2e8a:1101`). Use only explicit `mpremote connect <port> ...` commands, one at a time; never run serial commands concurrently.",
         "2. While the badge is in serial mode, run the menu icon patch check from `hardware/USB_SERIAL.md` to see whether `/system/apps/menu/app.py` needs the repository's patched `app.py`.",
         "3. Put the badge into USB mass-storage mode with `mpremote connect <port> exec \"import powman; powman.reset_into_msc()\"` (the serial error as it reboots is expected) and wait for the `BADGER` volume. Its root is the badge's `/system`.",
-        `4. Copy the whole \`badge/apps/${app}\` directory into \`apps/\` on the volume (replacing any old copy), remove any \`.DS_Store\` or \`._*\` files, and confirm it matches with \`diff -rq\`. If step 2 showed the menu is unpatched, also copy \`badge/apps/menu/app.py\` to \`apps/menu/app.py\`. Do not change other system files.`,
+        `4. Copy the whole \`badge/apps/${app}\` directory into \`apps/\` on the volume (replacing any old copy), remove any \`.DS_Store\` or \`._*\` files, and confirm it matches with \`diff -rq\`. If the app imports shared modules from \`badge/lib/\` (see \`badge/lib/README.md\`), copy those into \`lib/\` next to \`apps/\` on the volume as well. If step 2 showed the menu is unpatched, also copy \`badge/apps/menu/app.py\` to \`apps/menu/app.py\`. Do not change other system files.`,
         `5. Eject the volume, wait for the serial port to return, reset the badge, and verify with \`mpremote connect <port> fs ls :/system/apps/${app}\`.`,
         "6. Finally reboot the badge with `mpremote connect <port> reset` so it is out of mass-storage, REPL, and any test mode and back at the normal menu. Report success only after this reboot.",
         "",
@@ -279,7 +313,7 @@ async function handle(inst, req, res) {
             if (!inst.app) { res.writeHead(204); return res.end(); }
             const dir = join(appsDir(inst.root), inst.app);
             if (!existsSync(join(dir, "__init__.py"))) return json(res, 404, { error: `badge/apps/${inst.app}/__init__.py not found` });
-            return json(res, 200, { app: inst.app, revision: inst.revision, files: appFiles(dir) });
+            return json(res, 200, { app: inst.app, revision: inst.revision, files: withSharedLibs(inst.root, appFiles(dir)) });
         }
         if (req.method === "POST" && path === "/api/record-frame") {
             const rec = inst.recordings.get(url.searchParams.get("id"));
@@ -346,7 +380,7 @@ async function startInstance(ctx) {
     const inst = {
         root, app: null, revision: 0, status: "Starting", state: "", log: [], logBase: 0,
         stats: null, statsAt: 0, waiters: new Set(), execs: new Map(), execCurrent: null,
-        clients: new Set(), statsBy: new Map(), screenshots: new Map(), recordings: new Map(), watcher: null, reloadTimer: null, server: null, url: "",
+        clients: new Set(), statsBy: new Map(), screenshots: new Map(), recordings: new Map(), watcher: null, libWatcher: null, reloadTimer: null, server: null, url: "",
     };
     const remembered = loadLastApp();
     if (remembered && listApps(root).includes(remembered)) inst.app = remembered;
@@ -809,6 +843,7 @@ session = await joinSession({
                 if (!inst) return;
                 instances.delete(ctx.instanceId);
                 inst.watcher?.close();
+                inst.libWatcher?.close();
                 inst.appsWatcher?.close();
                 clearTimeout(inst.reloadTimer);
                 for (const client of inst.clients) client.end();
