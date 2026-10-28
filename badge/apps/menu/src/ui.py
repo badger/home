@@ -1,4 +1,5 @@
 import math
+import time
 
 
 def shade(rgb, strength):
@@ -30,6 +31,7 @@ OS_X = 8
 TITLE_SLIDE_MS = 220
 TITLE_SLIDE_PX = 18
 BATTERY_MS = 1000
+STEPS_MS = 1000
 
 status_font = font.salty
 title_font = font.ignore
@@ -91,6 +93,33 @@ def draw_battery(right, top):
 
 
 status_count = (None, "", 0)
+# The firmware currently exposes the pedometer only on its shared IMU driver.
+step_reader = getattr(getattr(badge, "_imu", None), "get_step_count", None)
+steps = {"read_at": None, "label": "", "width": 0, "failed": False}
+
+
+def read_steps():
+    now = badge.ticks
+    if steps["read_at"] is None or time.ticks_diff(now, steps["read_at"]) >= STEPS_MS:
+        steps["read_at"] = now
+        count = None
+        if step_reader is None:
+            if not steps["failed"]:
+                print("Step counter unavailable: firmware has no IMU step API")
+            steps["failed"] = True
+        else:
+            try:
+                # The driver returns a signed value for the unsigned 16-bit counter.
+                count = step_reader() & 0xFFFF
+            except OSError as error:
+                if not steps["failed"]:
+                    print("Step counter read failed:", error)
+                steps["failed"] = True
+            else:
+                steps["failed"] = False
+        steps["label"] = "-- steps" if count is None else f"{count} steps"
+        steps["width"], _ = screen.measure_text(steps["label"])
+    return steps["label"], steps["width"]
 
 
 def draw_status(index, total, hidden=0.0):
@@ -107,7 +136,10 @@ def draw_status(index, total, hidden=0.0):
         status_count = ((index, total), count, x)
     screen.pen = dim_white
     screen.text(count, x, top)
-    draw_battery(320 - OS_X, top + 2)
+    battery_left = draw_battery(320 - OS_X, top + 2)
+    label, width = read_steps()
+    screen.pen = dim_white
+    screen.text(label, battery_left - 6 - width, top)
 
 
 def lowercase(text):
