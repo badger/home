@@ -31,12 +31,9 @@ class RotatedControlsTests(unittest.TestCase):
             rotate_180=lambda: self.rotated, poll=self.native_poll,
         )
         namespace = {"badge": self.device}
-        opposites = {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}
-        modules = {
-            "powman": SimpleNamespace(),
-            "badgeware.badge": SimpleNamespace(OPPOSITE_ACTION=opposites),
-        }
-        with patch.dict("sys.modules", modules):
+        namespace.update({"BUTTON_" + name: name for name in
+                          ("UP", "DOWN", "LEFT", "RIGHT")})
+        with patch.dict("sys.modules", {"powman": SimpleNamespace()}):
             exec(STARTUP, namespace)
 
     def native_poll(self):

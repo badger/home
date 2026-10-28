@@ -1,7 +1,13 @@
 # Play the cinematic on a normal power-on, but not on the watchdog reset used
 # to return to the launcher after an app exits.
 import powman
-from badgeware.badge import OPPOSITE_ACTION
+
+_opposite = {
+    BUTTON_UP: BUTTON_DOWN,
+    BUTTON_DOWN: BUTTON_UP,
+    BUTTON_LEFT: BUTTON_RIGHT,
+    BUTTON_RIGHT: BUTTON_LEFT,
+}
 
 _poll = badge.poll
 _held = set(badge.all.held())
@@ -13,7 +19,7 @@ def poll_controls():
     buttons = badge.buttons.held()
     # Touch controls already follow the display rotation; edge switches do not.
     if badge.rotate_180():
-        buttons = (OPPOSITE_ACTION.get(action, action) for action in buttons)
+        buttons = (_opposite.get(action, action) for action in buttons)
     held = set(buttons) | set(badge.pad.held())
     badge.all.set_state(held, held - _held, _held - held, held ^ _held)
     _held = held
