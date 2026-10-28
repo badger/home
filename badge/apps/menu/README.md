@@ -10,4 +10,4 @@ Photo widgets, including the supplied temple-square photo, appear among the app 
 
 ## Photo assets
 
-Photo widgets are listed in `gallery.py`. Each has a 320x240 full-screen PNG in `photos/` and a matching thumbnail in `photos/tiles/` (166x87 for a two-column, one-row widget). The temple-square photo is used with the user's confirmed permission, retains its supplied watermark, and is fitted without stretching in the full-screen view.
+Photo widgets are listed in `gallery.py`. Each has a 320x240 full-screen PNG in `photos/` and a matching thumbnail in `photos/tiles/` (166x87 for a two-column, one-row widget). The temple-square photo was supplied by @rayraycodes with confirmed permission for redistribution under the project's MIT license, retains its supplied watermark, and is fitted without stretching in the full-screen view.
