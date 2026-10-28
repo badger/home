@@ -2,6 +2,32 @@
 # to return to the launcher after an app exits.
 import powman
 
+_opposite = {
+    BUTTON_UP: BUTTON_DOWN,
+    BUTTON_DOWN: BUTTON_UP,
+    BUTTON_LEFT: BUTTON_RIGHT,
+    BUTTON_RIGHT: BUTTON_LEFT,
+}
+
+_poll = badge.poll
+_held = set(badge.all.held())
+
+
+def poll_controls():
+    global _held
+    result = _poll()
+    buttons = badge.buttons.held()
+    # Touch controls already follow the display rotation; edge switches do not.
+    if badge.rotate_180():
+        buttons = (_opposite.get(action, action) for action in buttons)
+    held = set(buttons) | set(badge.pad.held())
+    badge.all.set_state(held, held - _held, _held - held, held ^ _held)
+    _held = held
+    return result
+
+
+badge.poll = poll_controls
+
 wake_reason = powman.get_wake_reason()
 
 if wake_reason == powman.WAKE_DOUBLETAP:
