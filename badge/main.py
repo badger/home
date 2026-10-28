@@ -14,27 +14,43 @@ try:
 
     if _badge_mod is not None:
         _Badge = getattr(_badge_mod, "Badge", None)
+        _Controls = getattr(_badge_mod, "Controls", None)
         _opp = getattr(_badge_mod, "OPPOSITE_ACTION", None)
+
         if _Badge is not None and _opp is not None:
-            _orig_poll = _Badge.poll
+            def _make_inverter(orig_fn):
+                def _inverted(self, button=None):
+                    if button is not None:
+                        if self.rotate_180() and button in _opp:
+                            button = _opp[button]
+                        return orig_fn(self, button)
+                    res = orig_fn(self)
+                    if self.rotate_180():
+                        return tuple(_opp.get(_b, _b) for _b in res)
+                    return res
+                return _inverted
 
-            def _inverted_poll(self):
-                _res = _orig_poll(self)
-                if self.upside_down():
-                    for _ctrl in (self.buttons, self.pad, self.all):
-                        _ctrl._held = tuple(_opp.get(_a, _a) for _a in _ctrl._held)
-                        _ctrl._pressed = tuple(
-                            _opp.get(_a, _a) for _a in _ctrl._pressed
-                        )
-                        _ctrl._released = tuple(
-                            _opp.get(_a, _a) for _a in _ctrl._released
-                        )
-                        _ctrl._changed = tuple(
-                            _opp.get(_a, _a) for _a in _ctrl._changed
-                        )
-                return _res
+            for _method in ("pressed", "held", "released", "changed"):
+                if hasattr(_Badge, _method):
+                    setattr(_Badge, _method, _make_inverter(getattr(_Badge, _method)))
 
-            _Badge.poll = _inverted_poll
+        if _Controls is not None and _opp is not None:
+            def _make_ctrl_inverter(orig_fn):
+                def _ctrl_inverted(self, button=None):
+                    if button is not None:
+                        if badge.rotate_180() and button in _opp:
+                            button = _opp[button]
+                        return orig_fn(self, button)
+                    res = orig_fn(self)
+                    if badge.rotate_180():
+                        return tuple(_opp.get(_b, _b) for _b in res)
+                    return res
+                return _ctrl_inverted
+
+            for _method in ("pressed", "held", "released", "changed"):
+                if hasattr(_Controls, _method):
+                    setattr(_Controls, _method, _make_ctrl_inverter(getattr(_Controls, _method)))
+
 except Exception as error:  # noqa: BLE001
     print("orientation patch error:", error)
 
