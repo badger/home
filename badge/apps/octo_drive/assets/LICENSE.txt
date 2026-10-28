@@ -1,0 +1,8 @@
+players.png is copied from the Super Mona project:
+https://github.com/martinwoodward/super-mona
+
+The Mona sprites are derived from the Flappy Mona artwork in badger/home:
+https://github.com/badger/home
+
+The artwork is provided under the MIT License and is credited to Pimoroni and
+GitHub. See the repository root LICENSE file for the license text.
