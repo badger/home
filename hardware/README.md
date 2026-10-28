@@ -269,6 +269,9 @@ each logical action. Firmware orientation handling may also change the logical
 meaning of directional pads, so applications must not depend on CAP channel
 numbers.
 
+While the display is rotated, `badge/flip_buttons.py` also swaps the physical
+Up/Down and Left/Right switches so they match the rotated display.
+
 Application-level access is:
 
 ```python
