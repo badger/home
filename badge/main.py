@@ -1,3 +1,13 @@
+import sys
+
+sys.path.insert(0, "/system")
+try:
+    import flip_buttons
+    flip_buttons.install()
+except Exception as error:  # noqa: BLE001
+    print("flip_buttons unavailable:", error)
+sys.path.remove("/system")
+
 # Play the cinematic on a normal power-on, but not on the watchdog reset used
 # to return to the launcher after an app exits.
 import powman

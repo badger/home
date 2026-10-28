@@ -141,7 +141,12 @@ BUTTON_HOME
 ```
 
 The firmware uses the IMU and touch controller to keep the display and logical
-controls consistent when the badge is inverted. Do not swap controls based on
+controls consistent when the badge is inverted. While the display is rotated,
+`flip_buttons.py` (installed by `main.py`) also swaps the physical arrow
+buttons, so the physically uppermost one reports `BUTTON_UP` and the
+physically rightmost one `BUTTON_RIGHT`, matching the touch pad. This applies
+to `badge.pressed()`, `badge.held()`, `badge.released()`, `badge.direction()`
+and `badge.buttons`; `badge.pad` is unchanged. Do not swap controls based on
 physical A/B/C placement. Use `badge.upside_down()` only when the app genuinely
 needs to know the physical orientation.
 
