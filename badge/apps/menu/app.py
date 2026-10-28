@@ -12,6 +12,8 @@ TILES_PER_ROW = 4
 APP_ORDER = (
     "badge",
     "contacts",
+    "weather",
+    "headlines",
     "mona_paint",
     "flappy_mona",
     "snake",
@@ -132,7 +134,13 @@ class Animation:
         return self.shapes[index]
 
 
-def load_picture(path):
+def load_picture(path, slug=None):
+    # an app can override its icon by saving /state/<slug>_icon.png
+    if slug:
+        try:
+            return image.load(f"/state/{slug}_icon.png")
+        except (OSError, ValueError):
+            pass
     try:
         return image.load(f"{path}/{ICON_FILE}")
     except (OSError, ValueError):
@@ -200,7 +208,7 @@ class App(Tile):
         self.pattern = PATTERNS[(ordinal * 3) % len(PATTERNS)]
         self.icon_key = slug if slug in ICONS else "default"
         self.icon = build_icon(ICONS[self.icon_key])
-        self.picture = None if slug in ICONS else load_picture(path)
+        self.picture = None if slug in ICONS else         load_picture(path, slug)
         self.animation = None
         self.was_selected = False
         self.selected_at = 0
