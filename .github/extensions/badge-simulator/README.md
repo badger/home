@@ -20,6 +20,8 @@ Copilot loads it automatically for anyone who clones this repository.
   It finishes by rebooting the badge so it leaves mass-storage, REPL and test
   modes and returns to the menu.
 - **Theme**: follows the Copilot app's light or dark theme.
+- **Tab identity**: the browser title names the selected app, and its menu
+  `icon.png` is used as the favicon. Apps without an icon use a blank favicon.
 - **HOME** runs the app's `on_exit` and restarts it, because there is no menu.
 - **Output** shows `print()` output and tracebacks from MicroPython.
 
