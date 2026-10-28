@@ -7,6 +7,15 @@ import ui
 from gallery import GALLERY, crop, load_photo, tile_path
 from icons import ICONS
 
+# A shark fin and two waves for the pool game; works with the bundled icons.mpy.
+ICONS["mona_swim"] = (
+    (-0.24, 0.08, -0.05, -0.12, 0.12, -0.40, 0.14, -0.05, 0.28, 0.08),
+    (-0.44, 0.16, -0.24, 0.10, -0.04, 0.17, 0.16, 0.10, 0.44, 0.16,
+     0.44, 0.23, 0.16, 0.18, -0.04, 0.25, -0.24, 0.18, -0.44, 0.24),
+    (-0.44, 0.32, -0.24, 0.26, -0.04, 0.33, 0.16, 0.26, 0.44, 0.32,
+     0.44, 0.39, 0.16, 0.34, -0.04, 0.41, -0.24, 0.34, -0.44, 0.40),
+)
+
 TILES_PER_ROW = 4
 
 APP_ORDER = (
@@ -15,6 +24,7 @@ APP_ORDER = (
     "mona_paint",
     "flappy_mona",
     "snake",
+    "mona_swim",
     "mona_pet",
     "rogue",
     "life",
