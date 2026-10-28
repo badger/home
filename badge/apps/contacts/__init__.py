@@ -17,6 +17,7 @@ screen.antialias = image.X2
 GAME = "contacts"
 STATE_KEY = "contacts"
 BADGE_USER_FILE = "/state/badge_user.json"
+AVATAR_FILE = "/state/badge_avatar.png"
 
 OFFER_MS = 15000
 SWAP_MS = 8000
@@ -53,7 +54,13 @@ ROW_PITCH = ROW_HEIGHT + ROW_GAP
 LIST_TOP = 8
 VISIBLE_ROWS = 3
 QR_SIZE = 138
-CARD_HEIGHT = 70
+# The pairing art starts at y=88, so the card must end above it.
+CARD_TOP = 4
+CARD_HEIGHT = 78
+AVATAR_INSET = 4
+AVATAR_SIZE = CARD_HEIGHT - AVATAR_INSET * 2
+CARD_TEXT_X = MARGIN + AVATAR_INSET + AVATAR_SIZE + 10
+CARD_TEXT_WIDTH = WIDTH - MARGIN - 10 - CARD_TEXT_X
 
 PAIRING_X = 74
 PAIRING_Y = 138
@@ -91,13 +98,38 @@ def github_url(username):
     return "https://github.com/" + username if username else ""
 
 
-def badge_user_name():
+def badge_user():
     try:
         with open(BADGE_USER_FILE) as f:
             data = json.load(f)
-        return str(data.get("name") or data.get("login") or "")
     except (OSError, ValueError):
-        return ""
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def badge_user_name():
+    data = badge_user()
+    return str(data.get("name") or data.get("login") or "")
+
+
+def load_avatar(github):
+    # The Badge app caches the avatar of whichever GitHub user it fetched last.
+    login = str(badge_user().get("login") or "")
+    if github and login.lower() != github.lower():
+        return None
+    try:
+        source = image.load(AVATAR_FILE)
+    except (OSError, ValueError):
+        return None
+    avatar = image(AVATAR_SIZE, AVATAR_SIZE)
+    avatar.antialias = image.X4
+    avatar.blit(source, rect(0, 0, AVATAR_SIZE, AVATAR_SIZE), image.BILINEAR)
+    centre = AVATAR_SIZE / 2
+    avatar.pen = shade(PALETTE[0], BASE_STRENGTH)
+    avatar.shape(shape.arc(centre, centre, centre, AVATAR_SIZE, 0, 360))
+    avatar.pen = faint_white
+    avatar.shape(shape.arc(centre, centre, centre - 2, centre, 0, 360))
+    return avatar
 
 
 def my_card(fallback_name):
@@ -283,12 +315,14 @@ class Contacts:
     DONE = 3
     LIST = 4
     DETAIL = 5
+    MINE = 6
 
     def __init__(self):
         self.link = badgelink.Link(GAME)
         self.proximity = badgelink.Proximity(self.link)
         self.book = Book()
         self.card = my_card(self.link.name)
+        self.avatar = load_avatar(self.card["github"])
         self.mode = self.HOME
         self.mode_at = 0
         self.was_linked = False
@@ -355,7 +389,7 @@ class Contacts:
                 self.set_mode(self.HOME, now)
         elif self.mode == self.LIST:
             self.list_frame(now)
-        elif self.mode == self.DETAIL:
+        elif self.mode in (self.DETAIL, self.MINE):
             self.detail_frame(now)
         self.link.update()
 
@@ -378,6 +412,11 @@ class Contacts:
             self.cursor = 0
             self.top_row = 0
             self.set_mode(self.LIST, now)
+        elif badge.pressed(BUTTON_RIGHT) and self.card_ready:
+            self.proximity.clear()
+            self.link_index = 0
+            self.qr_url = None
+            self.set_mode(self.MINE, now)
         elif badge.pressed(BUTTON_BACK):
             reset()
 
@@ -423,12 +462,15 @@ class Contacts:
         elif badge.pressed(BUTTON_LEFT) or badge.pressed(BUTTON_BACK):
             self.set_mode(self.HOME, now)
 
+    def shown_card(self):
+        return self.card if self.mode == self.MINE else self.book.cards[self.cursor]
+
     def detail_frame(self, now):
-        links = card_links(self.book.cards[self.cursor])
+        links = card_links(self.shown_card())
         if badge.pressed(BUTTON_RIGHT) and len(links) > 1:
             self.link_index = (self.link_index + 1) % len(links)
         if badge.pressed(BUTTON_LEFT) or badge.pressed(BUTTON_BACK):
-            self.set_mode(self.LIST, now)
+            self.set_mode(self.HOME if self.mode == self.MINE else self.LIST, now)
             return
         url = links[self.link_index][1]
         if url != self.qr_url:
@@ -448,23 +490,27 @@ class Contacts:
             self.draw_done()
         elif self.mode == self.LIST:
             self.draw_list()
-        elif self.mode == self.DETAIL:
+        elif self.mode in (self.DETAIL, self.MINE):
             self.draw_detail()
 
     def draw_my_card(self, top):
         draw_tile(MARGIN, top, WIDTH - MARGIN * 2, CARD_HEIGHT, PALETTE[0], False)
-        badgelink.draw_identicon(screen, self.link.id, MARGIN + 8, top + 8, 55)
+        left = MARGIN + AVATAR_INSET
+        if self.avatar is not None:
+            screen.blit(self.avatar, vec2(left, top + AVATAR_INSET))
+        else:
+            badgelink.draw_identicon(screen, self.link.id, left, top + AVATAR_INSET, AVATAR_SIZE)
         screen.font = title_font
         screen.pen = white
-        screen.text(fit(self.card["name"], WIDTH - 90), MARGIN + 72, top + 6)
+        screen.text(fit(self.card["name"], CARD_TEXT_WIDTH), CARD_TEXT_X, top + 10)
         screen.font = body_font
         screen.pen = dim_white
         lines = [label + ": " + link_handle(label, url, self.card) for label, url in card_links(self.card)]
         for index, line in enumerate(lines or ["no links yet"]):
-            write(fit(line, WIDTH - 90, BODY_SIZE), MARGIN + 72, top + 32 + index * 17, BODY_SIZE)
+            write(fit(line, CARD_TEXT_WIDTH, BODY_SIZE), CARD_TEXT_X, top + 36 + index * 17, BODY_SIZE)
 
     def draw_home(self, now):
-        self.draw_my_card(LIST_TOP)
+        self.draw_my_card(CARD_TOP)
         if not self.card_ready:
             centred("add your details", 104, title_font, white)
             centred("GitHub or LinkedIn, in Settings", 136, body_font, dim_white, BODY_SIZE)
@@ -498,9 +544,15 @@ class Contacts:
             if subtitle:
                 column(subtitle, 154, body_font, dim_white, BODY_SIZE)
         count = len(self.book.cards)
+        pairs = []
         if count:
             draw_ribbon("%d contact%s" % (count, "" if count == 1 else "s"))
-            draw_hints(("view", (BUTTON_SELECT,)))
+            pairs.append(("view", (BUTTON_SELECT,)))
+        # A three-digit contact count reaches the centre hint.
+        if self.card_ready and count < 100:
+            pairs.append(("qr", (BUTTON_RIGHT,)))
+        if pairs:
+            draw_hints(*pairs)
 
     def draw_partner(self, status, pen):
         partner = self.link.partner
@@ -548,10 +600,10 @@ class Contacts:
         draw_hints(("show", (BUTTON_SELECT,)), ("back", (BUTTON_LEFT,)))
 
     def draw_detail(self):
-        card = self.book.cards[self.cursor]
+        card = self.shown_card()
         links = card_links(card)
         _, url = links[self.link_index]
-        if self.qr is not None:
+        if self.qr is not None and self.qr_url == url:
             screen.pen = white
             screen.rectangle((WIDTH - QR_SIZE) // 2 - 4, 4, QR_SIZE + 8, QR_SIZE + 8)
             screen.blit(self.qr, rect(0, 0, self.qr.width, self.qr.height), rect((WIDTH - QR_SIZE) // 2, 8, QR_SIZE, QR_SIZE))
