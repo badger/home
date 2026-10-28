@@ -3,11 +3,8 @@ A single player game demo. Navigate a set of mazes from the start (red) to the g
 Mazes get bigger / harder with each increase in level.
 
 Controls:
-* U = Move Forward
-* D = Move Backward
-* C = Move Right
-* A = Move left
-* B = Continue (once the current level is complete)
+* Direction controls = Move
+* SELECT = Show a short pollen trail, or start / continue
 """
 
 import os
@@ -56,6 +53,7 @@ WINDOW_COLOR = color.rgb(227, 231, 110, 125)
 WALL = color.rgb(127, 125, 244)
 BACKGROUND = image.load("assets/background.png")
 PATH = color.rgb((227 + 60) // 2, (231 + 57) // 2, (110 + 169) // 2)
+POLLEN = color.rgb(255, 210, 64)
 
 
 screen.pen = color.rgb(0, 0, 0)
@@ -77,6 +75,8 @@ WALL_BITSHIFT = 4
 TEXT_SHADOW = 2
 DIFFICULT_SCALE = 0.5
 N, S, E, W = 1, 2, 4, 8
+HINT_STEPS = 6
+HINT_MS = 2500
 
 # Variables
 complete = False                                # Has the game been completed?
@@ -84,6 +84,8 @@ level = 0                                       # The current "level" the player
 
 player = None
 builder = None
+hint = []
+hint_remaining = 0
 
 
 # Classes
@@ -232,6 +234,42 @@ class MazeBuilder:
     def maze_height(self):
         return (self.height * 2) + 1
 
+    def pollen_trail(self, start, goal, limit=HINT_STEPS):
+        """Find a few shortest-path steps without changing the player's trail."""
+        columns, rows = self.grid_columns, self.grid_rows
+        origin = start[1] * columns + start[0]
+        target = goal[1] * columns + goal[0]
+        directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
+        # Search back from the flower. Each byte points one step toward it;
+        # unlike a dict of coordinate tuples this keeps search memory small.
+        parents = bytearray(columns * rows)
+        parents[target] = 5
+        queue = [target]
+        head = 0
+        while head < len(queue) and not parents[origin]:
+            cell = queue[head]
+            head += 1
+            x, y = cell % columns, cell // columns
+            for direction, (dx, dy) in enumerate(directions):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < columns and 0 <= ny < rows):
+                    continue
+                neighbour = ny * columns + nx
+                # Low bits record where the bee has walked, not walls.
+                if parents[neighbour] or self.maze[ny][nx] >> WALL_BITSHIFT:
+                    continue
+                parents[neighbour] = (direction ^ 1) + 1
+                queue.append(neighbour)
+
+        trail = []
+        cell = origin
+        while parents[cell] and cell != target and len(trail) < limit:
+            dx, dy = directions[parents[cell] - 1]
+            cell += dx + dy * columns
+            trail.append((cell % columns, cell // columns))
+        return trail
+
     def draw(self):
         # Draw the maze we have built. Each '1' in the array represents a wall
         for y in range(self.grid_rows):
@@ -308,6 +346,10 @@ def build_maze():
     global offset_y
     global start
     global goal
+    global hint, hint_remaining
+
+    hint = []
+    hint_remaining = 0
 
     difficulty = int(level * DIFFICULT_SCALE)
     width = random.randrange(MIN_MAZE_WIDTH, MAX_MAZE_WIDTH)
@@ -335,6 +377,14 @@ def draw_maze():
 
     # Draw the maze walls
     builder.draw()
+
+    # Small pollen dots leave the hedge walls and the bee's own path visible.
+    screen.pen = POLLEN
+    dot = max(1, wall_size // 5)
+    for x, y in hint:
+        px = x * wall_separation + offset_x + (wall_size - dot) // 2
+        py = y * wall_separation + offset_y + (wall_size - dot) // 2
+        screen.rectangle(px, py, dot, dot)
 
     # Draw the goal location flower
     screen.blit(flower, rect(goal.x * wall_separation + offset_x,
@@ -368,6 +418,8 @@ def intro():
     # draw title
     screen.font = large_font
     center_text("Bee a-maze'd!", CY - 10)
+    screen.font = small_font
+    center_text("Stuck? SELECT shows pollen", CY + 40)
     # blink button message
     if int(badge.ticks / 500) % 2:
         screen.font = small_font
@@ -408,22 +460,37 @@ def init():
 
 def update():
     global complete, builder, player, level
+    global hint, hint_remaining
 
     if state == GameState.INTRO:
         intro()
+        return
 
     if state == GameState.PLAYING:
 
-        draw_maze()
-
         if not complete:
+            hint_remaining = max(0, hint_remaining - badge.ticks_delta)
+            if hint and not hint_remaining:
+                hint = []
+
             # Update the player's position in the maze
+            previous = (player.x, player.y)
             player.update(builder.maze)
+            if previous != (player.x, player.y):
+                hint = []
+                hint_remaining = 0
+
+            if badge.pressed(BUTTON_SELECT):
+                hint = builder.pollen_trail((player.x, player.y), goal)
+                hint_remaining = HINT_MS
 
             # Check if any player has reached the goal position
             if player.x == goal.x and player.y == goal.y:
                 complete = True
+                hint = []
+                hint_remaining = 0
 
+        draw_maze()
         if complete:
             draw_complete_banner()
 
