@@ -31,15 +31,3 @@ Empty values are skipped; with none set, the app asks you to add your details
 in Settings.
 
 No Wi-Fi or extra hardware is needed.
-
-## Performance
-
-The app is designed to stay light on the RP2350:
-
-- The framebuffer is kept between frames (`badge.default_clear = None`). Each
-  rain step draws one translucent rectangle to fade the trails and then only
-  each column's head glyph, so the cost does not grow with trail length.
-- Rain steps run on a fixed timer (about 18 per second by default) and frames
-  in between return straight away.
-- Column state lives in fixed-size lists allocated at startup; title layout is
-  computed once per detail rather than every frame.
