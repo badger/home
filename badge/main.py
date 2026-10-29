@@ -1,65 +1,53 @@
 # Play the cinematic on a normal power-on, but not on the watchdog reset used
 # to return to the launcher after an app exits.
 import powman
-import sys
 
-# Automatically invert directional controls when the badge is flipped upside down
-try:
-    _badge_mod = sys.modules.get(".frozen/badgeware/badge")
-    if _badge_mod is None:
-        try:
-            import badgeware.badge as _badge_mod
-        except ImportError:
-            _badge_mod = None
+_opposite = {
+    BUTTON_UP: BUTTON_DOWN,
+    BUTTON_DOWN: BUTTON_UP,
+    BUTTON_LEFT: BUTTON_RIGHT,
+    BUTTON_RIGHT: BUTTON_LEFT,
+}
 
-    if _badge_mod is not None:
-        _Badge = getattr(_badge_mod, "Badge", None)
-        _Controls = getattr(_badge_mod, "Controls", None)
-        _opp = getattr(_badge_mod, "OPPOSITE_ACTION", None)
+_poll = badge.poll
+_held = set(badge.all.held())
 
-        if _Badge is not None and _opp is not None:
-            def _make_inverter(orig_fn):
-                def _inverted(self, button=None):
-                    if button is not None:
-                        if self.rotate_180() and button in _opp:
-                            button = _opp[button]
-                        return orig_fn(self, button)
-                    res = orig_fn(self)
-                    if self.rotate_180():
-                        return tuple(_opp.get(_b, _b) for _b in res)
-                    return res
-                return _inverted
 
-            for _method in ("pressed", "held", "released", "changed"):
-                if hasattr(_Badge, _method):
-                    setattr(_Badge, _method, _make_inverter(getattr(_Badge, _method)))
+def poll_controls():
+    global _held
+    result = _poll()
+    buttons = badge.buttons.held()
+    # Touch controls already follow the display rotation; edge switches do not.
+    if badge.rotate_180():
+        buttons = (_opposite.get(action, action) for action in buttons)
+    held = set(buttons) | set(badge.pad.held())
+    badge.all.set_state(held, held - _held, _held - held, held ^ _held)
+    _held = held
+    return result
 
-        if _Controls is not None and _opp is not None:
-            def _make_ctrl_inverter(orig_fn):
-                def _ctrl_inverted(self, button=None):
-                    if button is not None:
-                        if badge.rotate_180() and button in _opp:
-                            button = _opp[button]
-                        return orig_fn(self, button)
-                    res = orig_fn(self)
-                    if badge.rotate_180():
-                        return tuple(_opp.get(_b, _b) for _b in res)
-                    return res
-                return _ctrl_inverted
 
-            for _method in ("pressed", "held", "released", "changed"):
-                if hasattr(_Controls, _method):
-                    setattr(_Controls, _method, _make_ctrl_inverter(getattr(_Controls, _method)))
-
-except Exception as error:  # noqa: BLE001
-    print("orientation patch error:", error)
+badge.poll = poll_controls
 
 wake_reason = powman.get_wake_reason()
 
 if wake_reason == powman.WAKE_DOUBLETAP:
     import _msc
 elif wake_reason != powman.WAKE_WATCHDOG:
-    launch("/system/apps/startup")
+    # Try /system/startup (standard firmware location) or /system/apps/startup
+    _startup_path = None
+    for _path in ("/system/startup", "/system/apps/startup"):
+        try:
+            if file_exists(_path):
+                _startup_path = _path
+                break
+        except Exception:
+            pass
+
+    if _startup_path is not None:
+        try:
+            launch(_startup_path)
+        except Exception as error:
+            print("startup cinematic error:", error)
 
 # Eat the wakeup button press to prevent it leaking into the menu
 badge.poll()
