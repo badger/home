@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 badge/.badge_state/**
 badge25/.badge_state/**
+
+# Pocket Emu app: never commit game ROMs, saves, or native build output
+badge/apps/pocket_emu/roms/*
+!badge/apps/pocket_emu/roms/.gitkeep
+tools/pocket_emu/build/
