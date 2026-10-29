@@ -19,8 +19,8 @@ class Policy:
             raise ValueError("month must be 1..12")
         if weekday not in range(7):
             raise ValueError("weekday must be 0..6")
-        if hour not in range(24):
-            raise ValueError("hour must be 0..23")
+        if hour not in range(25):
+            raise ValueError("hour must be 0..24")
         if timezone not in range(-780, 781):
             raise ValueError("timezone must be -780..780")
         self.hemisphere = hemisphere
@@ -99,15 +99,16 @@ class DaylightSaving:
 
     def localtime(self, utc):
         year = utime.gmtime(utc)[0]
-        dst = self.gettfromp(self.dstp, year)
-        std = self.gettfromp(self.stdp, year)
+        # Policies use local wall time before the change, comparisons use UTC.
+        dst = self.gettfromp(self.dstp, year) - self.stdp.timezone * 60
+        std = self.gettfromp(self.stdp, year) - self.dstp.timezone * 60
         saving = False
         if self.stdp.hemisphere:
             # Sourthern hemisphere
-            saving = utc > dst or utc < std
+            saving = utc >= dst or utc < std
         else:
             # Northern hemisphere
-            saving = utc > dst and utc < std
+            saving = utc >= dst and utc < std
         offset = self.dstp.timezone if saving else self.stdp.timezone
         return utc + (offset * 60)
 

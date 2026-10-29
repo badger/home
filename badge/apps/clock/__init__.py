@@ -11,14 +11,14 @@ os.chdir(APP_DIR)
 
 # Standalone bootstrap for module imports
 sys.path.insert(0, APP_DIR)
+sys.path.insert(0, "/system")
 
 
 from badgeware import State
 import time
-import ntptime
+import utc_clock
 from daylightsaving import DaylightSavingPolicy, DaylightSaving
 from usermessage import user_message, center_text, stretch_text
-from machine import RTC
 import math
 
 
@@ -35,6 +35,7 @@ class ClockState:
     ConnectWiFi = 1
     UpdateTime = 2
     FirstRun = 3
+    Error = 4
 
 
 secrets.require("REGION", "TIMEZONE")
@@ -146,31 +147,29 @@ regions = {
 }
 
 
-def update_time(region, timezone):
-    # Set the time with ntptime and pass it to the daylight saving calculator.
-    # Pass the result to the unit's RTC.
-
-    # handle time out during ntp comms
-    try:
-        ntptime.settime()
-        time.sleep(2)
-    except OSError:
-        return False
-
+def daylight_saving(region, timezone):
     timezone_minutes = timezone * 60
 
     hemisphere, week_in, month_in, weekday_in, hour_in, week_out, month_out, weekday_out, hour_out, mins_difference = regions[region]
+    if region == "eu":
+        # EU transitions are simultaneous at 01:00 UTC, not 01:00 local.
+        hour_in = timezone + 1
+        hour_out = timezone + 2
 
     dstp = DaylightSavingPolicy(hemisphere, week_in, month_in, weekday_in, hour_in, timezone_minutes + mins_difference)
     stdp = DaylightSavingPolicy(hemisphere, week_out, month_out, weekday_out, hour_out, timezone_minutes)
+    return DaylightSaving(dstp, stdp)
 
-    dst = DaylightSaving(dstp, stdp)
-    t = time.mktime(time.gmtime())
-    tm = time.gmtime(dst.localtime(t))
-    RTC().datetime((tm[0], tm[1], tm[2], tm[6] + 1, tm[3], tm[4], tm[5], 0))
-    year, month, day, dow, hour, minute, second, dow = RTC().datetime()
-    rtc.datetime((year, month, day, hour, minute, second, dow))
 
+display_zone = daylight_saving(REGION, TIMEZONE)
+
+
+def update_time(region, timezone):
+    try:
+        utc_clock.sync()
+    except (OSError, ValueError) as error:
+        print("Clock sync failed: " + str(error))
+        return False
     return True
 
 
@@ -178,7 +177,7 @@ def display_time():
     # Chooses which clock face to show based on the clock_style global.
     global clock_dots, numerals, background, foreground
 
-    currenttime = rtc.datetime()
+    currenttime = time.gmtime(display_zone.localtime(time.time()))
 
     if state["clock_style"] == DisplayType.textclock:
         draw_text_clock(currenttime)
@@ -705,8 +704,9 @@ def update():
             state["clock_style"] = 4
         write_settings()
 
-    # If the year in the RTC is 2021 or earlier, we need to sync so it has the same effect as pressing SELECT.
-    if badge.pressed(BUTTON_SELECT) or time.gmtime()[0] <= 2021 and clock_state == ClockState.Running:
+    # Old firmware and USB tools may have stored local time in a plausible RTC.
+    if ((badge.pressed(BUTTON_SELECT) and clock_state in (ClockState.Running, ClockState.Error))
+            or (not utc_clock.ready() and clock_state == ClockState.Running)):
         user_message("Updating...", ["Updating time", "from NTP server...", "Getting WiFi details..."])
         clock_state = ClockState.ConnectWiFi
 
@@ -726,12 +726,17 @@ def update():
         if update_time(REGION, TIMEZONE):
             clock_state = ClockState.Running
         else:
-            user_message("Error!", ["Unable to get time", "from NTP server."])
+            clock_state = ClockState.Error
 
     elif clock_state == ClockState.ConnectWiFi:
         user_message("Please Wait", ["Connecting to WiFi..."])
         if wifi.connect():
             clock_state = ClockState.UpdateTime
+        else:
+            clock_state = ClockState.Error
+
+    elif clock_state == ClockState.Error:
+        user_message("Sync failed", ["Check WiFi in Settings.", "SELECT to try again."])
 
 def on_exit():
     pass
