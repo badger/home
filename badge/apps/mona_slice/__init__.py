@@ -1,7 +1,7 @@
 import os
 import sys
 
-APP_DIR = "/system/apps/mona_jezzball"
+APP_DIR = "/system/apps/mona_slice"
 os.chdir(APP_DIR)
 sys.path.insert(0, APP_DIR)
 
@@ -36,7 +36,7 @@ GOLD = color.rgb(255, 220, 112)
 mona_sprites = image.load("assets/mona.png").spritesheet(7, 2)
 mona_left_sprites = image.load("assets/mona_left.png").spritesheet(7, 2)
 best = {"percent": 0, "level": 1}
-State.load("mona_jezzball", best)
+State.load("mona_slice", best)
 
 state = "title"
 grid = []
@@ -273,7 +273,7 @@ def finish_cut():
         state = "level_clear"
         if level > best["level"]:
             best["level"] = level
-            State.save("mona_jezzball", best)
+            State.save("mona_slice", best)
 
 
 def update_cut(dt):
@@ -363,7 +363,7 @@ def draw_board():
 
 def draw_hud():
     screen.pen = WHITE
-    screen.text("MONA JEZZBALL", 16, 8)
+    screen.text("MONA SLICE", 16, 8)
     screen.pen = MINT
     screen.text("LV %d  %d%%/%d%%" % (level, percent, GOAL), 166, 8)
     screen.pen = PINK
@@ -388,7 +388,7 @@ def draw_title():
     screen.shape(shape.circle(160, 74, 40))
     frame = int(badge.ticks / 115) % 7
     screen.blit(mona_sprites.sprite(frame, 0), vec2(148, 62))
-    centered_text("MONA JEZZBALL", 19, WHITE)
+    centered_text("MONA SLICE", 19, WHITE)
     centered_text("Snip the space. Keep Mona safe!", 122, MINT)
     centered_text("Carve off empty corners to claim them.", 146, WHITE)
     centered_text("Reach 75% before your paws run out.", 164, WHITE)
