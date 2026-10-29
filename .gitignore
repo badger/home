@@ -4,7 +4,7 @@ __pycache__/
 badge/.badge_state/**
 badge25/.badge_state/**
 
-# Game Boy app: never commit game ROMs, saves, or native build output
-badge/apps/game_boy/roms/*
-!badge/apps/game_boy/roms/.gitkeep
-tools/gameboy/build/
+# Pocket Emu app: never commit game ROMs, saves, or native build output
+badge/apps/pocket_emu/roms/*
+!badge/apps/pocket_emu/roms/.gitkeep
+tools/pocket_emu/build/

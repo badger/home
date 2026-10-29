@@ -5,7 +5,7 @@ import time
 
 import machine
 
-APP_DIR = "/system/apps/game_boy"
+APP_DIR = "/system/apps/pocket_emu"
 
 os.chdir(APP_DIR)
 sys.path.insert(0, APP_DIR)
@@ -17,7 +17,7 @@ badge.default_clear = None
 screen.antialias = image.OFF
 
 ROM_DIR = "roms"
-SAVE_DIR = "/state/game_boy"
+SAVE_DIR = "/state/pocket_emu"
 GB_FPS = 59.7275
 MAX_CATCH_UP = 6
 SAVE_IDLE_MS = 1000
@@ -36,7 +36,7 @@ ON_ACCENT = color.rgb(0, 0, 0)
 WARN = color.rgb(255, 140, 120)
 DIM = color.rgb(0, 0, 0, 150)
 
-# Joypad bits and draw modes, matching tools/gameboy/gbcore.c.
+# Joypad bits and draw modes, matching tools/pocket_emu/gbcore.c.
 GB_A, GB_B, GB_SELECT, GB_START = 0x01, 0x02, 0x04, 0x08
 GB_RIGHT, GB_LEFT, GB_UP, GB_DOWN = 0x10, 0x20, 0x40, 0x80
 MODE_1X, MODE_SHARP, MODE_SMOOTH = 0, 1, 2
@@ -50,36 +50,36 @@ DIRECT = (
     (BUTTON_BACK, GB_B),
 )
 
-# Game Boy Color boot-ROM style palettes (OBJ0, OBJ1, BG) in RGB555, keyed by
-# the title checksum. Values come from Peanut-GB's SDL example (MIT licence).
-GBC_PALETTES = {}
+# Per-game colour palettes (OBJ0, OBJ1, BG) in RGB555, keyed by the ROM's
+# title checksum. Values come from Peanut-GB's SDL example (MIT licence).
+AUTO_PALETTES = {}
 
 
-def _gbc(keys, obj0, obj1, bg):
+def _auto(keys, obj0, obj1, bg):
     for key in keys:
-        GBC_PALETTES[key] = (obj0, obj1, bg)
+        AUTO_PALETTES[key] = (obj0, obj1, bg)
 
 
-_gbc((0x71, 0xFF), (0x7FFF, 0x7E60, 0x7C00, 0x0000), (0x7FFF, 0x7E60, 0x7C00, 0x0000), (0x7FFF, 0x7E60, 0x7C00, 0x0000))
-_gbc((0x15, 0xDB, 0x95), (0x7FFF, 0x7FE0, 0x7C00, 0x0000), (0x7FFF, 0x7FE0, 0x7C00, 0x0000), (0x7FFF, 0x7FE0, 0x7C00, 0x0000))
-_gbc((0x19,), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x7E60, 0x7C00, 0x0000))
-_gbc((0x61, 0x45, 0xD8), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x329F, 0x001F, 0x0000), (0x7FFF, 0x329F, 0x001F, 0x0000))
-_gbc((0x14,), (0x7FFF, 0x3FE6, 0x0200, 0x0000), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x7E10, 0x48E7, 0x0000))
-_gbc((0x8B,), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x329F, 0x001F, 0x0000), (0x7FFF, 0x3FE6, 0x0200, 0x0000))
-_gbc((0x27, 0x49, 0x5C, 0xB3), (0x7D8A, 0x6800, 0x3000, 0x0000), (0x001F, 0x7FFF, 0x7FEF, 0x021F), (0x527F, 0x7FE0, 0x0180, 0x0000))
-_gbc((0x18, 0x6A, 0x4B, 0x6B), (0x7F08, 0x7F40, 0x48E0, 0x2400), (0x7FFF, 0x2EFF, 0x7C00, 0x001F), (0x7FFF, 0x463B, 0x2951, 0x0000))
-_gbc((0x70,), (0x7FFF, 0x03E0, 0x1A00, 0x0120), (0x7FFF, 0x329F, 0x001F, 0x001F), (0x7FFF, 0x7E10, 0x48E7, 0x0000))
-_gbc((0x01, 0x10, 0x29, 0x52, 0x5D, 0x68, 0x6D, 0xF6), (0x7FFF, 0x329F, 0x001F, 0x0000), (0x7FFF, 0x3FE6, 0x0200, 0x0000), (0x7FFF, 0x7EAC, 0x40C0, 0x0000))
+_auto((0x71, 0xFF), (0x7FFF, 0x7E60, 0x7C00, 0x0000), (0x7FFF, 0x7E60, 0x7C00, 0x0000), (0x7FFF, 0x7E60, 0x7C00, 0x0000))
+_auto((0x15, 0xDB, 0x95), (0x7FFF, 0x7FE0, 0x7C00, 0x0000), (0x7FFF, 0x7FE0, 0x7C00, 0x0000), (0x7FFF, 0x7FE0, 0x7C00, 0x0000))
+_auto((0x19,), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x7E60, 0x7C00, 0x0000))
+_auto((0x61, 0x45, 0xD8), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x329F, 0x001F, 0x0000), (0x7FFF, 0x329F, 0x001F, 0x0000))
+_auto((0x14,), (0x7FFF, 0x3FE6, 0x0200, 0x0000), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x7E10, 0x48E7, 0x0000))
+_auto((0x8B,), (0x7FFF, 0x7E10, 0x48E7, 0x0000), (0x7FFF, 0x329F, 0x001F, 0x0000), (0x7FFF, 0x3FE6, 0x0200, 0x0000))
+_auto((0x27, 0x49, 0x5C, 0xB3), (0x7D8A, 0x6800, 0x3000, 0x0000), (0x001F, 0x7FFF, 0x7FEF, 0x021F), (0x527F, 0x7FE0, 0x0180, 0x0000))
+_auto((0x18, 0x6A, 0x4B, 0x6B), (0x7F08, 0x7F40, 0x48E0, 0x2400), (0x7FFF, 0x2EFF, 0x7C00, 0x001F), (0x7FFF, 0x463B, 0x2951, 0x0000))
+_auto((0x70,), (0x7FFF, 0x03E0, 0x1A00, 0x0120), (0x7FFF, 0x329F, 0x001F, 0x001F), (0x7FFF, 0x7E10, 0x48E7, 0x0000))
+_auto((0x01, 0x10, 0x29, 0x52, 0x5D, 0x68, 0x6D, 0xF6), (0x7FFF, 0x329F, 0x001F, 0x0000), (0x7FFF, 0x3FE6, 0x0200, 0x0000), (0x7FFF, 0x7EAC, 0x40C0, 0x0000))
 
 GREEN = (0xE0F8D0, 0x88C070, 0x346856, 0x081820)
 GREY = (0xFFFFFF, 0xA8A8A8, 0x545454, 0x000000)
 
-PALETTES = ("Game Boy Color", "Original green", "Grey")
+PALETTES = ("Auto colour", "Classic green", "Grey")
 PIXELS = (("Sharp", MODE_SHARP), ("Smooth", MODE_SMOOTH), ("Original size", MODE_1X))
 SPEEDS = (("Normal", 1), ("Fast (2x)", 2))
 
 settings = {"palette": 0, "pixels": 0, "speed": 0, "last": ""}
-State.load("game_boy", settings)
+State.load("pocket_emu", settings)
 for key, options in (("palette", PALETTES), ("pixels", PIXELS), ("speed", SPEEDS)):
     if not isinstance(settings.get(key), int) or not 0 <= settings[key] < len(options):
         settings[key] = 0
@@ -145,7 +145,7 @@ def pack(colours):
 def palette_bytes():
     choice = settings["palette"]
     if choice == 0:
-        sets = GBC_PALETTES.get(core.colour_hash())
+        sets = AUTO_PALETTES.get(core.colour_hash())
         if sets:
             return pack([rgb555(c) for group in sets for c in group])
         shades = GREY
@@ -236,7 +236,7 @@ def write_save():
         os.rename(temp, save_path)
         toast = "SAVED"
     except OSError as error:
-        print("game_boy: save failed", error)
+        print("pocket_emu: save failed", error)
         toast = "SAVE!"
     toast_at = badge.ticks
     toast_drawn = False
@@ -255,7 +255,7 @@ def read_save(name):
 
 def save_due(now):
     # Writing a save stalls the badge for about half a second. Large saves whose
-    # only changes are in bank 0 (Pokemon uses it as scratch space for sprites)
+    # only changes are in bank 0 (some games use it as scratch space for sprites)
     # are written at most once a minute; real save data goes out promptly.
     if not unsaved or now - ram_changed_at < SAVE_IDLE_MS:
         return False
@@ -303,10 +303,10 @@ def load(name):
         return
 
     if len(rom) < 0x150:
-        fail("This file is too small", "to be a Game Boy game.")
+        fail("This file is too small", "to be a game ROM.")
         return
     if rom[0x143] == 0xC0:
-        fail(pretty(name), "only runs on a Game Boy Color,", "which this emulator cannot run.")
+        fail(pretty(name), "is a colour-only game,", "which this emulator cannot run.")
         return
 
     result = core.load(rom)
@@ -329,7 +329,7 @@ def load(name):
 
     apply_settings()
     settings["last"] = name
-    State.save("game_boy", settings)
+    State.save("pocket_emu", settings)
 
     owed = 0.0
     unsaved = False
@@ -490,7 +490,7 @@ def change_setting(index, step):
 
 def resume():
     global mode, need_border, owed
-    State.save("game_boy", settings)
+    State.save("pocket_emu", settings)
     mode = Mode.PLAY
     need_border = True
     owed = 0.0
@@ -523,7 +523,7 @@ def pause():
             resume()
             return
         if pause_index == len(PAUSE_ITEMS) - 1:
-            State.save("game_boy", settings)
+            State.save("pocket_emu", settings)
             quit_app()
             return
         change_setting(pause_index, 1)
@@ -569,7 +569,7 @@ def draw_picker():
     fill(BORDER)
 
     screen.font = font.ziplock
-    centred("Game Boy", 8, ACCENT)
+    centred("Pocket Emu", 8, ACCENT)
     screen.font = font.sins
 
     if not roms:
@@ -577,7 +577,7 @@ def draw_picker():
             "No games found.",
             "",
             "Copy your .gb game files to",
-            "apps/game_boy/roms on the",
+            "apps/pocket_emu/roms on the",
             "BADGER drive (USB Disk Mode),",
             "then open this app again.",
         )

@@ -1,7 +1,7 @@
-# Game Boy emulator core
+# Pocket Emu emulator core
 
-Source for `badge/apps/game_boy/gbcore.mpy`, the native MicroPython module that
-runs Game Boy games in the [Game Boy app](../../badge/apps/game_boy/).
+Source for `badge/apps/pocket_emu/gbcore.mpy`, the native MicroPython module
+that runs games in the [Pocket Emu app](../../badge/apps/pocket_emu/).
 
 - `peanut_gb.h` is [Peanut-GB](https://github.com/deltabeard/Peanut-GB)
   (commit `d0bcca7`, MIT licence; the licence is at the top of the file).
@@ -25,11 +25,11 @@ You need:
 ```sh
 git clone --depth 1 --branch bw-1.29.0-gc https://github.com/pimoroni/micropython
 python -m pip install pyelftools
-python tools/gameboy/build.py --mpy-dir micropython
+python tools/pocket_emu/build.py --mpy-dir micropython
 ```
 
 Pass `--cc path/to/arm-none-eabi-gcc` if the compiler is not on `PATH`. The
-script writes `badge/apps/game_boy/gbcore.mpy`.
+script writes `badge/apps/pocket_emu/gbcore.mpy`.
 
 The module only loads on firmware whose `sys.implementation._mpy` matches the
 build (`.mpy` v6.3, `armv7emsp`). Check a badge with:
@@ -42,12 +42,12 @@ It should print `7942`.
 
 ## Performance
 
-Measured on a Universe 2026 badge (RP2350 at 230 MHz) running Pokémon Red,
-the core takes about 4 to 10.5 ms per Game Boy frame depending on the scene
-(the Oak introduction is the heaviest seen), so it runs at 1.6 to 4 times real
-speed. `-O2` and `-O3` perform the same and `-Os` is about 9% slower.
+Measured on a Universe 2026 badge (RP2350 at 230 MHz) with a 1 MB commercial
+cartridge dump, the core takes about 4 to 10.5 ms per emulated frame depending
+on the scene, so it runs at 1.6 to 4 times real speed. `-O2` and `-O3` perform
+the same and `-Os` is about 9% slower.
 
-The app keeps the game at 59.7 frames per second by running as many emulated
+The app keeps games at 59.7 frames per second by running as many emulated
 frames as real time requires and rendering only the last one; Peanut-GB skips
 line rendering entirely for the others. With `HIRES | VSYNC` the screen updates
 about 42 to 45 times a second in light scenes and 22 to 37 in heavy ones.

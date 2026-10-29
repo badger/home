@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build gbcore.mpy, the native Game Boy emulator core for the badge.
+"""Build gbcore.mpy, the native emulator core for the badge's Pocket Emu app.
 
 Requirements:
   * arm-none-eabi-gcc on PATH (or pass --cc)
@@ -8,7 +8,7 @@ Requirements:
   * pyelftools (python -m pip install pyelftools)
 
 Example:
-  python tools/gameboy/build.py --mpy-dir ../micropython
+  python tools/pocket_emu/build.py --mpy-dir ../micropython
 """
 
 import argparse
@@ -22,7 +22,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 MODULE = "gbcore"
 ARCH = "armv7emsp"
-DEFAULT_OUTPUT = REPO / "badge" / "apps" / "game_boy" / f"{MODULE}.mpy"
+DEFAULT_OUTPUT = REPO / "badge" / "apps" / "pocket_emu" / f"{MODULE}.mpy"
 
 ARCH_FLAGS = [
     "-mthumb",

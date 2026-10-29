@@ -1,5 +1,5 @@
 // MicroPython native module that wraps Peanut-GB for the Universe 2026 badge.
-// Build with build.py; the result is badge/apps/game_boy/gbcore.mpy.
+// Build with build.py; the result is badge/apps/pocket_emu/gbcore.mpy.
 
 #define ENABLE_SOUND 0
 #define ENABLE_LCD 1
