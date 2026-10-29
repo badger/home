@@ -102,38 +102,47 @@ def blocked_at(x, y):
 
 
 def update_ball(mona, dt):
-    next_x = mona["x"] + mona["vx"] * dt
-    min_x = BOARD_X + SPRITE_HALF
-    max_x = BOARD_X + BOARD_W - SPRITE_HALF
-    if next_x < min_x:
-        mona["x"] = min_x
-        mona["vx"] = abs(mona["vx"])
-    elif next_x > max_x:
-        mona["x"] = max_x
-        mona["vx"] = -abs(mona["vx"])
-    elif blocked_at(next_x + (BALL_R if mona["vx"] > 0 else -BALL_R), mona["y"]):
-        mona["vx"] = -mona["vx"]
-    else:
-        mona["x"] = next_x
+    for axis in ("x", "y"):
+        position_key = axis
+        velocity_key = "v" + axis
+        if axis == "x":
+            minimum = BOARD_X + SPRITE_HALF
+            maximum = BOARD_X + BOARD_W - SPRITE_HALF
+        else:
+            minimum = BOARD_Y + SPRITE_HALF
+            maximum = BOARD_Y + BOARD_H - SPRITE_HALF
 
-    next_y = mona["y"] + mona["vy"] * dt
-    min_y = BOARD_Y + SPRITE_HALF
-    max_y = BOARD_Y + BOARD_H - SPRITE_HALF
-    if next_y < min_y:
-        mona["y"] = min_y
-        mona["vy"] = abs(mona["vy"])
-    elif next_y > max_y:
-        mona["y"] = max_y
-        mona["vy"] = -abs(mona["vy"])
-    elif blocked_at(mona["x"], next_y + (BALL_R if mona["vy"] > 0 else -BALL_R)):
-        mona["vy"] = -mona["vy"]
-    else:
-        mona["y"] = next_y
+        remaining = abs(mona[velocity_key] * dt)
+        while remaining > 0:
+            distance = min(1, remaining)
+            direction = 1 if mona[velocity_key] > 0 else -1
+            next_position = mona[position_key] + direction * distance
+            if axis == "x":
+                blocked = blocked_at(next_position + BALL_R * direction, mona["y"])
+            else:
+                blocked = blocked_at(mona["x"], next_position + BALL_R * direction)
+
+            if next_position < minimum or next_position > maximum:
+                mona[position_key] = max(minimum, min(maximum, next_position))
+                mona[velocity_key] = -mona[velocity_key]
+            elif blocked:
+                reverse_position = mona[position_key] - direction * distance
+                if axis == "x":
+                    reverse_blocked = blocked_at(
+                        reverse_position - BALL_R * direction, mona["y"]
+                    )
+                else:
+                    reverse_blocked = blocked_at(
+                        mona["x"], reverse_position - BALL_R * direction
+                    )
+                if not reverse_blocked:
+                    mona[velocity_key] = -mona[velocity_key]
+            else:
+                mona[position_key] = next_position
+            remaining -= distance
 
 
 def move_cursor():
-    global cursor_x, cursor_y, repeat_timer
-
     direction = None
     if badge.held(BUTTON_LEFT):
         direction = (-1, 0)
@@ -145,16 +154,24 @@ def move_cursor():
         direction = (0, 1)
 
     if direction is None:
+        advance_cursor(None, 0)
+        return
+
+    advance_cursor(direction, badge.ticks_delta / 1000)
+
+
+def advance_cursor(direction, elapsed):
+    global cursor_x, cursor_y, repeat_timer
+
+    if direction is None:
         repeat_timer = 0
         return
 
-    repeat_timer -= badge.ticks_delta / 1000
-    if repeat_timer > 0:
-        return
-
-    repeat_timer = CURSOR_REPEAT
-    cursor_x = max(0, min(GRID_W - 1, cursor_x + direction[0]))
-    cursor_y = max(0, min(GRID_H - 1, cursor_y + direction[1]))
+    repeat_timer -= elapsed
+    while repeat_timer <= 0:
+        cursor_x = max(0, min(GRID_W - 1, cursor_x + direction[0]))
+        cursor_y = max(0, min(GRID_H - 1, cursor_y + direction[1]))
+        repeat_timer += CURSOR_REPEAT
 
 
 def cell_blocked(x, y):
