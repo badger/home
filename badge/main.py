@@ -1,6 +1,12 @@
 # Play the cinematic on a normal power-on, but not on the watchdog reset used
 # to return to the launcher after an app exits.
 import powman
+import sys
+
+sys.path.insert(0, "/system")
+import universe_agenda
+
+universe_agenda.install()
 
 wake_reason = powman.get_wake_reason()
 
