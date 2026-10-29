@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 badge/.badge_state/**
 badge25/.badge_state/**
+
+# Game Boy app: never commit game ROMs, saves, or native build output
+badge/apps/game_boy/roms/*
+!badge/apps/game_boy/roms/.gitkeep
+tools/gameboy/build/
