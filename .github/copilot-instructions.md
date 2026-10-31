@@ -59,7 +59,7 @@ deploy an app:
    physical badge.
 2. Check it yourself: `check_app`, then `run_script` or `wait_for` to exercise
    it, `get_output` (its `error.location` points at the failing repo line),
-   `screenshot` and `exec`. Fix any tracebacks or obvious rendering problems.
+   `screenshot`, `record` (for motion) and `exec`. Fix any tracebacks or obvious rendering problems.
 3. End your reply by reminding the user that the app is running in the Badge
    Simulator, and that when they are happy with it they can press the canvas
    **Deploy** button to install it on their connected badge.
@@ -72,7 +72,9 @@ available (for example, in the Copilot CLI).
   so save edits and check the result without reopening it.
 - Use `invoke_canvas_action` to verify behavior: `get_output` returns status,
   console output and the last error mapped to `badge/apps/...:line`,
-  `screenshot` returns a PNG path to view, `press` presses a badge button
+  `screenshot` returns a PNG path to view, `record` captures an interaction
+  as a GIF plus a contact-sheet PNG to view (and optional MP4/WebM video for
+  pull requests), `press` presses a badge button
   (`up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu`, or combos
   such as `"a+b"`), `exec` runs MicroPython in the running app's globals,
   `wait_for` waits for output, frames or a crash, `run_script` runs a scripted

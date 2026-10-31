@@ -280,7 +280,8 @@ Before deploying, run the app in the Badge Simulator canvas
 `canvasId: "badge-simulator"` and `input: { "app": "<app folder>" }`. It reruns
 the app whenever a file in `badge/apps/<app>` changes. Use the
 `get_output`, `screenshot`, `press`, `load_app` and `reload` canvas actions to
-check tracebacks, rendering and input, `exec` to inspect or change the running
+check tracebacks, rendering and input, `record` to capture animation or gameplay as a GIF and contact
+sheet (plus optional video), `exec` to inspect or change the running
 app's globals, `wait_for` and `run_script` for repeatable tests, `rotate` for
 the upside-down orientation, `tilt` for motion-sensor apps (or drag the 3D
 badge), and `check_app` for pre-flight checks before a

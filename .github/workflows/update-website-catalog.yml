@@ -1,0 +1,31 @@
+name: Update website app catalog
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "badge/apps/**"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  update:
+    if: github.repository == 'badger/home' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: catalog-sync
+    steps:
+      - name: Create website workflow token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.CATALOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CATALOG_APP_PRIVATE_KEY }}
+          owner: badger
+          repositories: badger.github.io
+          permission-actions: write
+      - name: Start website deployment
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh workflow run deploy.yml --repo badger/badger.github.io --ref main
