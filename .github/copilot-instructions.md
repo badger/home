@@ -79,7 +79,8 @@ available (for example, in the Copilot CLI).
   such as `"a+b"`), `exec` runs MicroPython in the running app's globals,
   `wait_for` waits for output, frames or a crash, `run_script` runs a scripted
   sequence of presses, waits, screenshots and checks, `rotate` turns the badge
-  upside down, `check_app` runs pre-flight checks (icon, README, 2025 APIs,
+  upside down, `tilt` tips or leans it so `badge.imu()` changes (dragging the
+  3D badge does the same), `check_app` runs pre-flight checks (icon, README, 2025 APIs,
   secrets), `load_app` switches apps and `reload` reruns. See
   `.github/extensions/badge-simulator/README.md` for inputs.
 - The canvas **Deploy** button sends a request to install the app on the

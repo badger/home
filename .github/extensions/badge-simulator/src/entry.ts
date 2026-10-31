@@ -5,7 +5,9 @@ import { BadgeInput, initBadgeKeyboard } from '@site/lib/badge-editor-input'
 import { createBadgeModelController } from '@site/lib/badge-editor-model-controller'
 import { initBadgeModel } from '@site/lib/badge-editor-model'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { initBadgeMotion } from '@site/lib/badge-motion'
+import { Box3, Group, Vector3, type Camera } from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { badgeMotion, initBadgeMotion } from '@site/lib/badge-motion'
 import { fileBytes, projectFile, simulationSource } from '@site/lib/badge-editor-project'
 import { firmwareCompat } from '@site/lib/badge-firmware-compat'
 
@@ -19,6 +21,7 @@ type ServerEvent =
   | { type: 'restart' }
   | { type: 'exec'; id: string; code: string }
   | { type: 'rotate'; value?: boolean }
+  | { type: 'tilt'; id: string; pitch: number; roll: number; ms: number }
   | { type: 'record-start'; id: string; fps: number; video: boolean; scale: number }
   | { type: 'record-stop'; id: string }
 
@@ -32,6 +35,8 @@ const status = $('[data-status]')
 const appSelect = $<HTMLSelectElement>('[data-app]')
 const output = $('[data-output]')
 const rotateButton = $<HTMLButtonElement>('[data-model-rotate]')
+const levelButton = $<HTMLButtonElement>('[data-model-level]')
+const tiltReadout = $('[data-tilt-readout]')
 const deployButton = $<HTMLButtonElement>('[data-deploy]')
 const reloadButton = $<HTMLButtonElement>('[data-reload]')
 const keys = [...document.querySelectorAll<HTMLButtonElement>('[data-button]')]
@@ -210,6 +215,9 @@ function setStatus(text: string, state = '') {
 // ---- 3D model ---------------------------------------------------------------
 // The Universe 2026 badge has its USB-C socket on the left edge; the site model
 // places it on the right, so mirror those parts across the board's centre.
+// The model is also nested in a pivot group centred on the badge, so agent
+// tilts can turn it in place while Rotate keeps turning the outer group.
+let tiltPivot: Group | null = null
 const parseAsync = GLTFLoader.prototype.parseAsync
 GLTFLoader.prototype.parseAsync = async function (...args: Parameters<typeof parseAsync>) {
   const gltf = await parseAsync.apply(this, args)
@@ -218,7 +226,28 @@ GLTFLoader.prototype.parseAsync = async function (...args: Parameters<typeof par
     object.position.x = -object.position.x
     object.scale.x = -object.scale.x
   })
+  const centre = new Box3().setFromObject(gltf.scene).getCenter(new Vector3())
+  const outer = new Group()
+  const pivot = new Group()
+  pivot.position.copy(centre)
+  gltf.scene.position.sub(centre)
+  pivot.add(gltf.scene)
+  outer.add(pivot)
+  gltf.scene = outer
+  tiltPivot = pivot
+  applyAgentTilt()
   return gltf
+}
+
+// The 3D view's camera is internal to the site module, so pick it up from its
+// orbit controls; orbiting the badge then drives its motion sensor.
+let viewCamera: Camera | null = null
+const updateOrbit = OrbitControls.prototype.update
+OrbitControls.prototype.update = function (this: OrbitControls, deltaTime?: number | null) {
+  const changed = updateOrbit.call(this, deltaTime)
+  viewCamera = this.object as Camera
+  try { onViewChanged() } catch (error) { console.error('Badge tilt:', error) }
+  return changed
 }
 const controls = {
   screen: $<HTMLButtonElement>('[data-model-screen]'),
@@ -249,13 +278,160 @@ const input = new BadgeInput(mask => {
   model.setButtons(mask)
 })
 initBadgeKeyboard(root, input)
-const motion = initBadgeMotion(root, value => worker?.postMessage({ motion: value }), new AbortController().signal)
+
+// ---- motion -------------------------------------------------------------------
+// Moving the badge drives its IMU: orbiting the 3D view tips it toward or away
+// from you (pitch) or leans it sideways (roll), and the agent's `tilt` action
+// adds its own pose on top. A real phone's devicemotion takes over whenever the
+// simulated pose is back to upright.
+const deadZone = 3
+const tiltFrameMs = 16
+const radians = Math.PI / 180
+type Pose = { pitch: number; roll: number }
+const agentPose: Pose = { pitch: 0, roll: 0 }
+let orbitPose: Pose = { pitch: 0, roll: 0 }
+let lastPose: Pose = { pitch: 0, roll: 0 }
+let lastPoseAt = 0
+let lastSentAt = 0
+let tiltTimer = 0
+let settleTimer = 0
+let statsTimer = 0
+let agentAnimation = 0
+let deviceMotion: number[] | null = null
+let simulatedMotion: number[] | null = null
+let manual = false
+
+const clampAngle = (value: number, limit = 90) => Math.max(-limit, Math.min(limit, value))
+// Ignore the few degrees the default view is angled by, without a jump at the edge.
+const settle = (degrees: number) => Math.sign(degrees) * Math.max(0, Math.abs(degrees) - deadZone) * 90 / (90 - deadZone)
+
+function readOrbit(): Pose {
+  if (!viewCamera || root.dataset.model !== 'ready') return { pitch: 0, roll: 0 }
+  const toCamera = viewCamera.getWorldDirection(new Vector3()).negate()
+  const elevation = Math.asin(Math.max(-1, Math.min(1, toCamera.y))) / radians
+  const azimuth = Math.atan2(toCamera.x, toCamera.z) / radians
+  // Dragging up swings the view below the badge, which is the badge tipping back
+  // (face toward the sky). Swinging the view left (dragging right) reads as
+  // leaning right, so tilt apps react to both directions.
+  return { pitch: settle(clampAngle(-elevation)), roll: settle(clampAngle(-azimuth)) }
+}
+
+function currentPose(): Pose {
+  return { pitch: clampAngle(orbitPose.pitch + agentPose.pitch), roll: clampAngle(orbitPose.roll + agentPose.roll, 180) }
+}
+
+// Gravity as a phone's accelerationIncludingGravity would report it for this
+// pose, mapped to raw badge readings by the site's badgeMotion().
+function imuFor(pose: Pose, rate: Pose) {
+  const g = 9.80665
+  const p = pose.pitch * radians
+  const r = pose.roll * radians
+  const acceleration = { x: -Math.sin(r) * Math.cos(p) * g, y: Math.cos(r) * Math.cos(p) * g, z: Math.sin(p) * g }
+  const values = badgeMotion(acceleration, { beta: -rate.pitch, gamma: 0, alpha: -rate.roll }, 0)!
+  return rotated ? values.map((value, index) => index === 2 || index === 5 ? value : Math.max(-32768, Math.min(32767, -value))) : values
+}
+
+function postMotion() {
+  worker?.postMessage({ motion: manual ? simulatedMotion : deviceMotion })
+}
+
+function updateMotion(force = false) {
+  const now = performance.now()
+  if (!force && now - lastSentAt < tiltFrameMs) {
+    if (!tiltTimer) tiltTimer = window.setTimeout(() => { tiltTimer = 0; updateMotion() }, tiltFrameMs)
+    return
+  }
+  lastSentAt = now
+  const pose = currentPose()
+  const dt = lastPoseAt ? Math.max(1, now - lastPoseAt) / 1000 : 1
+  const moved = Math.abs(pose.pitch - lastPose.pitch) > 0.05 || Math.abs(pose.roll - lastPose.roll) > 0.05
+  const rate = moved && dt < 0.25 ? { pitch: (pose.pitch - lastPose.pitch) / dt, roll: (pose.roll - lastPose.roll) / dt } : { pitch: 0, roll: 0 }
+  if (!moved && !force) return
+  lastPose = pose
+  lastPoseAt = now
+  const wasManual = manual
+  manual = Math.abs(pose.pitch) >= 0.5 || Math.abs(pose.roll) >= 0.5
+  simulatedMotion = manual ? imuFor(pose, rate) : null
+  if (manual || wasManual || force) postMotion()
+  showTilt(pose)
+  // Send one more reading once the badge stops so the gyro settles at zero.
+  window.clearTimeout(settleTimer)
+  if (moved) settleTimer = window.setTimeout(() => updateMotion(true), 120)
+}
+
+function showTilt(pose: Pose) {
+  const source = manual ? (agentPose.pitch || agentPose.roll ? 'agent' : 'orbit') : deviceMotion ? 'device' : 'none'
+  const parts = [
+    Math.round(pose.pitch) ? `${Math.abs(Math.round(pose.pitch))}° ${pose.pitch > 0 ? 'back' : 'forward'}` : '',
+    Math.round(pose.roll) ? `${Math.abs(Math.round(pose.roll))}° ${pose.roll > 0 ? 'right' : 'left'}` : '',
+  ].filter(Boolean)
+  tiltReadout.hidden = !manual
+  tiltReadout.textContent = `Tilted ${parts.join(' · ') || 'slightly'}`
+  root.dataset.tilt = source
+  // Let agents see the new pose without waiting for the next stats tick.
+  window.clearTimeout(statsTimer)
+  statsTimer = window.setTimeout(postStats, 150)
+}
+
+function onViewChanged() {
+  const next = readOrbit()
+  if (Math.abs(next.pitch - orbitPose.pitch) < 0.05 && Math.abs(next.roll - orbitPose.roll) < 0.05) return
+  orbitPose = next
+  updateMotion()
+}
+
+function applyAgentTilt() {
+  if (!tiltPivot) return
+  // Rotate turns the model 180° about the view axis, which reverses its x axis.
+  tiltPivot.rotation.set((rotated ? 1 : -1) * agentPose.pitch * radians, 0, -agentPose.roll * radians)
+  tiltPivot.updateMatrixWorld(true)
+  model.updateFrame()
+}
+
+// Puts the camera back to its default angle by re-selecting the current view.
+function resetOrbit() {
+  if (root.dataset.model !== 'ready') return
+  const button = controls.screen.getAttribute('aria-pressed') === 'true' ? controls.screen : controls.full
+  button.click()
+}
+
+function tiltTo(pitch: number, roll: number, ms: number, done?: () => void) {
+  window.clearTimeout(agentAnimation)
+  resetOrbit()
+  orbitPose = readOrbit()
+  const from = { ...agentPose }
+  const to = { pitch: clampAngle(pitch), roll: clampAngle(roll, 180) }
+  const start = performance.now()
+  const step = () => {
+    const t = ms > 0 ? Math.min(1, (performance.now() - start) / ms) : 1
+    const eased = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
+    agentPose.pitch = from.pitch + (to.pitch - from.pitch) * eased
+    agentPose.roll = from.roll + (to.roll - from.roll) * eased
+    applyAgentTilt()
+    updateMotion(t === 1)
+    if (t < 1) agentAnimation = window.setTimeout(step, tiltFrameMs)
+    // Report after the gyro has settled (see updateMotion).
+    else if (done) window.setTimeout(done, 150)
+  }
+  step()
+}
+
+const motion = initBadgeMotion(root, value => {
+  const first = !deviceMotion
+  deviceMotion = value
+  if (manual) return
+  worker?.postMessage({ motion: value })
+  if (first) showTilt(lastPose)
+}, new AbortController().signal)
+levelButton.addEventListener('click', () => tiltTo(0, 0, 0))
 rotateButton.addEventListener('click', () => {
   rotated = !rotated
   rotateButton.setAttribute('aria-pressed', String(rotated))
   model.setRotated(rotated)
   motion.setFlipped(rotated)
   sendButtons()
+  applyAgentTilt()
+  updateMotion(true)
 })
 for (const key of keys) {
   const bit = Number(key.dataset.button)
@@ -331,6 +507,7 @@ function startWorker() {
     if (data.ready) {
       ready = true
       sendButtons()
+      postMotion()
       if (current) run(current)
       else setStatus('Choose an app to run')
     }
@@ -390,12 +567,22 @@ function execCode(id: string, code: string) {
   }
 }
 
-window.setInterval(() => {
+let lastFps = 0
+let tiltId: string | null = null
+function postStats() {
   void post('/api/stats', {
-    client: clientId, fps: frames - framesAtLastStat, frames, width: screen.width, height: screen.height,
+    client: clientId, fps: lastFps, frames, width: screen.width, height: screen.height,
     running, paused: document.hidden, rotated, backlight,
+    tilt: {
+      id: tiltId, pitch: Math.round(lastPose.pitch * 10) / 10, roll: Math.round(lastPose.roll * 10) / 10,
+      source: root.dataset.tilt ?? 'none', imu: manual ? simulatedMotion : deviceMotion,
+    },
   })
+}
+window.setInterval(() => {
+  lastFps = frames - framesAtLastStat
   framesAtLastStat = frames
+  postStats()
 }, 1000)
 
 // ---- recording (the canvas `record` action) -------------------------------------
@@ -501,6 +688,7 @@ function connect() {
     else if (event.type === 'record-start') startRecording(event.id, event.fps, event.video, event.scale)
     else if (event.type === 'record-stop') void stopRecording(event.id)
     else if (event.type === 'rotate') { if (event.value === undefined || event.value !== rotated) rotateButton.click() }
+    else if (event.type === 'tilt') tiltTo(event.pitch, event.roll, event.ms, () => { tiltId = event.id; postStats() })
     else if (event.type === 'press') {
       input.set(`agent:${event.bit}`, event.bit, true)
       window.setTimeout(() => input.set(`agent:${event.bit}`, event.bit, false), event.ms)

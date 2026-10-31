@@ -11,6 +11,12 @@ Copilot loads it automatically for anyone who clones this repository.
   Full) and **Rotate** to turn the badge upside down. You can click the 3D
   buttons, use the on-screen keys, or use the keyboard (arrows, Space/Enter =
   Select, Esc = Home, WASD/J/K/U for the gamepad).
+- **Motion**: drag the 3D badge to tilt it, and the running app's
+  `badge.imu()` follows. Drag up or down to tip the badge back or forward
+  (all the way up lays it flat, face up). Drag left or right to lean it. A
+  small label shows the current tilt, and **Level** (or **Screen**/**Full**)
+  puts it back upright. On a phone, the real motion sensor still works
+  whenever the badge is level in the canvas. Agents use the `tilt` action.
 - **Deploy**: asks Copilot to install the selected app on a badge connected
   over USB. It always uses USB mass-storage mode (entered over serial, so no
   button presses are needed) and follows "Installing an app" in
@@ -47,8 +53,9 @@ The agent can drive the canvas with `invoke_canvas_action`:
 | `record` | `{ "duration_ms"?: 3000, "fps"?: 15, "steps"?: [...], "restart"?: true, "video"?: true, "save_frames"?: true }` | Record the screen while optional `run_script` steps run. Writes an animated GIF, a labelled contact-sheet PNG of evenly spaced frames, and optionally MP4/WebM video and per-frame PNGs. Returns their paths, `distinct_frames` and `longest_static_ms` |
 | `exec` | `{ "code": "score", "timeout_ms"?: 5000 }` | Run MicroPython in the running app's globals (a REPL); expressions return their repr |
 | `wait_for` | `{ "pattern"?: "regex", "frames"?: 30, "until_crash"?: true, "timeout_ms"?: 5000, "since"?: cursor }` | Wait for output, rendered frames or a crash instead of sleeping |
-| `run_script` | `{ "steps": [...], "restart"?: true }` | Scripted test: `press`, `wait_ms`, `screenshot`, `exec`, `wait_for` and `rotate` steps, stopping on a crash |
+| `run_script` | `{ "steps": [...], "restart"?: true }` | Scripted test: `press`, `wait_ms`, `screenshot`, `exec`, `wait_for`, `rotate` and `tilt` steps, stopping on a crash |
 | `rotate` | `{ "upside_down"?: true }` | Turn the badge upside down (or toggle) |
+| `tilt` | `{ "pitch"?: 30, "roll"?: -20, "duration_ms"?: 300 }` or `{ "preset": "flat" }` | Tilt the badge so `badge.imu()` reports that pose. `pitch` tips the top back (90 = flat, face up), `roll` leans right. Angles are absolute from upright. Returns the raw IMU values sent to the app |
 | `check_app` | `{ "app"?: "snake" }` | Pre-flight checks: `__init__.py`, 24x24 `icon.png`, README rules from CI, 2025 API usage and committed secrets |
 
 A good debugging loop is `check_app`, then `run_script` (or `wait_for`) to

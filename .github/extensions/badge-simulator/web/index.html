@@ -35,11 +35,15 @@
         <button type="button" class="btn tool" data-model-rotate aria-pressed="false" title="Turn the badge upside down">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Rotate
         </button>
+        <button type="button" class="btn tool" data-model-level title="Put the badge back upright, facing you (resets the view and any tilt)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h18"/><path d="M12 3v18"/><circle cx="12" cy="12" r="4"/></svg>Level
+        </button>
       </div>
       <div class="model" data-model>
         <canvas data-screen width="320" height="240" aria-label="Badge display"></canvas>
         <p class="model-status" data-model-status hidden></p>
       </div>
+      <p class="tilt" data-tilt-readout role="status" aria-live="polite" hidden></p>
       <div class="zoom" role="group" aria-label="Zoom">
         <button type="button" class="btn icon" data-model-zoom-in aria-label="Zoom in" title="Zoom in" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
         <button type="button" class="btn icon" data-model-zoom-out aria-label="Zoom out" title="Zoom out" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>

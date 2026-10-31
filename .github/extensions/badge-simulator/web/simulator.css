@@ -78,6 +78,11 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 }
 #sim[data-model="flat"] .view-tools [data-model-screen], #sim[data-model="flat"] .view-tools [data-model-full], #sim[data-model="flat"] .zoom { display: none; }
 .model-status { position: absolute; inset: auto 16px 12px; margin: 0; text-align: center; color: var(--sim-muted); font-size: 12px; pointer-events: none; }
+.tilt {
+  position: absolute; left: 8px; bottom: 8px; z-index: 2; margin: 0; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--sim-accent); background: color-mix(in srgb, var(--sim-bg) 85%, transparent);
+  color: var(--sim-accent); font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none;
+}
 
 .keys { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; padding: 8px 10px; border-top: 1px solid var(--sim-border); }
 .key-group { display: flex; gap: 6px; }

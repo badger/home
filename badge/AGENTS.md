@@ -283,7 +283,8 @@ the app whenever a file in `badge/apps/<app>` changes. Use the
 check tracebacks, rendering and input, `record` to capture animation or gameplay as a GIF and contact
 sheet (plus optional video), `exec` to inspect or change the running
 app's globals, `wait_for` and `run_script` for repeatable tests, `rotate` for
-the upside-down orientation, and `check_app` for pre-flight checks before a
+the upside-down orientation, `tilt` for motion-sensor apps (or drag the 3D
+badge), and `check_app` for pre-flight checks before a
 pull request. `get_output` reports the last error's `badge/apps/...:line`
 location. Its **Deploy** button asks Copilot to
 install the app on the connected badge over USB mass storage, following
