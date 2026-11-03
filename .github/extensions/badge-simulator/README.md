@@ -25,8 +25,11 @@ Copilot loads it automatically for anyone who clones this repository.
   real launcher from `badge/apps/menu` with every app in `badge/apps` and the
   files in `badge/assets`, laid out like the badge's `/system` volume. Select
   opens an app and HOME returns to the menu. Any change under those folders
-  reruns it. Deploy and `check_app` need a single app, so they reject `monaos`.
-  The payload is about 11 MiB, so it loads more slowly than one app.
+  reruns it, except edits to assets the simulator runtime already ships at the
+  same path (such as `badge/assets/icons.png`), which are read-only there and
+  only show on the badge. Deploy and `check_app` need a single app, so they
+  reject `monaos`. The payload is about 11 MiB, so it loads more slowly than one
+  app.
 - **HOME** runs the app's `on_exit` and restarts it, because a single app has
   no menu. In MonaOS mode it returns to the menu instead.
 - **Output** shows `print()` output and tracebacks from MicroPython.

@@ -201,11 +201,11 @@ function ingestLog(inst, lines) {
 }
 
 // Turns the latest MicroPython traceback in the current run into repo paths. In
-// MonaOS mode each app launch starts a new run, so an earlier app's crash isn't
-// reported against the one you opened next.
+// MonaOS mode each app launch and each return to the menu starts a new run, so
+// an earlier app's crash isn't reported against the menu or the next app.
 function lastError(inst) {
     let start = 0;
-    for (let i = inst.log.length - 1; i >= 0; i--) if (/^\[simulator\] (Running |Launching )/.test(inst.log[i])) { start = i; break; }
+    for (let i = inst.log.length - 1; i >= 0; i--) if (/^\[simulator\] (Running |Launching |MonaOS menu)/.test(inst.log[i])) { start = i; break; }
     const run = inst.log.slice(start);
     let tb = -1;
     for (let i = run.length - 1; i >= 0; i--) if (/^(Traceback \(most recent call last\):|- ERROR:)/.test(run[i])) { tb = i; break; }
