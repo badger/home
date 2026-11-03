@@ -1,0 +1,20 @@
+{
+  "mode": "demo",
+  "poll_interval_ms": 10000,
+  "request_timeout_ms": 4000,
+  "stale_after_ms": 45000,
+  "sensor_max_age_s": 180,
+  "stability_ms": 30000,
+  "reserve_w": 100,
+  "happy_w": 800,
+  "excited_w": 2000,
+  "mood_hysteresis_w": 100,
+  "import_threshold_w": 25,
+  "milestone_w": 4000,
+  "appliances": [
+    {"name": "Dishwasher", "watts": 1500},
+    {"name": "Washing machine", "watts": 2000},
+    {"name": "EV charging", "watts": 2300},
+    {"name": "Small appliance", "watts": 500}
+  ]
+}
