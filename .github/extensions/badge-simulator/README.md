@@ -20,15 +20,23 @@ Copilot loads it automatically for anyone who clones this repository.
   It finishes by rebooting the badge so it leaves mass-storage, REPL and test
   modes and returns to the menu.
 - **Theme**: follows the Copilot app's light or dark theme.
-- **HOME** runs the app's `on_exit` and restarts it, because there is no menu.
+- **MonaOS mode**: choose `monaos` (or open the canvas with
+  `{ "app": "monaos" }`) to run the whole OS instead of one app. It loads the
+  real launcher from `badge/apps/menu` with every app in `badge/apps` and the
+  files in `badge/assets`, laid out like the badge's `/system` volume. Select
+  opens an app and HOME returns to the menu. Any change under those folders
+  reruns it. Deploy and `check_app` need a single app, so they reject `monaos`.
+  The payload is about 11 MiB, so it loads more slowly than one app.
+- **HOME** runs the app's `on_exit` and restarts it, because a single app has
+  no menu. In MonaOS mode it returns to the menu instead.
 - **Output** shows `print()` output and tracebacks from MicroPython.
 
 ## Using it
 
 Ask Copilot to "open the Badge Simulator for flappy_mona", or have the agent
 call `open_canvas` with `canvasId: "badge-simulator"` and
-`input: { "app": "<folder under badge/apps>" }`. You can also choose an app
-from the drop-down in the canvas.
+`input: { "app": "<folder under badge/apps>" }`, or `"monaos"` for the whole
+OS. You can also choose an app from the drop-down in the canvas.
 
 The repository's Copilot instructions make the simulator the default: when
 you ask Copilot to build, run or deploy an app, it opens the app here first,
@@ -39,7 +47,7 @@ The agent can drive the canvas with `invoke_canvas_action`:
 
 | Action | Input | Purpose |
 | --- | --- | --- |
-| `load_app` | `{ "app": "snake" }` | Switch to another app |
+| `load_app` | `{ "app": "snake" }` | Switch to another app, or `"monaos"` for the whole OS |
 | `reload` | `{ "restart_runtime"?: true }` | Rerun now (normally automatic) |
 | `get_output` | `{ "lines"?: 80, "since"?: cursor }` | Status (running, crashed, fps, frames, resolution, orientation, backlight), recent output and the last error mapped to `badge/apps/...:line` |
 | `press` | `{ "button": "select", "duration_ms"?: 120 }` | Press `up`, `down`, `left`, `right`, `select`, `home`, `back`, `menu` (or `a`/`b`/`c`); combine with `"a+b"` |

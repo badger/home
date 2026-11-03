@@ -10,7 +10,7 @@ import { fileBytes, projectFile, simulationSource } from '@site/lib/badge-editor
 import { firmwareCompat } from '@site/lib/badge-firmware-compat'
 
 type AppFile = { path: string; data: string }
-type AppPayload = { app: string; revision: number; files: AppFile[] }
+type AppPayload = { app: string; revision: number; files: AppFile[]; os?: boolean }
 type ServerEvent =
   | { type: 'reload'; app: string | null; revision: number }
   | { type: 'apps'; apps: string[] }
@@ -23,6 +23,10 @@ type ServerEvent =
   | { type: 'record-stop'; id: string }
 
 const appRoot = '/system/apps'
+// Reserved app name for the whole OS: the menu launcher plus every app in badge/.
+const osApp = 'monaos'
+const appLabel = (name: string) => (name === osApp ? 'MonaOS (all apps)' : name)
+const payloadTitle = (payload: AppPayload | null) => (payload?.os ? 'MonaOS' : payload?.app ?? 'App')
 const $ = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T>(selector)!
 
 const root = $('#sim')
@@ -59,9 +63,9 @@ def _sim_exec(tag, code, scope):
 `
 const execFile = '/tmp/_sim_exec.py'
 
-// Mirrors badge/main.py for a single app: run it, and when HOME is pressed run
-// its on_exit hook and start it again (there is no menu in this canvas).
-function launcher(target: string) {
+// Setup shared by both launchers: services the canvas `exec` action between
+// frames and turns HOME (and the firmware's reset()) into a jump back to the loop.
+function launcherSetup(target: string) {
   return `
 import builtins, machine, os, sys, time, badgeware
 ${execHelper}
@@ -125,7 +129,13 @@ def _release():
     while badge.held():
         time.sleep(0.02)
         badge.poll()
+`
+}
 
+// Mirrors badge/main.py for a single app: run it, and when HOME is pressed run
+// its on_exit hook and start it again (there is no menu in this mode).
+function launcher(target: string) {
+  return `${launcherSetup(target)}
 while True:
     badge.mode(LORES | VSYNC)
     badge.autorotate(True)
@@ -148,6 +158,50 @@ while True:
 `
 }
 
+// Mirrors badge/main.py for the whole OS: run the menu, launch the app it
+// returns, and come back to the menu when the app exits or HOME is pressed.
+function osLauncher(menu: string) {
+  return `${launcherSetup(menu)}
+_default_clear = badge.default_clear
+
+def _watchdog_cause():
+    return machine.WDT_RESET
+
+first_boot = True
+while True:
+    badge.mode(LORES | VSYNC)
+    badge.autorotate(True)
+    badge.default_clear = _default_clear
+    badgeware.set_backlight(1.0)
+    _release()
+    if not first_boot:
+        # On the badge reset() is a watchdog reset, so the menu skips its opening animation.
+        machine.reset_cause = _watchdog_cause
+    first_boot = False
+    saved_path = list(sys.path)
+    try:
+        _target = ${JSON.stringify(menu)}
+        _armed = True
+        print("[simulator] MonaOS menu")
+        chosen = launch(_target)
+        _armed = False
+        if chosen:
+            _release()
+            badge.mode(LORES | VSYNC)
+            _target = str(chosen)
+            _armed = True
+            print("[simulator] Launching " + _target)
+            launch(_target)
+            print("[simulator] Returned from " + _target)
+    except _ReturnHome:
+        pass
+    finally:
+        _armed = False
+        sys.path[:] = saved_path
+    time.sleep(0.05)
+`
+}
+
 function decode(data: string) {
   const binary = atob(data)
   const bytes = new Uint8Array(binary.length)
@@ -155,14 +209,17 @@ function decode(data: string) {
   return bytes
 }
 
+// A single app's file paths are relative to its folder; MonaOS payload paths are
+// relative to /system (apps/<name>/..., assets/...), like the badge's USB drive.
 function request(payload: AppPayload) {
-  const target = `${appRoot}/${payload.app}`
+  const base = payload.os ? '/system' : `${appRoot}/${payload.app}`
   const files = payload.files.map(({ path, data }) => {
     const file = projectFile(path, decode(data))
     const text = path.endsWith('.py') && file.text !== null ? simulationSource(file.text) : file.text
-    return { name: `${target}/${path}`, content: fileBytes({ ...file, text }) }
+    return { name: `${base}/${path}`, content: fileBytes({ ...file, text }) }
   })
-  return { program: `${prelude}\n${launcher(target)}`, files }
+  const loop = payload.os ? osLauncher(`${appRoot}/menu`) : launcher(base)
+  return { program: `${prelude}\n${loop}`, files }
 }
 
 const prelude = `import editor_support\nimport sys\nsys.path[:0] = ["/system/lib", "/lib", "/system"]\n${firmwareCompat}`
@@ -301,10 +358,10 @@ function run(payload: AppPayload) {
     const req = request(payload)
     for (const path of paths) written.add(path)
     lines.length = 0
-    log(`[simulator] Running ${payload.app} (revision ${payload.revision})`)
+    log(`[simulator] Running ${payloadTitle(payload)} (revision ${payload.revision})`)
     worker.postMessage({ ...req, debug: false })
     worker.postMessage({ pause: document.hidden })
-    setStatus(`Running ${payload.app}`, 'running')
+    setStatus(`Running ${payloadTitle(payload)}`, 'running')
   } catch (error) {
     log(`[simulator] ${error instanceof Error ? error.message : String(error)}`)
     setStatus('Could not start app', 'error')
@@ -326,7 +383,7 @@ function startWorker() {
     if (data.running) running = true
     if (data.completed) running = false
     if (data.bootError) { log(`[simulator] ${data.bootError}`); setStatus('Simulator failed to boot', 'error') }
-    if (data.failed) setStatus(`${current?.app ?? 'App'} crashed — see output`, 'error')
+    if (data.failed) setStatus(`${payloadTitle(current)} crashed — see output`, 'error')
     if (data.stuck) { log('[simulator] App did not stop; restarting the runtime.'); startWorker() }
     if (data.ready) {
       ready = true
@@ -350,10 +407,18 @@ function startWorker() {
   }
 }
 
+const deployTitle = deployButton.title
+// Deploy installs one app, so it stays off while the whole OS is selected.
+function syncDeploy() {
+  const wholeOs = appSelect.value === osApp
+  deployButton.disabled = !appSelect.value || wholeOs
+  deployButton.title = wholeOs ? 'Pick a single app to deploy it to the connected badge' : deployTitle
+}
+
 function setApps(apps: string[], selected: string | null) {
-  appSelect.replaceChildren(new Option('Choose app…', ''), ...apps.map(name => new Option(name, name)))
+  appSelect.replaceChildren(new Option('Choose app…', ''), ...apps.map(name => new Option(appLabel(name), name)))
   appSelect.value = selected ?? ''
-  deployButton.disabled = !selected
+  syncDeploy()
 }
 
 async function loadApp() {
@@ -369,9 +434,9 @@ async function loadApp() {
   }
   if (!response.ok) { setStatus(await response.text(), 'error'); return }
   const payload = await response.json() as AppPayload
-  if (![...appSelect.options].some(option => option.value === payload.app)) appSelect.add(new Option(payload.app, payload.app))
+  if (![...appSelect.options].some(option => option.value === payload.app)) appSelect.add(new Option(appLabel(payload.app), payload.app))
   appSelect.value = payload.app
-  deployButton.disabled = false
+  syncDeploy()
   run(payload)
 }
 
@@ -511,13 +576,13 @@ function connect() {
 appSelect.addEventListener('change', () => { void post('/api/select', { app: appSelect.value || null }) })
 reloadButton.addEventListener('click', () => { void loadApp() })
 deployButton.addEventListener('click', async () => {
-  if (!appSelect.value) return
+  if (!appSelect.value || appSelect.value === osApp) return
   deployButton.disabled = true
   const response = await fetch('/api/deploy', { method: 'POST', headers: postHeaders, body: JSON.stringify({ app: appSelect.value }) }).catch(() => null)
   const message = response?.ok ? `Asked Copilot to deploy ${appSelect.value} to your badge` : 'Could not ask Copilot to deploy'
   setStatus(message, response?.ok ? 'deploying' : 'error')
   log(`[simulator] ${message}`)
-  window.setTimeout(() => { deployButton.disabled = false }, 4000)
+  window.setTimeout(syncDeploy, 4000)
 })
 $('[data-clear-output]').addEventListener('click', () => { lines.length = 0; output.textContent = '' })
 
