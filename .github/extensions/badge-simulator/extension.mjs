@@ -39,6 +39,11 @@ function repoRoot(ctx) {
     return resolve(extDir, "..", "..", "..");
 }
 const appsDir = (root) => join(root, "badge", "apps");
+const assetsDir = (root) => join(root, "badge", "assets");
+// Reserved app name that runs the whole OS instead of one app: the real menu
+// launcher plus every app in badge/apps and every asset in badge/assets.
+const OS_APP = "monaos";
+const appTitle = (app) => (app === OS_APP ? "MonaOS" : app);
 function listApps(root) {
     try {
         return readdirSync(appsDir(root), { withFileTypes: true })
@@ -49,15 +54,22 @@ function listApps(root) {
         return [];
     }
 }
-function appFiles(dir, base = dir, out = []) {
+const appChoices = (root) => [OS_APP, ...listApps(root)];
+const isApp = (root, app) => app === OS_APP || listApps(root).includes(app);
+function appFiles(dir, prefix = "", base = dir, out = []) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (ignoredFile(entry.name)) continue;
         const full = join(dir, entry.name);
-        if (entry.isDirectory()) appFiles(full, base, out);
-        else if (entry.isFile()) out.push({ path: relative(base, full).split(sep).join("/"), data: readFileSync(full).toString("base64") });
+        if (entry.isDirectory()) appFiles(full, prefix, base, out);
+        else if (entry.isFile()) out.push({ path: prefix + relative(base, full).split(sep).join("/"), data: readFileSync(full).toString("base64") });
     }
     return out;
 }
+// MonaOS payload: paths are relative to /system, like the BADGER USB drive.
+const osFiles = (root) => [
+    ...appFiles(appsDir(root), "apps/"),
+    ...(existsSync(assetsDir(root)) ? appFiles(assetsDir(root), "assets/") : []),
+];
 
 // ---- persisted selection --------------------------------------------------------
 const stateFile = () => (session?.workspacePath ? join(session.workspacePath, "files", "badge-simulator.json") : null);
@@ -118,22 +130,26 @@ function broadcast(inst, event) {
 }
 
 function watchApp(inst) {
-    inst.watcher?.close();
-    inst.watcher = null;
+    for (const watcher of inst.watchers) watcher.close();
+    inst.watchers = [];
     clearTimeout(inst.reloadTimer);
     if (!inst.app) return;
-    try {
-        inst.watcher = watch(join(appsDir(inst.root), inst.app), { recursive: true }, (_type, name) => {
-            if (name && String(name).split(/[\\/]/).some(ignoredFile)) return;
-            clearTimeout(inst.reloadTimer);
-            inst.reloadTimer = setTimeout(() => {
-                inst.revision++;
-                broadcast(inst, { type: "reload", app: inst.app, revision: inst.revision });
-            }, 300);
-        });
-        inst.watcher.on("error", () => {});
-    } catch (error) {
-        session?.log(`badge-simulator: could not watch ${inst.app}: ${error.message}`, { level: "warning" });
+    const dirs = inst.app === OS_APP ? [appsDir(inst.root), assetsDir(inst.root)] : [join(appsDir(inst.root), inst.app)];
+    for (const dir of dirs) {
+        try {
+            const watcher = watch(dir, { recursive: true }, (_type, name) => {
+                if (name && String(name).split(/[\\/]/).some(ignoredFile)) return;
+                clearTimeout(inst.reloadTimer);
+                inst.reloadTimer = setTimeout(() => {
+                    inst.revision++;
+                    broadcast(inst, { type: "reload", app: inst.app, revision: inst.revision });
+                }, 300);
+            });
+            watcher.on("error", () => {});
+            inst.watchers.push(watcher);
+        } catch (error) {
+            session?.log(`badge-simulator: could not watch ${relative(inst.root, dir)}: ${error.message}`, { level: "warning" });
+        }
     }
 }
 
@@ -176,17 +192,20 @@ function ingestLog(inst, lines) {
         if (inst.execCurrent) { inst.execCurrent.lines.push(line); continue; }
         // badgeware.fatal_error() prints "- ERROR: ..." and parks on an error screen.
         if (line.startsWith("- ERROR:")) inst.fatal = true;
-        if (line.startsWith("[simulator] Running ") || line.startsWith("[simulator] Restarting app")) inst.fatal = false;
+        // A new run, a restart, or MonaOS going back to its menu or launching an app clears a crash.
+        if (/^\[simulator\] (Running |Restarting app|MonaOS menu|Launching )/.test(line)) inst.fatal = false;
         inst.log.push(line);
     }
     if (inst.log.length > LOG_LIMIT) { const drop = inst.log.length - LOG_LIMIT; inst.log.splice(0, drop); inst.logBase += drop; }
     notify(inst);
 }
 
-// Turns the latest MicroPython traceback in the current run into repo paths.
+// Turns the latest MicroPython traceback in the current run into repo paths. In
+// MonaOS mode each app launch and each return to the menu starts a new run, so
+// an earlier app's crash isn't reported against the menu or the next app.
 function lastError(inst) {
     let start = 0;
-    for (let i = inst.log.length - 1; i >= 0; i--) if (inst.log[i].startsWith("[simulator] Running ")) { start = i; break; }
+    for (let i = inst.log.length - 1; i >= 0; i--) if (/^\[simulator\] (Running |Launching |MonaOS menu)/.test(inst.log[i])) { start = i; break; }
     const run = inst.log.slice(start);
     let tb = -1;
     for (let i = run.length - 1; i >= 0; i--) if (/^(Traceback \(most recent call last\):|- ERROR:)/.test(run[i])) { tb = i; break; }
@@ -205,7 +224,8 @@ function lastError(inst) {
         } else if (offset > 0 && !/^\s/.test(line)) { message = line; break; }
         else if (offset === 0 && line.startsWith("- ERROR:")) message = line.slice(8).trim();
     }
-    const inApp = [...frames].reverse().find((f) => f.repo_path?.startsWith(`badge/apps/${inst.app}/`)) ?? [...frames].reverse().find((f) => f.repo_path);
+    const ownFrame = (f) => f.repo_path?.startsWith(inst.app === OS_APP ? "badge/apps/" : `badge/apps/${inst.app}/`);
+    const inApp = [...frames].reverse().find(ownFrame) ?? [...frames].reverse().find((f) => f.repo_path);
     return { message, location: inApp?.repo_path ?? null, frames, traceback: traceback.join("\n") };
 }
 
@@ -225,10 +245,10 @@ function snapshot(inst) {
 }
 
 function selectApp(inst, app) {
-    if (app && !listApps(inst.root).includes(app)) throw new Error(`Unknown app "${app}". Apps live in badge/apps/<name>/__init__.py.`);
+    if (app && !isApp(inst.root, app)) throw new Error(`Unknown app "${app}". Apps live in badge/apps/<name>/__init__.py; use "${OS_APP}" to run the whole OS.`);
     inst.app = app || null;
     inst.revision++;
-    inst.status = inst.app ? `Loading ${inst.app}` : "Choose an app to run";
+    inst.status = inst.app ? `Loading ${appTitle(inst.app)}` : "Choose an app to run";
     inst.state = "";
     clearLog(inst);
     saveLastApp(inst.app);
@@ -274,9 +294,13 @@ async function handle(inst, req, res) {
             req.on("close", () => { clearInterval(ping); inst.clients.delete(res); });
             return;
         }
-        if (path === "/api/state") return json(res, 200, { apps: listApps(inst.root), app: inst.app });
+        if (path === "/api/state") return json(res, 200, { apps: appChoices(inst.root), app: inst.app });
         if (path === "/api/app") {
             if (!inst.app) { res.writeHead(204); return res.end(); }
+            if (inst.app === OS_APP) {
+                if (!existsSync(join(appsDir(inst.root), "menu", "__init__.py"))) return json(res, 404, { error: "badge/apps/menu/__init__.py not found, so MonaOS cannot start" });
+                return json(res, 200, { app: OS_APP, os: true, revision: inst.revision, files: osFiles(inst.root) });
+            }
             const dir = join(appsDir(inst.root), inst.app);
             if (!existsSync(join(dir, "__init__.py"))) return json(res, 404, { error: `badge/apps/${inst.app}/__init__.py not found` });
             return json(res, 200, { app: inst.app, revision: inst.revision, files: appFiles(dir) });
@@ -319,6 +343,7 @@ async function handle(inst, req, res) {
             if (path === "/api/deploy") {
                 const app = body.app || inst.app;
                 if (!app) return json(res, 400, { error: "No app selected" });
+                if (app === OS_APP) return json(res, 400, { error: "MonaOS runs every app. Pick a single app to deploy it." });
                 if (!listApps(inst.root).includes(app)) return json(res, 400, { error: `Unknown app "${app}"` });
                 await session.send({ prompt: deployPrompt(app) });
                 return json(res, 200, { ok: true });
@@ -346,10 +371,10 @@ async function startInstance(ctx) {
     const inst = {
         root, app: null, revision: 0, status: "Starting", state: "", log: [], logBase: 0,
         stats: null, statsAt: 0, waiters: new Set(), execs: new Map(), execCurrent: null,
-        clients: new Set(), statsBy: new Map(), screenshots: new Map(), recordings: new Map(), watcher: null, reloadTimer: null, server: null, url: "",
+        clients: new Set(), statsBy: new Map(), screenshots: new Map(), recordings: new Map(), watchers: [], reloadTimer: null, server: null, url: "",
     };
     const remembered = loadLastApp();
-    if (remembered && listApps(root).includes(remembered)) inst.app = remembered;
+    if (remembered && isApp(root, remembered)) inst.app = remembered;
     inst.server = createServer((req, res) => void handle(inst, req, res));
     await new Promise((r) => inst.server.listen(0, "127.0.0.1", r));
     inst.url = `http://127.0.0.1:${inst.server.address().port}/`;
@@ -357,7 +382,7 @@ async function startInstance(ctx) {
     try {
         inst.appsWatcher = watch(appsDir(root), () => {
             clearTimeout(appsTimer);
-            appsTimer = setTimeout(() => broadcast(inst, { type: "apps", apps: listApps(root) }), 500);
+            appsTimer = setTimeout(() => broadcast(inst, { type: "apps", apps: appChoices(root) }), 500);
         });
         inst.appsWatcher.on("error", () => {});
     } catch {}
@@ -625,6 +650,7 @@ function readmeDescription(text) {
 function checkApp(inst, app) {
     app = app || inst.app;
     if (!app) throw new Error("No app selected.");
+    if (app === OS_APP) throw new Error(`MonaOS runs every app, so check_app needs a single app name, e.g. {"app": "snake"}.`);
     const dir = join(appsDir(inst.root), app);
     if (!existsSync(dir)) throw new Error(`badge/apps/${app} does not exist.`);
     const errors = [], warnings = [];
@@ -660,15 +686,15 @@ session = await joinSession({
             id: "badge-simulator",
             displayName: "Badge Simulator",
             description:
-                "Runs a Universe 2026 badge app from badge/apps/<app> in the 3D badge simulator. The canvas reloads automatically whenever the app's files change, mirrors the app theme, and has a Deploy button that asks Copilot to install the app on a connected badge. Open it with input {app: \"<folder name>\"} while building or testing an app.",
+                "Runs a Universe 2026 badge app from badge/apps/<app> in the 3D badge simulator. The canvas reloads automatically whenever the app's files change, mirrors the app theme, and has a Deploy button that asks Copilot to install the app on a connected badge. Open it with input {app: \"<folder name>\"} while building or testing an app. Use {app: \"monaos\"} to run the whole MonaOS from badge/ instead: the real menu launcher with every app and asset, where select opens an app and HOME returns to the menu.",
             inputSchema: {
                 type: "object",
-                properties: { app: { type: "string", description: "Folder name under badge/apps to run, e.g. flappy_mona" } },
+                properties: { app: { type: "string", description: "Folder name under badge/apps to run, e.g. flappy_mona, or \"monaos\" for the full OS (menu plus every app)" } },
             },
             actions: [
                 {
                     name: "load_app",
-                    description: "Switch the simulator to another app in badge/apps.",
+                    description: "Switch the simulator to another app in badge/apps, or to \"monaos\" for the whole OS (the real menu with every app; HOME returns to the menu).",
                     inputSchema: { type: "object", properties: { app: { type: "string" } }, required: ["app"] },
                     handler: (ctx) => { const inst = instanceFor(ctx); selectApp(inst, ctx.input?.app); return { app: inst.app }; },
                 },
@@ -789,7 +815,7 @@ session = await joinSession({
                 },
                 {
                     name: "check_app",
-                    description: "Static pre-flight checks for an app (default: the current one): __init__.py, 24x24 icon.png, README description rules from the PR check, and 2025-era API usage that breaks on 2026 firmware.",
+                    description: "Static pre-flight checks for an app (default: the current one; MonaOS mode needs an explicit app): __init__.py, 24x24 icon.png, README description rules from the PR check, and 2025-era API usage that breaks on 2026 firmware.",
                     inputSchema: { type: "object", properties: { app: { type: "string" } } },
                     handler: (ctx) => checkApp(instanceFor(ctx), ctx.input?.app),
                 },
@@ -802,13 +828,13 @@ session = await joinSession({
                 }
                 const app = ctx.input && typeof ctx.input === "object" ? ctx.input.app : undefined;
                 if (app && app !== inst.app) selectApp(inst, app);
-                return { title: inst.app ? `Badge Simulator · ${inst.app}` : "Badge Simulator", url: inst.url };
+                return { title: inst.app ? `Badge Simulator · ${appTitle(inst.app)}` : "Badge Simulator", url: inst.url };
             },
             onClose: async (ctx) => {
                 const inst = instances.get(ctx.instanceId);
                 if (!inst) return;
                 instances.delete(ctx.instanceId);
-                inst.watcher?.close();
+                for (const watcher of inst.watchers) watcher.close();
                 inst.appsWatcher?.close();
                 clearTimeout(inst.reloadTimer);
                 for (const client of inst.clients) client.end();
