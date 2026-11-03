@@ -123,10 +123,10 @@ firmware driver or board aliases. Do not infer wiring from the chip name.
 1. Check syntax without running the app on the host. Check imports, lifecycle,
    icon dimensions, assets, secrets exclusions, and controls against this
    skill. Desktop syntax checks do not prove MicroPython compatibility.
-2. Optionally run the archived simulator from the repo root:
+2. Optionally run the archived simulator from the app directory:
 
    ```bash
-   python3 badge25/simulator/badge_simulator.py -C badge25 badge25/apps/my_app
+   (cd badge25/apps/my_app && python3 ../../simulator/badge_simulator.py -C ../.. .)
    ```
 
    It requires Pygame. Keys A/Z, B/X, C/Space, Up/Down, and H/Esc simulate
