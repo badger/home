@@ -446,9 +446,9 @@ class LightCycles:
             if match_over:
                 title += " MATCH"
             prompt = "SELECT: NEW MATCH" if match_over else "SELECT: NEXT ROUND"
-            if self.my_ready:
+            if self.network and self.my_ready:
                 prompt = "WAITING FOR RIVAL"
-            elif self.their_ready:
+            elif self.network and self.their_ready:
                 prompt = "RIVAL READY / SELECT"
             self.panel(title, prompt)
         else:
