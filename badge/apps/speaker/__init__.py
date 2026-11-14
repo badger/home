@@ -63,7 +63,7 @@ HEIGHT = 240
 QR_SIDE = 186  # leaves room for the label underneath
 QR_X = WIDTH - QR_SIDE - 14  # right-aligned, clear of the page dots
 QR_Y = 8
-QR_MARGIN = 6  # white border so phones find the code against the black screen
+QR_BORDER = 4  # white quiet zone in modules; the QR standard asks for 4
 MONA_FRAME_MS = 120
 
 # Frame counts match the sprite sheets (see monapet).
@@ -74,8 +74,17 @@ white = color.rgb(255, 255, 255)
 dim = color.rgb(140, 148, 158)
 accent = color.rgb(15, 191, 62)
 
-heavy = font.load("/system/assets/fonts/lato-900.af")
-light = font.load("/system/assets/fonts/lato-400.af")
+def load_font(name):
+    # Lato ships on Universe 2026 badges but isn't in badger/home's
+    # badge/assets/fonts, so fall back to Mona Sans, which is.
+    try:
+        return font.load("/system/assets/fonts/%s.af" % name)
+    except OSError:
+        return font.load("/system/assets/fonts/MonaSans-Medium.af")
+
+
+heavy = load_font("lato-900")
+light = load_font("lato-400")
 # (typeface, size in px) for each kind of text
 CONFERENCE_TEXT = (heavy, 20)
 TITLE_TEXT = (heavy, 30)
@@ -247,14 +256,12 @@ class Speaker:
     def draw_qr(self, label, url, mona):
         if url != self.qr_url:
             self.qr = None  # free the old code before building the next
-            self.qr = image.qr(url, image.QR_LOW, 1)
+            # One pixel per module, plus the quiet zone on every side.
+            self.qr = image.qr(url, image.QR_LOW, QR_BORDER)
             self.qr_url = url
-        # Every code fills the same box, whatever the URL length.
-        screen.pen = white
-        screen.rectangle(QR_X, QR_Y, QR_SIDE, QR_SIDE)
-        inner = QR_SIDE - 2 * QR_MARGIN
+        # Every code, quiet zone included, fills the same box whatever the URL length.
         screen.blit(self.qr, rect(0, 0, self.qr.width, self.qr.height),
-                    rect(QR_X + QR_MARGIN, QR_Y + QR_MARGIN, inner, inner))
+                    rect(QR_X, QR_Y, QR_SIDE, QR_SIDE))
         if mona:
             self.draw_mona(mona)
         w, _ = measure(label, LABEL_TEXT)
